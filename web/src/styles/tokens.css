@@ -141,4 +141,107 @@
 
   /* 黑底上的次级文字(2026-10-02 UIP-10):替代「原色 + opacity」写法,保证实色对比度 */
   --sv-on-ink-soft: rgba(255, 255, 255, 0.72);
+
+  /* 这两个令牌此前只在 styles/task.css 里以「var(--x, #兜底)」形态使用(未定义即走兜底)。
+     NIGHT-1 起在亮色下显式取同一兜底值(逐字等价、零视觉变化),否则暗色主题无从覆写,
+     深底上会照旧画出 #d8d3c8 的浅边与 #d97706 的暗琥珀字。 */
+  --sv-line-soft: #d8d3c8;
+  --sv-amber: #d97706;
+
+  /* ===== 色块底与固定字色的配对令牌(NIGHT-1,暗色主题用) =====
+     亮色下这四个就是原来的语义色(var() 代指,逐字等价、零视觉变化);
+     暗色下不能跟着语义色一起翻转 —— 语义色当「装饰/描边」时要提亮,当「色块底」时
+     要压暗,否则亮色块配浅字(1.65:1)或深色块配深字,两头都过不了 WCAG AA。
+     消费点:components/MemoryPanel.vue 的 kind 标签与搜索命中高亮;
+     对比度由 styles/darkContrast.test.ts 两套主题分别锁定。 */
+  --sv-chip-blue: var(--sv-blue);
+  --sv-chip-gray: var(--sv-ink-faint);
+  --sv-chip-yellow: var(--sv-yellow);
+  --sv-chip-green: var(--sv-green);
+  --sv-mark-bg: var(--sv-yellow);
+}
+
+/* ============================================================================
+   暗色主题(夜间模式,NIGHT-1) —— 只在这里覆写令牌,组件规则一行不改
+   ----------------------------------------------------------------------------
+   机制:样式域 100% 走 var(--sv-*),.vue 里剩下的少数硬编码色都是
+   `var(--sv-x, #兜底)` 形态(兜底永不生效),所以换肤只需覆写令牌。
+   挂载点 = <html data-theme="dark">,由两处共同维护:
+     · web/src/theme.ts         —— 运行期偏好(system / light / dark)+ 监听系统偏好变化;
+     · web/public/theme-boot.js —— 首帧前同步挂属性,避免启动闪一帧浅色。
+   两处的存储键与默认值必须一致:kedai.theme-mode.v1 / 'system'。
+
+   配色取向:中性黑灰白,只靠明度分层,不掺紫/粉色相(对齐 QQ 夜间模式的观感:
+   画布 #0f0f11、列表底 #222325、气泡 #252628,R≈G、B 只多 2)。
+
+   与「纯反转」不同的两处:
+   1. --sv-ink / --sv-white 是「一身二职」令牌(既当正文色又当深色块底色),
+      暗色下整体对调,于是 .sv-btn.primary 的「黑底白字」自动变「浅底深字」;
+      相应对调 --sv-on-ink-soft(黑底次级文字 → 浅底次级文字)。
+   2. 红/蓝/黄/绿这些语义色不参与对调,只抬明度;当色块底用的四个 chip 令牌另行压暗
+      (见上面「色块底与固定字色的配对令牌」)。
+
+   对比度:亮/暗两套各 17 对 WCAG AA(≥4.5:1)由 styles/darkContrast.test.ts 锁定,
+   改这里的任何一个色值都要跑它。
+   ============================================================================ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* ===== 基底:深灰画布,控件靠明度差分层 ===== */
+  --sv-paper: #0f0f11;
+  --sv-surface: #1a1b1d;
+  --sv-surface-elevated: #222325;
+  --sv-white: #26282b;
+
+  /* ===== 结构:对调(深底浅字) ===== */
+  --sv-ink: #f2f3f5;
+  --sv-ink-supreme: #ffffff;
+  --sv-ink-soft: #d8dade;
+  --sv-ink-dim: #a3a7ad;
+  --sv-ink-faint: #8f9399;
+  --sv-line: #2c2e33;
+  --sv-line-strong: #3a3d43;
+  --sv-line-soft: #232529;
+
+  /* ===== 原来的「粉」在暗色下退成中性灰阶(保留五档名字,免得改所有引用点) ===== */
+  --sv-pink: #26282b;
+  --sv-pink-light: #1e2024;
+  --sv-pink-medium: #34373b;
+  --sv-pink-deep: #a8adb4;   /* 主要强调色:浅灰,在深底上当高亮用 */
+  --sv-pink-dark: #8b9098;
+  --sv-pink-deep-rgb: 168, 173, 180;
+
+  /* ===== 语义色:保持色相,明度抬到深底可读(装饰/描边/文字用) ===== */
+  --sv-red: #e04b42;
+  --sv-red-deep: #f2776e;
+  --sv-blue: #5c7fe0;
+  --sv-yellow: #e8b93c;
+  --sv-yellow-deep: #f2c65c;
+  --sv-green: #2fae5f;
+  --sv-green-deep: #45c777;
+  --sv-purple: #b06fd0;
+  --sv-orange: #e8903c;
+  --sv-amber: #e8a33c;
+
+  /* ===== 色块底:压暗,配浅字(见文件头第 2 条) ===== */
+  --sv-chip-blue: #7f9df0;
+  --sv-chip-gray: #8f9399;
+  --sv-chip-yellow: #6b4f00;
+  --sv-chip-green: #14663a;
+  --sv-mark-bg: #6b4f00;
+
+  /* ===== 硬投影:原作是黑色偏移,深底上会隐形 → 改成浅色微光 ===== */
+  --shadow-sm: 3px 3px 0 #ffffff0d;
+  --shadow-card: 4px 4px 0 #ffffff12;
+  --shadow-pink: 4px 4px 0 rgba(var(--sv-pink-deep-rgb), 0.28);
+  --shadow-pink-strong: 4px 4px 0 rgba(var(--sv-pink-deep-rgb), 0.36);
+  --shadow-hover: 6px 6px 0 #ffffff1a;
+  --shadow-raise: 4px 4px 0 #ffffff1a;
+  --shadow-sunk: 4px 4px 0 #ffffff14;
+  --shadow-card-soft: 5px 5px 0 #ffffff0f;
+  --shadow-modal: 10px 10px 0 #ffffff1f;
+  --shadow-ctx: 8px 8px 0 #ffffff1a;
+
+  /* ===== 一身二职令牌的配套(见文件头第 1 条) ===== */
+  --sv-on-ink-soft: rgba(20, 20, 20, 0.72);
 }

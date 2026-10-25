@@ -4,4 +4,14 @@
 // 不必再写显式压错注释(该计数已因此下调,见 tools/check-frontend-lint.mjs)。
 declare module 'node:fs' {
   export function readFileSync(path: string | URL, encoding: 'utf8'): string;
+  /** NIGHT-1:theme.test.ts 要在「web 包根 / 仓库根」两种 cwd 下探测文件是否存在。 */
+  export function existsSync(path: string | URL): boolean;
 }
+
+/** NIGHT-1:同上,探测候选路径用;本仓测试只需 resolve。 */
+declare module 'node:path' {
+  export function resolve(...parts: string[]): string;
+}
+
+/** 只声明测试里用到的字段(cwd);功能源码不用 process,故仍不装 @types/node。 */
+declare const process: { cwd(): string };

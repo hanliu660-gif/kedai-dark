@@ -10,6 +10,9 @@
     <meta http-equiv="Expires" content="0" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- 夜间模式首帧引导(NIGHT-1):放在样式与模块脚本之前同步执行,挂上 <html data-theme>,
+         消掉「深色偏好用户在 JS 包下载完之前先看到一帧亮色」。与 src/theme.ts 的存储键/默认值同源。 -->
+    <script src="/theme-boot.js"></script>
     <title>Kedai</title>
   </head>
   <body>

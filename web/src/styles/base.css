@@ -32,6 +32,14 @@ body::after {
   mix-blend-mode: multiply;
 }
 
+/* 暗色主题:NIGHT-1 起噪点层换 screen。
+   亮色下 multiply 把噪点压进白纸;深色底上 multiply 只会糊成一块死黑,必须反过来提亮,
+   并压低不透明度,免得深灰画布上浮起一层可见颗粒。 */
+:root[data-theme='dark'] body::after {
+  mix-blend-mode: screen;
+  opacity: 0.035;
+}
+
 /* 滚动条:直角黑条 */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--sv-ink); }

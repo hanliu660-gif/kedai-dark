@@ -54,11 +54,16 @@ const VERBOSE = process.argv.includes('--verbose');
  * IMPHUB 步骤 E 变动(只降):content 1008→1007 / mobile 434→433——楼层「注入位置」下拉与
  * depth 输入删除后 `.floor-depth` 孤儿规则随之清除,`.floor-row` grid 由 7 轨收到 5 轨
  * (与现存子节点数一致,消掉尾部空轨的多余 gap)。
+ * NIGHT-1 变动(夜间模式,只升这两处):tokens 144→247 / base 122→130。
+ * tokens 的增量是 `:root[data-theme='dark']` 整块令牌覆写(约 90 行)+ 色块底配对令牌
+ * 与两处原本只以 var() 兜底形态出现、现在需要可覆写的声明;暗色一律靠令牌覆写实现,
+ * 组件规则零改动,所以增量必须在令牌层(base 那 8 行是暗色噪点的 mix-blend-mode 覆写
+ * 与注释——深底上 multiply 会把噪点糊成死黑,只能换 screen)。
  */
 const LINE_BASELINE = {
   'style.css': 49,
-  'styles/tokens.css': 144,
-  'styles/base.css': 122,
+  'styles/tokens.css': 247,
+  'styles/base.css': 130,
   'styles/shell.css': 832,
   'styles/panels.css': 971,
   'styles/content.css': 1007,

@@ -305,7 +305,7 @@ onServerPrefetch(load);
 }
 /* 搜索命中高亮(不改变行高与排版) */
 .memory-hit {
-  background: var(--sv-yellow, #ffe066);
+  background: var(--sv-mark-bg, #ffe066);
   color: inherit;
   padding: 0 1px;
 }
@@ -330,17 +330,17 @@ onServerPrefetch(load);
   flex-shrink: 0;
 }
 .kind-distilled {
-  background: var(--sv-blue);
+  background: var(--sv-chip-blue);
   color: var(--sv-white);
 }
 .kind-tool {
-  background: var(--sv-yellow);
+  background: var(--sv-chip-yellow);
 }
 .kind-manual {
-  background: var(--sv-green);
+  background: var(--sv-chip-green);
 }
 .kind-unknown {
-  background: var(--sv-ink-faint);
+  background: var(--sv-chip-gray);
   color: var(--sv-white);
 }
 

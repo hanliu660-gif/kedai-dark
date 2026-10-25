@@ -4,6 +4,7 @@
 import { useAppStore } from '../../store';
 import { storeToRefs } from 'pinia';
 import type { useDataManager } from '../../composables/useDataManager';
+import { setThemeMode, themeMode, type ThemeMode } from '../../theme';
 
 const props = withDefaults(defineProps<{
   /** useDataManager 的返回对象(壳共享实例,本区仅用 characterLabel / 撤销授权) */
@@ -18,6 +19,13 @@ const { characterLabel, confirmRevokeScriptAuthorization } = props.state;
 
 const store = useAppStore();
 const { scriptAuthorizations } = storeToRefs(store);
+
+/** 主题三档(NIGHT-1)。'system' 是默认值,与 web/public/theme-boot.js 的 DEFAULT_MODE 一致。 */
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: 'system', label: '跟随系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+];
 </script>
 
 <template>
@@ -52,6 +60,27 @@ const { scriptAuthorizations } = storeToRefs(store);
             @click="store.setDefaultAppMode('task')"
           >
             任务
+          </button>
+        </div>
+      </div>
+      <!-- 主题(夜间模式,NIGHT-1):三档偏好存 localStorage(kedai.theme-mode.v1),
+           不进 settings.json —— 纯展示偏好,不需要跨端同步,也不该被导入导出带走。 -->
+      <div class="sv-data-row">
+        <div class="info">
+          <b>主题</b>
+          <span>跟随系统时按系统明暗自动切换；两套配色的对比度都有机器门禁（styles/darkContrast.test.ts）。只影响界面显示，不改任何数据。</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+          <button
+            v-for="opt in THEME_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="sv-btn ghost"
+            :class="{ 'sv-btn-on': themeMode === opt.value }"
+            :aria-pressed="themeMode === opt.value"
+            @click="setThemeMode(opt.value)"
+          >
+            {{ opt.label }}
           </button>
         </div>
       </div>
