@@ -120,8 +120,9 @@ kedai-server = { path = ".", features = ["test-support"] }
 
 [profile.release]
 # 2026-10-26:fat LTO → thin。fat 会把 314 个 crate 的 bitcode 收拢成单线程全局优化,
-# 是冷构建 12m33s 的大头,且「改一行也要全量重链」。thin 仍然做跨 crate 内联与优化
-# (优化面与 fat 基本一致),但可以按 CGU 并行,热构建从分钟级降到十秒级。
+# 链接阶段慢;thin 仍做跨 crate 内联与优化(优化面与 fat 基本一致),但可按 CGU 并行,
+# 链接更快。实测(本机,i5/16 核):冷构建 12m33s → 12m00s~12m59s,热构建(保缓存)
+# 8m49s;热构建里真正吃时间的是两个大二进制的链接,不是编译(Compiling 只有 3 行)。
 # 代价:产物字节变(dist_hash 会更新、体积略有出入),功能行为无差异。
 lto = "thin"
 strip = true
