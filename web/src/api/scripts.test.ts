@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getScriptTree, saveScriptTree } from './scripts';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 describe('scripts API', () => {
   beforeEach(() => {
     resetApiTokenForTest();
@@ -21,7 +22,7 @@ describe('scripts API', () => {
 
   it('GET global:不带 character_id,返回 trees 数组', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ scope: 'global', trees: tree }), { status: 200 }));
 
     const got = await getScriptTree('global');
@@ -32,7 +33,7 @@ describe('scripts API', () => {
 
   it('GET character:携带 character_id', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ scope: 'character', trees: [] }), { status: 200 }));
 
     await getScriptTree('character', 'cid-1');
@@ -42,7 +43,7 @@ describe('scripts API', () => {
 
   it('PUT:全量保存,body 携带 trees', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     await saveScriptTree(tree, 'character', 'cid-2');
@@ -55,7 +56,7 @@ describe('scripts API', () => {
 
   it('PUT global:仅 scope,body 仍带 trees', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     await saveScriptTree(tree, 'global');

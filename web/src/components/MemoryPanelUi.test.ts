@@ -5,6 +5,7 @@ import MemoryPanel from './MemoryPanel.vue';
 import * as api from '../api';
 import { resetApiTokenForTest } from '../api/client';
 
+import { tokenResponse } from '../test/helpers';
 // 记忆库面板 SSR 渲染测试(沿用 CacheHealthPanel.test.ts 的零依赖模式):
 // renderToString + onServerPrefetch 预取,断言空态 / 列表 / kind 标签 /
 // 蒸馏按钮可用性 / 加载失败反馈。
@@ -43,7 +44,7 @@ function sampleList(): api.MemoryEntry[] {
 /** mock fetch:第一跳 bootstrap,后续按序消费 */
 function mockFetch(...responses: Array<{ body: unknown; status?: number }>): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   for (const r of responses) {
     spy.mockResolvedValueOnce(new Response(r.body === null ? null : JSON.stringify(r.body), { status: r.status ?? 200 }));
   }

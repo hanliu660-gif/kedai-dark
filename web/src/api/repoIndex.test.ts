@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRepoIndex, normalizeRepoItem, type RepoIndexItem } from './repoIndex';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 // 仓库索引 API 测试:GET /api/repo-index(可选 q),解包原样返回。
 
 function item(overrides: Partial<RepoIndexItem> = {}): RepoIndexItem {
@@ -25,7 +26,7 @@ function item(overrides: Partial<RepoIndexItem> = {}): RepoIndexItem {
 /** mock 两跳 fetch:第一跳 bootstrap 取 token,第二跳为目标请求 */
 function mockFetchSequence(body: unknown, status = 200): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   spy.mockResolvedValueOnce(new Response(JSON.stringify(body), { status }));
   return spy;
 }

@@ -24,3 +24,27 @@ rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
 
 [target.i686-linux-android]
 rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+# ---------------------------------------------------------------------------
+# Android 交叉编译：rquickjs-sys 的 bindgen 需要 clang 的头文件搜索路径
+#
+# 为什么非有不可：rquickjs-sys 没有 aarch64-android 的预生成绑定，必须现场跑
+# bindgen；bindgen 走的是独立 libclang.dll（不是 NDK 的 clang 驱动），它自己
+# 判断不出 resource dir，InstalledDir 是空的，于是连编译器自带头都找不到：
+#     InstalledDir: (空)
+#     ignoring nonexistent directory "lib\clang\18\include"
+#     quickjs.h:30:10: fatal error: 'stdbool.h' file not found
+# 实测（ctypes 直驱 libclang 对比）：只给 --target 会失败；只加 -isystem 也失败；
+# **必须有 -resource-dir**，加了两条 -isystem 后通过。
+#
+# 为什么写在这里而不是写在调用方脚本的环境变量里：cargo 的 [env] 由 cargo 自己
+# 注入 build script，不依赖 PowerShell → node → tauri → gradle → cargo 这条链上
+# 谁能把环境变量完整传下去（实测同一条链上变量会丢，裸 cargo 却能成功）。
+#
+# 桌面构建不受影响：target == host 时 rquickjs-sys 直接拷贝 bundled bindings，
+# 根本不跑 bindgen，这个变量不会被使用。
+#
+# 路径：换机时改成自己的 NDK 路径（NDK 版本目录名会随版本变）。
+# ---------------------------------------------------------------------------
+[env]
+BINDGEN_EXTRA_CLANG_ARGS = { value = "-resource-dir=C:/DSH/APP/kedai/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/lib/clang/18 -isystem C:/DSH/APP/kedai/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/aarch64-linux-android -isystem C:/DSH/APP/kedai/android-sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include", force = true }

@@ -1,0 +1,89 @@
+/* ==== 11-dark.css · 暗色主题(夜间模式,只许声明变量) ====
+   由 style.css 于 2026-10-25 原样切分而来;层叠顺序由 style.css 的 @import 决定,
+   本文件内部顺序不得调整。 */
+/* ============================================================
+   暗色主题（夜间模式）
+   ------------------------------------------------------------
+   机制：上游把全部颜色都收敛成 :root 里的 --sv-* 令牌
+   （本文件 605 处 var(--sv-*) 引用、零 Tailwind 颜色工具类，
+    .vue 里的硬编码色总共 7 处且 6 处是永不生效的兜底值），
+   所以换肤只需要在这里覆写令牌，一行组件规则都不用改。
+
+   配色取向：中性黑灰白（QQ 夜间模式那种），不带紫/粉色相。
+   实测 QQ 夜间模式的取色：画布 #0f0f11 占 56.6%、气泡 #252628、
+   列表底 #222325；R≈G、B 只多 2 —— 只用明度分层，不上色相。
+   （第一版做成了紫调，跟 QQ 一比偏色明显，故重做。）
+
+   与「纯反转」不同的两处（细节见 AGENTS.local.md）：
+   1. --sv-ink / --sv-white 是「一身二职」的令牌（既当正文色又当深色块底色），
+      暗色下整体对调，于是 .sv-btn.primary 的「黑底白字」自动变「浅底深字」。
+   2. 红/蓝/黄/绿这些语义色出现在深底上，不参与对调，只抬明度。
+   ============================================================ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* ===== 基底 ===== */
+  --sv-paper: #0f0f11;
+  --sv-surface: #1a1b1d;
+  --sv-surface-elevated: #222325;
+  --sv-white: #26282b;
+  /* 新增：自己发的消息气泡比控件底色再亮一档，和非交互控件区分开 */
+  --sv-bubble-self: #2e3033;
+
+  /* ===== 结构 ===== */
+  --sv-ink: #f2f3f5;
+  --sv-ink-supreme: #ffffff;
+  --sv-ink-soft: #d8dade;
+  --sv-ink-dim: #a3a7ad;
+  --sv-ink-faint: #82868c;
+  --sv-line: #24262a;
+  --sv-line-strong: #33363b;
+  --sv-line-soft: #1c1e21;
+
+  /* ===== 原来的「粉」在暗色下退成中性灰阶 =====
+     保留五档名字，免得改所有引用点；只是不再带色相。 */
+  --sv-pink: #26282b;
+  --sv-pink-light: #1a1c1e;
+  --sv-pink-medium: #34373b;
+  --sv-pink-deep: #a8adb4;   /* 主要强调色：浅灰，在深底上当高亮用 */
+  --sv-pink-dark: #8b9098;
+  --sv-pink-deep-rgb: 168, 173, 180;
+
+  /* ===== 语义色：保持色相，把明度抬到深底可读 ===== */
+  --sv-red: #d94138;
+  --sv-red-deep: #f2776e;
+  --sv-blue: #4a72d4;
+  --sv-yellow: #f5b301;
+  --sv-yellow-deep: #e8b93c;
+  --sv-green: #1f9e50;
+  --sv-green-deep: #3ec46a;
+  --sv-purple: #b06fd0;
+  --sv-orange: #e8903c;
+
+  /* ===== 硬投影：原作是黑色偏移，深底上会隐形，改成浅色微光 ===== */
+  --shadow-sm: 3px 3px 0 #ffffff0d;
+  --shadow-card: 4px 4px 0 #ffffff12;
+  --shadow-pink: 4px 4px 0 rgba(var(--sv-pink-deep-rgb), 0.28);
+  --shadow-pink-strong: 4px 4px 0 rgba(var(--sv-pink-deep-rgb), 0.36);
+  --shadow-hover: 6px 6px 0 #ffffff1a;
+  --shadow-raise: 4px 4px 0 #ffffff1a;
+  --shadow-sunk: 4px 4px 0 #ffffff14;
+  --shadow-card-soft: 5px 5px 0 #ffffff0f;
+  --shadow-modal: 10px 10px 0 #ffffff1f;
+  --shadow-ctx: 8px 8px 0 #ffffff1a;
+
+  --sv-on-ink-dim: #26282bb8;
+
+  /* 主题相关前景令牌：见文件头部 :root 里的说明 */
+  --sv-on-pink-deep: var(--sv-white);
+  --sv-bubble-self-ink: #f2f3f5;
+  --sv-warn-ink: #e8b93c;
+}
+
+/* 纸张噪点层：亮色用 multiply 压暗，深色必须换 screen，否则糊成黑块 */
+:root[data-theme='dark'] body::after {
+  mix-blend-mode: screen;
+  opacity: 0.035;
+}
+

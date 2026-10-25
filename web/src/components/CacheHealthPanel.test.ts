@@ -4,6 +4,7 @@ import { renderToString } from 'vue/server-renderer';
 import CacheHealthPanel from './CacheHealthPanel.vue';
 import { resetApiTokenForTest } from '../api/client';
 
+import { tokenResponse } from '../test/helpers';
 // 项目无 jsdom / @vue/test-utils,沿用 node 纯测试模式:
 // 用 vue/server-renderer 的 renderToString 断言 SSR 渲染输出;
 // 组件内 onServerPrefetch 预取数据(renderToString 会等待其完成),
@@ -39,7 +40,7 @@ function sampleResponse(overrides: Record<string, unknown> = {}): Record<string,
 /** mock fetch(bootstrap + 诊断一次)并渲染组件为 HTML 字符串 */
 async function renderPanel(body: Record<string, unknown>): Promise<{ html: string; calls: Array<[unknown, ...unknown[]]> }> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   spy.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
   const app = createSSRApp({ render: () => h(CacheHealthPanel) });
   const html = await renderToString(app);
@@ -120,7 +121,7 @@ describe('CacheHealthPanel(缓存健康面板)', () => {
 
   it('请求失败时展示错误反馈而不渲染数据', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
-    spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+    spy.mockResolvedValueOnce(tokenResponse('test-secret'));
     spy.mockResolvedValueOnce(new Response(JSON.stringify({ error: '读取缓存统计失败: db' }), { status: 500 }));
     const app = createSSRApp({ render: () => h(CacheHealthPanel) });
     const html = await renderToString(app);

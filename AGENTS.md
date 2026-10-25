@@ -2,6 +2,10 @@
 
 > 本文件仅供开发 agent 阅读，用于代码维护、测试与构建；它不是产品运行时提示词，禁止注入聊天模型。
 > 产品运行时主 Agent 提示词统一保存在 `DATA_DIR/AGENTS_RUNTIME.md`，由后端文件服务、Engine 与设置页共用同一路径。
+>
+> **工程级交接（本机当前状态、构建/部署、踩坑、夜间模式专项、回滚）见仓库上一级的 `..\交接文档.md`**
+> （`C:\DSH\APP\kedai\交接文档.md`，与 `kedai-dark\`、`android-sdk\`、`kedai-keys\` 同级，**不在 git 里**）——
+> 那是「换台机器就不成立」的信息的唯一正本；本文件只讲改代码的规矩。
 
 ## 项目范围
 
@@ -59,5 +63,7 @@ cargo build --manifest-path server-rs/Cargo.toml
   改了前端跑 `npm test -w web`;只改文档可跳过测试,但仍要跑 `node tools/check-arch.mjs` 与
   `node tools/count-tests.mjs --check` 确认门禁不漂移。
 - **分支**:主干 `main` + 平台分支 `kedai-Win` / `kedai-Android`(模型见 `docs/契约-协议与配置.md`)。
-  仓库当前**未配置远端**;有远端后推送前先确认当前分支,不要在平台分支上提交共享代码。
+  当前 `origin` = `https://github.com/SpaceRelay/kedai-agent.git`(上游作者仓,本地 fork 直连);
+  **`main` 领先 origin 4 个提交、尚未推送**(2026-10-25 实测)。推送前先确认当前分支与「要不要回上游」,
+  不要在平台分支上提交共享代码。
 - **不改写历史**:不 `rebase`/`amend` 已推送的提交;`docs/archive/` 下的历史文档只读不改。

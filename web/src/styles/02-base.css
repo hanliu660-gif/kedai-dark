@@ -1,0 +1,263 @@
+/* ==== 02-base.css · 装饰元件 / 排版工具 / 布局三栏 / 顶栏(层②) ====
+   由 style.css 于 2026-10-25 原样切分而来;层叠顺序由 style.css 的 @import 决定,
+   本文件内部顺序不得调整。 */
+/* ===== 至上主义装饰元件:纯粹几何 ===== */
+
+/* 黑方块 */
+.sv-supreme {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background: var(--sv-ink-supreme);
+}
+.sv-supreme.red { background: var(--sv-red); }
+.sv-supreme.blue { background: var(--sv-blue); }
+.sv-supreme.yellow { background: var(--sv-yellow); }
+.sv-supreme.pink { background: var(--sv-pink); }
+.sv-supreme.pink-deep { background: var(--sv-pink-deep); }
+.sv-supreme.green { background: var(--sv-green); }
+/* 橙(结构主义用色之一;settings 多处引用,须有定义而非回退黑色) */
+.sv-supreme.orange { background: var(--sv-orange); }
+.sv-supreme.purple { background: var(--sv-purple); }
+
+/* 对角线:构成主义第一签名(红斜线)。仅供装饰,不参与交互。 */
+.sv-diagonal {
+  display: inline-block;
+  width: 22px;
+  height: 3px;
+  background: var(--sv-red);
+  transform: rotate(-45deg);
+  flex-shrink: 0;
+}
+.sv-diagonal.sm { width: 16px; height: 2px; }
+.sv-diagonal.lg { width: 34px; height: 4px; }
+
+/* 标题前缀标记:收编散写的 ::before 装饰,统一为「方块/菱形/方块」三变体 */
+.sv-marker {
+  position: relative;
+  padding-left: 16px;
+}
+.sv-marker::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  background: var(--sv-ink-supreme);
+}
+.sv-marker.diamond::before {
+  background: var(--sv-red);
+  transform: translateY(-50%) rotate(45deg);
+}
+.sv-marker.pink::before { background: var(--sv-pink); }
+
+/* ===== 排版工具 ===== */
+/* 数字等宽:Token 统计/用量仪表等数字密集处,防位数跳动 */
+.sv-tnum { font-variant-numeric: tabular-nums; }
+
+/* ===== 布局:三栏 ===== */
+
+.sv-frame-col {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 1100px;
+  overflow: hidden;
+  background: var(--sv-paper);
+}
+.sv-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.sv-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 左栏 */
+.sv-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sv-surface);
+  border-right: var(--bw) solid var(--sv-ink);
+  transition: width var(--transition-normal);
+}
+/* 任务模式加宽:给「下达目标」输入区留出更多空间 */
+.sv-sidebar.wide {
+  width: 320px;
+}
+
+/* 右侧 Agent 面板 */
+.sv-agent-panel {
+  width: 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sv-surface);
+  border-left: var(--bw) solid var(--sv-ink);
+  overflow: hidden;
+  transition: width var(--transition-normal);
+}
+.sv-agent-panel.open {
+  width: 340px;
+}
+
+/* 右侧边缘抽屉标识 */
+.sv-agent-toggle {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-toggle);
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  padding: 20px 8px;
+  background: var(--sv-ink);
+  color: var(--sv-white);
+  border: none;
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.sv-agent-toggle:hover {
+  background: var(--sv-pink-deep);
+  padding-right: 12px;
+}
+.sv-agent-toggle.active {
+  background: var(--sv-pink-deep);
+}
+
+/* ===== 顶栏 ===== */
+/* 下边线:构成主义双线 rule(3px ink + 淡粉回声);装饰集中为标题左侧一组构成,右端控件区零叠印 */
+.sv-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5) var(--space-3) 46px; /* 左内边距 46px 加大:给标题前的构成装饰组留位 */
+  border-bottom: var(--bw) solid var(--sv-ink);
+  box-shadow: 0 4px 0 0 var(--sv-pink); /* 回声段:粉灰线升级为淡粉,暖档套版 */
+  background: var(--sv-surface);
+  position: relative;
+}
+/* 标题前构成组·方块对:海报红(上)+ 纯黑(右下错位),马列维奇式非对称;纯装饰 */
+.sv-topbar::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--sv-red);
+  box-shadow: 11px 11px 0 0 var(--sv-ink-supreme);
+  transform: translateY(calc(-50% - 6px));
+  pointer-events: none;
+}
+/* 标题前构成组·红斜线:底部向右上挑起(构成主义第一签名),与方块对同组;
+   评审第二轮:自右端控件区挪来此处,拨杆/会话控件不再被装饰压印 */
+.sv-topbar::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  bottom: 5px;
+  width: 18px;
+  height: 3px;
+  background: var(--sv-red);
+  transform: rotate(-45deg);
+  transform-origin: left center;
+  pointer-events: none;
+}
+.sv-topbar-right { display: flex; align-items: center; gap: 12px; }
+.sv-topbar-title { font-family: var(--font-display); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; }
+.sv-topbar-sub { font-size: 11px; color: var(--sv-ink-faint); letter-spacing: 0.05em; }
+
+/* Token 统计(顶栏紧凑版;数字用至上蓝——次强调位) */
+.sv-token-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sv-blue);
+  border: var(--bw) solid var(--sv-ink);
+  padding: 4px 10px;
+}
+
+/* 会话切换器 */
+.sv-session-select {
+  border: var(--bw) solid var(--sv-ink);
+  background: var(--sv-white);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--sv-ink);
+  outline: none;
+  max-width: 320px;
+}
+.sv-session-select:focus { border-color: var(--sv-pink-deep); }
+
+/* ===== 聊天画布 ===== */
+/* 顶端海报 rule(红黑双色段带)共享定义见 :root 的 --sv-top-stripe。
+   实跑问题 6:段带画在画布 y=0 处,而 .sv-topbar 是定位元素、其
+   box-shadow: 0 4px 0 var(--sv-pink) 从顶栏下边框向下覆盖 4px(定位元素绘制在
+   非定位兄弟的画布之上),原 5px 段带只剩约 1px 可见 → 视觉断层。
+   修复:段带下移 4px 让开回声阴影,形成「粉回声 + 红黑段带」的清晰两层。 */
+.sv-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px clamp(24px, 5vw, 64px);
+  background: var(--sv-paper);
+  /* 批次 5:画布顶端红黑双色段带(构成主义海报 rule;背景层,固定于面板顶部不随内容滚动,
+     让开顶栏回声阴影,不压内容;克制档仅此一条带) */
+  background-image: var(--sv-top-stripe);
+  background-repeat: no-repeat;
+  background-size: 100% 5px;
+  background-position: 0 4px;
+}
+
+/* 空态:至上主义几何构成(方块序列 + 红色对角线) */
+.sv-empty { text-align: center; padding: 64px 24px; color: var(--sv-ink-faint); position: relative; }
+.sv-empty-geo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.sv-empty-geo .sq { display: block; }
+.sv-empty-geo .sq.black { width: 18px; height: 18px; background: var(--sv-ink-supreme); }
+.sv-empty-geo .sq.pink { width: 12px; height: 12px; background: var(--sv-pink); }
+.sv-empty-geo .sq.deep { width: 8px; height: 8px; background: var(--sv-pink-deep); }
+.sv-empty-geo .diag {
+  position: absolute;
+  right: calc(50% - 56px);
+  top: -12px;
+  width: 34px;
+  height: 3px;
+  background: var(--sv-red);
+  box-shadow: 0 6px 0 0 var(--sv-pink); /* 套版双线回声 */
+  transform: rotate(-45deg);
+}
+/* 空态组合下缘距变体(替代模板内联 margin-bottom) */
+.sv-empty-geo.mb8 { margin-bottom: 8px; }
+.sv-empty-geo.mb10 { margin-bottom: 10px; }
+.sv-empty-geo.mb14 { margin-bottom: 14px; }
+.sv-empty .big {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  color: var(--sv-ink);
+  margin-bottom: 8px;
+}
+.sv-empty p { font-size: 13px; margin: 4px 0; }
+

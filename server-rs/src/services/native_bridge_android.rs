@@ -1,10 +1,11 @@
 //! Android 原生能力桥接(JNI,仅 Android 编译)。
 //!
 //! 与 [`super::keystore_android`] 同一模式:实际逻辑在 Kotlin `KedaiNative`,
-//! Rust 只做 String 进出。四项能力:
+//! Rust 只做 String 进出。五项能力:
 //!   - `open_external(url)`  用系统浏览器打开外链(避免 WebView 把 SPA 导航走);
 //!   - `share_file(name, content)` 写入缓存目录后弹系统分享选单(导出功能,SAF 友好);
-//!   - `keepalive_start()` / `keepalive_stop()` 启停前台服务,防止后台长任务被冻结。
+//!   - `keepalive_start()` / `keepalive_stop()` 启停前台服务,防止后台长任务被冻结;
+//!   - `set_system_bars(mode)` 让状态栏/导航栏(含 edge-to-edge 留白区)跟随应用主题。
 //!
 //! 说明:入参统一编码为 `name\u{1f}content`(单元分隔符),避免额外 JNI 签名重载。
 #![cfg(target_os = "android")]
@@ -36,4 +37,13 @@ pub fn keepalive_start() -> Result<(), String> {
 /// 停止前台服务保活
 pub fn keepalive_stop() -> Result<(), String> {
     call_string_static(NATIVE_CLASS, "stopKeepAlive", "").map(|_| ())
+}
+
+/// 切换系统栏配色(状态栏/导航栏图标明暗 + edge-to-edge 留白区底色)。
+///
+/// 入参为 `"dark"` / `"light"`,与 web 侧 `<html data-theme>` 一致。
+/// 为什么需要:targetSdk 36 强制 edge-to-edge,状态栏与手势条下那圈是 MainActivity
+/// 给内容根视图加的 insets padding,画的是原生视图背景,CSS 够不到。
+pub fn set_system_bars(mode: &str) -> Result<(), String> {
+    call_string_static(NATIVE_CLASS, "setSystemBars", mode).map(|_| ())
 }

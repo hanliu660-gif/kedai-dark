@@ -19,6 +19,8 @@ pub const KEEPALIVE_START_EVENT: &str = "kedai://keepalive-start";
 pub const KEEPALIVE_STOP_EVENT: &str = "kedai://keepalive-stop";
 /// 请求 Shizuku 权限(阶段 E;仅 Android 有效)。首次触发系统授权弹窗。
 pub const SHIZUKU_REQUEST_EVENT: &str = "kedai://shizuku-request";
+/// 同步系统栏配色(仅 Android 有效;桌面 no-op)。载荷 { mode: "dark" | "light" }
+pub const SYSTEM_BARS_EVENT: &str = "kedai://set-system-bars";
 
 #[derive(Debug, Deserialize)]
 pub struct OpenExternalPayload {
@@ -29,6 +31,11 @@ pub struct OpenExternalPayload {
 pub struct ShareFilePayload {
     pub name: String,
     pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemBarsPayload {
+    pub mode: String,
 }
 
 /// 用系统浏览器打开外链。
@@ -102,4 +109,18 @@ pub fn request_shizuku_permission() -> Result<(), String> {
 #[cfg(target_os = "android")]
 pub fn request_shizuku_permission() -> Result<(), String> {
     kedai_server::services::exec::android::request_shizuku_permission()
+}
+
+/// 同步系统栏配色(状态栏/导航栏 + edge-to-edge 留白区)。
+///
+/// 桌面端是 no-op:桌面窗口没有「系统栏留白」这回事,前端照常 emit 也不报错
+/// (这样 web/src/theme.ts 不必再分平台判断两次)。
+#[cfg(not(target_os = "android"))]
+pub fn set_system_bars(_mode: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+pub fn set_system_bars(mode: &str) -> Result<(), String> {
+    kedai_server::services::native_bridge_android::set_system_bars(mode)
 }

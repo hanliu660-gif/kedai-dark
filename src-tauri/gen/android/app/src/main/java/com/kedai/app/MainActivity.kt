@@ -36,6 +36,8 @@ class MainActivity : TauriActivity() {
 
     // 注入应用上下文,供 KedaiNative(jni_bridge 反射调用)启动服务/发起 Intent
     KedaiNative.attach(this)
+    // 系统栏配色只能经 Activity 的 window 改,单独存一份弱引用(见 KedaiNative.setSystemBars)
+    KedaiNative.attachActivity(this)
 
     // 长任务前台服务需要通知渠道可见;Android 13+ 需运行时 POST_NOTIFICATIONS。
     // 被拒绝也不影响功能(前台服务仍可运行,只是通知不可见),故仅在启动时静默申请一次。

@@ -6,6 +6,7 @@ import RepoIndexModal from './RepoIndexModal.vue';
 import * as api from '../api';
 import { resetApiTokenForTest } from '../api/client';
 
+import { tokenResponse } from '../test/helpers';
 // 仓库索引面板 SSR 渲染测试(沿用 CacheHealthPanel.test.ts 的零依赖模式):
 // renderToString + onServerPrefetch 预取,断言 available=false 空态 / 文件列表 /
 // 搜索与类别筛选控件 / 展开详情结构。交互(点击展开)在纯函数 repoIndex.test.ts 覆盖。
@@ -46,7 +47,7 @@ function item(overrides: Partial<api.RepoIndexItem> = {}): api.RepoIndexItem {
 /** mock fetch:第一跳 bootstrap,后续按序消费 */
 function mockFetch(...responses: Array<{ body: unknown; status?: number }>): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   for (const r of responses) {
     spy.mockResolvedValueOnce(new Response(JSON.stringify(r.body), { status: r.status ?? 200 }));
   }

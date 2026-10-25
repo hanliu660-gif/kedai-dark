@@ -8,6 +8,7 @@ import {
 } from './worldbooks';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 // 世界书 API 形状闸门(批次 1)。这些封装在 `request<T>()` 后直接解构 entries /
 // world_books 并落列表渲染;形状不对时 undefined 会让面板空白且无从提示。
 
@@ -20,7 +21,7 @@ function mock(body: unknown, status = 200): void {
   resetApiTokenForTest();
   const spy = vi.spyOn(globalThis, 'fetch');
   spy.mockReset();
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('t'));
   spy.mockResolvedValueOnce(new Response(JSON.stringify(body), { status }));
 }
 

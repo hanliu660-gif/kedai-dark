@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, resetApiTokenForTest } from './client';
 import { pumpSseFrames, readErrorParts, toApiError, uploadForm } from './stream';
 
+import { tokenResponse } from '../test/helpers';
 /** 用若干字节块构造一个可流式读取的 Response(模拟 SSE 分块到达) */
 function streamingResponse(chunks: string[], init: ResponseInit = {}): Response {
   const encoder = new TextEncoder();
@@ -100,7 +101,7 @@ describe('uploadForm(multipart 上传统一底座)', () => {
 
   it('成功:解析 JSON 返回,表单含文件与附加字段', async () => {
     const mock = mockFetchOnce(
-      new Response(JSON.stringify({ token: 't' }), { status: 200 }),
+      tokenResponse('t'),
       new Response(JSON.stringify({ id: 'wb1' }), { status: 200 }),
     );
 
@@ -122,7 +123,7 @@ describe('uploadForm(multipart 上传统一底座)', () => {
 
   it('失败:抛 ApiError(而非裸 Error),用户提示按 code 分类', async () => {
     mockFetchOnce(
-      new Response(JSON.stringify({ token: 't' }), { status: 200 }),
+      tokenResponse('t'),
       new Response(JSON.stringify({ error: '插件文件须为 .json 格式', code: 'VALIDATION' }), {
         status: 400,
       }),
@@ -137,9 +138,9 @@ describe('uploadForm(multipart 上传统一底座)', () => {
 
   it('401:丢弃缓存 token 重新引导并重试一次(服务端重启 token 轮换)', async () => {
     const mock = mockFetchOnce(
-      new Response(JSON.stringify({ token: 'old' }), { status: 200 }),
+      tokenResponse('old'),
       new Response(JSON.stringify({ error: 'unauthorized', code: 'UNAUTHORIZED' }), { status: 401 }),
-      new Response(JSON.stringify({ token: 'new' }), { status: 200 }),
+      tokenResponse('new'),
       new Response(JSON.stringify({ id: 'ok' }), { status: 200 }),
     );
 
@@ -154,9 +155,9 @@ describe('uploadForm(multipart 上传统一底座)', () => {
 
   it('重试后仍 401:抛 UNAUTHORIZED,不无限重试', async () => {
     const mock = mockFetchOnce(
-      new Response(JSON.stringify({ token: 'old' }), { status: 200 }),
+      tokenResponse('old'),
       new Response(JSON.stringify({ error: 'x', code: 'UNAUTHORIZED' }), { status: 401 }),
-      new Response(JSON.stringify({ token: 'new' }), { status: 200 }),
+      tokenResponse('new'),
       new Response(JSON.stringify({ error: 'x', code: 'UNAUTHORIZED' }), { status: 401 }),
     );
 

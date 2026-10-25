@@ -10,6 +10,9 @@
     <meta http-equiv="Expires" content="0" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- 首屏防闪：必须在样式/主脚本之前同步执行。
+         必须是独立文件——全站 CSP 为 script-src 'self'，内联脚本会被静默拦掉。 -->
+    <script src="/theme-boot.js"></script>
     <title>Kedai — 文学创作 / 角色扮演</title>
   </head>
   <body>

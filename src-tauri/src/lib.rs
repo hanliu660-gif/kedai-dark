@@ -236,6 +236,18 @@ pub fn run() {
                         tracing::warn!(error = e, "请求 Shizuku 授权失败");
                     }
                 });
+                // 主题切换 → 系统栏配色。Android 15+ 强制 edge-to-edge,状态栏/手势条
+                // 下面那圈是原生视图的 insets padding,CSS 够不到,只能由原生改背景。
+                app.listen(native_bridge::SYSTEM_BARS_EVENT, |event| {
+                    match serde_json::from_str::<native_bridge::SystemBarsPayload>(event.payload()) {
+                        Ok(p) => {
+                            if let Err(e) = native_bridge::set_system_bars(&p.mode) {
+                                tracing::warn!(mode = p.mode, error = e, "同步系统栏配色失败");
+                            }
+                        }
+                        Err(e) => tracing::warn!(error = e.to_string(), "set-system-bars 载荷解析失败"),
+                    }
+                });
             }
 
             // 数据目录:Android 上 app_data_dir() 映射到应用私有目录(/data/data/<pkg>/files),

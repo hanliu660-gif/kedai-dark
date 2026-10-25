@@ -158,11 +158,27 @@ fn unescape_char(c: char) -> char {
     }
 }
 
-/// 解析一个 token;返回 (token, 结束位置(绝对索引))
+/// 解析一个 token；返回 (token, 结束位置(绝对索引))
 fn lex_one(src: &str, start: usize) -> Result<(Tok, usize), String> {
+    let i = skip_trivia(src, start)?;
+    if i >= src.len() {
+        return Ok((Tok::Eof, src.len()));
+    }
+    // 上方已返回 Eof，此处必有下一字符
+    let ch = src[i..].chars().next().expect("i 在界内,必有下一字符");
+    match ch {
+        '0'..='9' => lex_number(src, i),
+        '\'' | '"' => lex_string(src, i, ch),
+        '`' => lex_backtick(src, i),
+        c if c.is_alphabetic() || c == '_' || c == '$' => lex_ident(src, i),
+        _ => lex_punctuation(src, i, ch),
+    }
+}
+
+/// 跳过空白与 `//`、`/* */` 注释，返回下一个有效字符的位置。
+fn skip_trivia(src: &str, start: usize) -> Result<usize, String> {
     let bytes = src.as_bytes();
     let mut i = start;
-    // 跳过空白与注释
     loop {
         while i < bytes.len() && bytes[i].is_ascii_whitespace() {
             i += 1;
@@ -182,208 +198,215 @@ fn lex_one(src: &str, start: usize) -> Result<(Tok, usize), String> {
         }
         break;
     }
-    if i >= bytes.len() {
-        return Ok((Tok::Eof, src.len()));
-    }
-    // 上方 i >= len 已返回 Eof,此处必有下一字符
-    let ch = src[i..].chars().next().expect("i 在界内,必有下一字符");
-    match ch {
-        '0'..='9' => {
-            let mut j = i;
-            let mut seen_dot = false;
-            while j < bytes.len() {
-                let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
-                if c.is_ascii_digit() {
-                    j += 1;
-                } else if c == '.' && !seen_dot {
-                    seen_dot = true;
-                    j += 1;
-                } else {
-                    break;
-                }
-            }
-            // 指数 1e5
-            if j < bytes.len() && (src[j..].starts_with('e') || src[j..].starts_with('E')) {
-                let mut k = j + 1;
-                if k < bytes.len() && (src[k..].starts_with('+') || src[k..].starts_with('-')) {
-                    k += 1;
-                }
-                let mut digits = 0;
-                while k < bytes.len()
-                    && src[k..]
-                        .chars()
-                        .next()
-                        .expect("k 在界内,必有下一字符")
-                        .is_ascii_digit()
-                {
-                    k += 1;
-                    digits += 1;
-                }
-                if digits > 0 {
-                    j = k;
-                }
-            }
-            let text = &src[i..j];
-            // 有意丢弃 ParseFloatError:其唯一信息就是「这段文本不是数字」,
-            // 而 text 原值已带进消息
-            let n: f64 = text.parse().map_err(|_| format!("数字格式错误: {text}"))?;
-            Ok((Tok::Num(n), j))
+    Ok(i)
+}
+
+/// 分支 '0'..='9'（由 lex_one 分派）。
+fn lex_number(src: &str, i: usize) -> Result<(Tok, usize), String> {
+    let bytes = src.as_bytes();
+    let mut j = i;
+    let mut seen_dot = false;
+    while j < bytes.len() {
+        let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
+        if c.is_ascii_digit() {
+            j += 1;
+        } else if c == '.' && !seen_dot {
+            seen_dot = true;
+            j += 1;
+        } else {
+            break;
         }
-        '\'' | '"' => {
-            let quote = ch;
-            let mut j = i + 1;
-            let mut out = String::new();
-            let mut closed = false;
-            while j < bytes.len() {
-                let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
-                match c {
-                    '\\' => {
-                        j += 1;
-                        if j < bytes.len() {
-                            let e = src[j..].chars().next().expect("j 在界内,必有下一字符");
-                            if e == 'u' && j + 5 < bytes.len() {
-                                let hex = &src[j + 1..j + 5];
-                                if let Ok(code) = u32::from_str_radix(hex, 16) {
-                                    if let Some(chr) = char::from_u32(code) {
-                                        out.push(chr);
-                                        j += 5;
-                                        continue;
-                                    }
-                                }
+    }
+    // 指数 1e5
+    if j < bytes.len() && (src[j..].starts_with('e') || src[j..].starts_with('E')) {
+        let mut k = j + 1;
+        if k < bytes.len() && (src[k..].starts_with('+') || src[k..].starts_with('-')) {
+            k += 1;
+        }
+        let mut digits = 0;
+        while k < bytes.len()
+            && src[k..]
+                .chars()
+                .next()
+                .expect("k 在界内,必有下一字符")
+                .is_ascii_digit()
+        {
+            k += 1;
+            digits += 1;
+        }
+        if digits > 0 {
+            j = k;
+        }
+    }
+    let text = &src[i..j];
+    // 有意丢弃 ParseFloatError:其唯一信息就是「这段文本不是数字」,
+    // 而 text 原值已带进消息
+    let n: f64 = text.parse().map_err(|_| format!("数字格式错误: {text}"))?;
+    Ok((Tok::Num(n), j))
+}
+
+/// 分支 '\'' | '"'（由 lex_one 分派）。
+fn lex_string(src: &str, i: usize, ch: char) -> Result<(Tok, usize), String> {
+    let bytes = src.as_bytes();
+    let quote = ch;
+    let mut j = i + 1;
+    let mut out = String::new();
+    let mut closed = false;
+    while j < bytes.len() {
+        let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
+        match c {
+            '\\' => {
+                j += 1;
+                if j < bytes.len() {
+                    let e = src[j..].chars().next().expect("j 在界内,必有下一字符");
+                    if e == 'u' && j + 5 < bytes.len() {
+                        let hex = &src[j + 1..j + 5];
+                        if let Ok(code) = u32::from_str_radix(hex, 16) {
+                            if let Some(chr) = char::from_u32(code) {
+                                out.push(chr);
+                                j += 5;
+                                continue;
                             }
-                            out.push(unescape_char(e));
-                            j += e.len_utf8();
                         }
                     }
-                    c if c == quote => {
-                        j += 1;
-                        closed = true;
-                        break;
-                    }
-                    _ => {
-                        out.push(c);
-                        j += c.len_utf8();
-                    }
+                    out.push(unescape_char(e));
+                    j += e.len_utf8();
                 }
             }
-            if !closed {
-                return Err("字符串未闭合".into());
+            c if c == quote => {
+                j += 1;
+                closed = true;
+                break;
             }
-            Ok((Tok::Str(out), j))
-        }
-        '`' => {
-            let tok = lex_template(src, &mut i)?;
-            Ok((tok, i))
-        }
-        // 标识符:ASCII 字母/下划线/$ 开头;支持 Unicode 字母(中文等)——
-        // JS 规范中 IdentifierName 允许 Unicode ID_Start/ID_Continue,酒馆助手卡
-        // 常用中文属性访问(如 data.是否在场、cg.角色),缺此支持会报词法错误
-        c if c.is_alphabetic() || c == '_' || c == '$' => {
-            let mut j = i + c.len_utf8();
-            while j < bytes.len() {
-                let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
-                if c.is_alphanumeric() || c == '_' || c == '$' {
-                    j += c.len_utf8();
-                } else {
-                    break;
-                }
+            _ => {
+                out.push(c);
+                j += c.len_utf8();
             }
-            let word = &src[i..j];
-            let kw = match word {
-                "if" => Some(Kw::If),
-                "else" => Some(Kw::Else),
-                "for" => Some(Kw::For),
-                "in" => Some(Kw::In),
-                "of" => Some(Kw::Of),
-                "var" => Some(Kw::Var),
-                "let" => Some(Kw::Let),
-                "const" => Some(Kw::Const),
-                "function" => Some(Kw::Function),
-                "return" => Some(Kw::Return),
-                "break" => Some(Kw::Break),
-                "continue" => Some(Kw::Continue),
-                "while" => Some(Kw::While),
-                "true" => Some(Kw::True),
-                "false" => Some(Kw::False),
-                "null" => Some(Kw::Null),
-                "undefined" => Some(Kw::Undefined),
-                _ => None,
-            };
-            match kw {
-                Some(k) => Ok((Tok::Kw(k), j)),
-                None => Ok((Tok::Ident(word.to_string()), j)),
-            }
-        }
-        _ => {
-            let two: Option<(P, usize)> =
-                if i + 1 < bytes.len() && bytes[i].is_ascii() && bytes[i + 1].is_ascii() {
-                    let two_chars = &src[i..i + 2];
-                    match two_chars {
-                        "==" => Some((P::EqEq, i + 2)),
-                        "!=" => Some((P::NotEq, i + 2)),
-                        "===" => Some((P::EqEqEq, i + 2)), // 下面三字符优先处理
-                        "!==" => Some((P::NotEqEq, i + 2)),
-                        "<=" => Some((P::Le, i + 2)),
-                        ">=" => Some((P::Ge, i + 2)),
-                        "&&" => Some((P::AndAnd, i + 2)),
-                        "||" => Some((P::OrOr, i + 2)),
-                        "+=" => Some((P::PlusEq, i + 2)),
-                        "-=" => Some((P::MinusEq, i + 2)),
-                        "*=" => Some((P::StarEq, i + 2)),
-                        "/=" => Some((P::SlashEq, i + 2)),
-                        "++" => Some((P::PlusPlus, i + 2)),
-                        "--" => Some((P::MinusMinus, i + 2)),
-                        "=>" => Some((P::Arrow, i + 2)),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-            if let Some((p, end)) = two {
-                return Ok((Tok::P(p), end));
-            }
-            let three: Option<(P, usize)> = if i + 2 < bytes.len()
-                && bytes[i].is_ascii()
-                && bytes[i + 1].is_ascii()
-                && bytes[i + 2].is_ascii()
-            {
-                match &src[i..i + 3] {
-                    "===" => Some((P::EqEqEq, i + 3)),
-                    "!==" => Some((P::NotEqEq, i + 3)),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-            if let Some((p, end)) = three {
-                return Ok((Tok::P(p), end));
-            }
-            let one = match ch {
-                '{' => P::LBrace,
-                '}' => P::RBrace,
-                '(' => P::LParen,
-                ')' => P::RParen,
-                '[' => P::LBracket,
-                ']' => P::RBracket,
-                ',' => P::Comma,
-                ';' => P::Semi,
-                '.' => P::Dot,
-                '?' => P::Question,
-                ':' => P::Colon,
-                '+' => P::Plus,
-                '-' => P::Minus,
-                '*' => P::Star,
-                '/' => P::Slash,
-                '%' => P::Percent,
-                '!' => P::Bang,
-                '=' => P::Assign,
-                '<' => P::Lt,
-                '>' => P::Gt,
-                _ => return Err(format!("无法识别的字符: {ch}")),
-            };
-            Ok((Tok::P(one), i + ch.len_utf8()))
         }
     }
+    if !closed {
+        return Err("字符串未闭合".into());
+    }
+    Ok((Tok::Str(out), j))
+}
+
+/// 分支 '`'（由 lex_one 分派，实现在 lex_backtick）。
+fn lex_backtick(src: &str, i: usize) -> Result<(Tok, usize), String> {
+    let mut i = i;
+    let tok = lex_template(src, &mut i)?;
+    Ok((tok, i))
+}
+
+/// 分支 c if c.is_alphabetic() || c == '_' || c == '$'（由 lex_one 分派）。
+fn lex_ident(src: &str, i: usize) -> Result<(Tok, usize), String> {
+    let c = src[i..].chars().next().expect("i 在界内,必有下一字符");
+    let bytes = src.as_bytes();
+    let mut j = i + c.len_utf8();
+    while j < bytes.len() {
+        let c = src[j..].chars().next().expect("j 在界内,必有下一字符");
+        if c.is_alphanumeric() || c == '_' || c == '$' {
+            j += c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let word = &src[i..j];
+    let kw = match word {
+        "if" => Some(Kw::If),
+        "else" => Some(Kw::Else),
+        "for" => Some(Kw::For),
+        "in" => Some(Kw::In),
+        "of" => Some(Kw::Of),
+        "var" => Some(Kw::Var),
+        "let" => Some(Kw::Let),
+        "const" => Some(Kw::Const),
+        "function" => Some(Kw::Function),
+        "return" => Some(Kw::Return),
+        "break" => Some(Kw::Break),
+        "continue" => Some(Kw::Continue),
+        "while" => Some(Kw::While),
+        "true" => Some(Kw::True),
+        "false" => Some(Kw::False),
+        "null" => Some(Kw::Null),
+        "undefined" => Some(Kw::Undefined),
+        _ => None,
+    };
+    match kw {
+        Some(k) => Ok((Tok::Kw(k), j)),
+        None => Ok((Tok::Ident(word.to_string()), j)),
+    }
+}
+
+/// 分支 _（由 lex_one 分派）。
+fn lex_punctuation(src: &str, i: usize, ch: char) -> Result<(Tok, usize), String> {
+    let bytes = src.as_bytes();
+    let two: Option<(P, usize)> =
+        if i + 1 < bytes.len() && bytes[i].is_ascii() && bytes[i + 1].is_ascii() {
+            let two_chars = &src[i..i + 2];
+            match two_chars {
+                "==" => Some((P::EqEq, i + 2)),
+                "!=" => Some((P::NotEq, i + 2)),
+                "===" => Some((P::EqEqEq, i + 2)), // 下面三字符优先处理
+                "!==" => Some((P::NotEqEq, i + 2)),
+                "<=" => Some((P::Le, i + 2)),
+                ">=" => Some((P::Ge, i + 2)),
+                "&&" => Some((P::AndAnd, i + 2)),
+                "||" => Some((P::OrOr, i + 2)),
+                "+=" => Some((P::PlusEq, i + 2)),
+                "-=" => Some((P::MinusEq, i + 2)),
+                "*=" => Some((P::StarEq, i + 2)),
+                "/=" => Some((P::SlashEq, i + 2)),
+                "++" => Some((P::PlusPlus, i + 2)),
+                "--" => Some((P::MinusMinus, i + 2)),
+                "=>" => Some((P::Arrow, i + 2)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+    if let Some((p, end)) = two {
+        return Ok((Tok::P(p), end));
+    }
+    let three: Option<(P, usize)> = if i + 2 < bytes.len()
+        && bytes[i].is_ascii()
+        && bytes[i + 1].is_ascii()
+        && bytes[i + 2].is_ascii()
+    {
+        match &src[i..i + 3] {
+            "===" => Some((P::EqEqEq, i + 3)),
+            "!==" => Some((P::NotEqEq, i + 3)),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some((p, end)) = three {
+        return Ok((Tok::P(p), end));
+    }
+    let one = match ch {
+        '{' => P::LBrace,
+        '}' => P::RBrace,
+        '(' => P::LParen,
+        ')' => P::RParen,
+        '[' => P::LBracket,
+        ']' => P::RBracket,
+        ',' => P::Comma,
+        ';' => P::Semi,
+        '.' => P::Dot,
+        '?' => P::Question,
+        ':' => P::Colon,
+        '+' => P::Plus,
+        '-' => P::Minus,
+        '*' => P::Star,
+        '/' => P::Slash,
+        '%' => P::Percent,
+        '!' => P::Bang,
+        '=' => P::Assign,
+        '<' => P::Lt,
+        '>' => P::Gt,
+        _ => return Err(format!("无法识别的字符: {ch}")),
+    };
+    Ok((Tok::P(one), i + ch.len_utf8()))
 }
 
 /// 整段源码 → token 流(末尾追加 Eof)

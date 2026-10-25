@@ -12,6 +12,8 @@ import { ref, onMounted, computed } from 'vue';
 import { useAppStore } from '../store';
 import { storeToRefs } from 'pinia';
 import * as api from '../api';
+import PromptFloorsEditor from './prompt/PromptFloorsEditor.vue';
+import PromptTailSection from './prompt/PromptTailSection.vue';
 
 const store = useAppStore();
 const {
@@ -20,7 +22,6 @@ const {
   presetTailRole,
   reflectAdvicePrompt,
   reflectAdviceRole,
-  promptInject,
   worldBooks,
 } = storeToRefs(store);
 
@@ -36,12 +37,6 @@ const expandedBook = ref<string | null>(null);
 const bookEntries = ref<Record<string, api.WorldBookEntry[]>>({});
 /** 世界书条目发生过移动的书 id(保存时统一写回) */
 const dirtyBooks = ref<Set<string>>(new Set());
-
-const FLOOR_ROLE_LABELS: Record<api.FloorRole, string> = {
-  system: '系统提示词',
-  user: '用户',
-  assistant: '角色',
-};
 
 /** 世界书条目角色标签(空 = 自动) */
 const ENTRY_ROLE_LABELS: Record<string, string> = {
@@ -96,8 +91,6 @@ function moveSimple(key: string, dir: -1 | 1): void {
   [order[idx], order[to]] = [order[to], order[idx]];
   simpleDraft.value.order = [...order];
 }
-const editingFloorId = ref<string | null>(null);
-const dragFloorId = ref<string | null>(null);
 
 /** 位置4 agent 执行流程摘要(只读,编辑在设置面板) */
 const currentFlow = computed(() => {
@@ -177,58 +170,6 @@ function setEntryRole(bookId: string, e: api.WorldBookEntry, val: string): void 
   dirtyBooks.value.add(bookId);
 }
 
-// ===== 位置4 楼层排序 =====
-function moveFloor(id: string, dir: -1 | 1): void {
-  const fs = floorsDraft.value;
-  const idx = fs.findIndex((f) => f.id === id);
-  const to = idx + dir;
-  if (idx < 0 || to < 0 || to >= fs.length) return;
-  [fs[idx], fs[to]] = [fs[to], fs[idx]];
-  fs.forEach((f, i) => (f.order = i));
-}
-
-function addFloor(): void {
-  const id = (crypto.randomUUID?.() ?? `f-${Date.now()}`) as string;
-  floorsDraft.value.push({
-    id,
-    name: '新楼层',
-    content: '',
-    role: 'user',
-    position: 'system',
-    depth: 0,
-    enabled: true,
-    order: floorsDraft.value.length,
-  });
-  editingFloorId.value = id;
-}
-
-function removeFloor(id: string): void {
-  floorsDraft.value = floorsDraft.value.filter((f) => f.id !== id);
-  floorsDraft.value.forEach((f, i) => (f.order = i));
-  if (editingFloorId.value === id) editingFloorId.value = null;
-}
-
-function onFloorDragStart(e: DragEvent, id: string): void {
-  dragFloorId.value = id;
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-}
-function onFloorDragOver(e: DragEvent, id: string): void {
-  e.preventDefault();
-  if (!dragFloorId.value || dragFloorId.value === id) return;
-  const fs = floorsDraft.value;
-  const from = fs.findIndex((f) => f.id === dragFloorId.value);
-  const to = fs.findIndex((f) => f.id === id);
-  if (from < 0 || to < 0) return;
-  fs.splice(to, 0, fs.splice(from, 1)[0]);
-  fs.forEach((f, i) => (f.order = i));
-}
-function onFloorDrop(e: DragEvent): void {
-  e.preventDefault();
-  dragFloorId.value = null;
-}
-function onFloorDragEnd(): void {
-  dragFloorId.value = null;
-}
 
 // ===== 加载 =====
 onMounted(async () => {
@@ -421,62 +362,7 @@ async function saveAll(): Promise<void> {
               <p class="sv-note">启用项合成一条注入提示词拼入系统提示词末尾;↑↓ 可调整各项注入顺序。</p>
             </template>
 
-            <!-- 位置4 预设楼层(始终显示,可拖拽/↑↓ 排序;简单模式下不注入,切到复杂模式生效) -->
-            <p class="sv-note">
-              楼层按列表顺序注入(系统角色进系统提示词,用户/角色紧随其后);可拖拽或 ↑↓ 排序,消息角色可自由选择。
-              <template v-if="injectMode === 'simple'"><b>当前为简单模式,楼层不注入</b>——切到「复杂」即生效。</template>
-              <code v-pre>{{setvar::键::值}}</code> 持久化到会话变量,后续楼层可
-              <code v-pre>{{getvar::键}}</code> 读取。
-            </p>
-            <div v-if="!floorsDraft.length" class="sv-note inject-empty">尚未添加楼层,点击下方「新增楼层」。</div>
-            <div
-              v-for="floor in floorsDraft"
-              :key="floor.id"
-              class="floor-row"
-              :class="{ dragging: dragFloorId === floor.id }"
-              draggable="true"
-              @dragstart="onFloorDragStart($event, floor.id)"
-              @dragover="onFloorDragOver($event, floor.id)"
-              @drop="onFloorDrop"
-              @dragend="onFloorDragEnd"
-            >
-              <span class="floor-grip" title="拖拽排序">⋮⋮</span>
-              <button
-                class="sv-btn ghost"
-                :class="{ 'sv-btn-on': floor.enabled }"
-                :title="floor.enabled ? '点击停用' : '点击启用'"
-                @click="floor.enabled = !floor.enabled"
-              >
-                {{ floor.enabled ? '开' : '关' }}
-              </button>
-              <input v-model="floor.name" type="text" class="sv-input floor-name" placeholder="楼层名称" spellcheck="false" />
-              <select v-model="floor.role" class="sv-select floor-select" title="消息角色">
-                <option v-for="(label, val) in FLOOR_ROLE_LABELS" :key="val" :value="val">{{ label }}</option>
-              </select>
-              <div class="floor-actions">
-                <button class="sv-btn ghost sv-btn-square" title="上移" @click="moveFloor(floor.id, -1)">↑</button>
-                <button class="sv-btn ghost sv-btn-square" title="下移" @click="moveFloor(floor.id, 1)">↓</button>
-                <button
-                  class="sv-btn ghost sv-btn-square"
-                  :title="editingFloorId === floor.id ? '收起编辑' : '编辑内容'"
-                  @click="editingFloorId = editingFloorId === floor.id ? null : floor.id"
-                >
-                  ✎
-                </button>
-                <button class="sv-btn danger sv-btn-square" title="删除楼层" @click="removeFloor(floor.id)">✕</button>
-              </div>
-              <textarea
-                v-if="editingFloorId === floor.id"
-                v-model="floor.content"
-                rows="5"
-                class="sv-input floor-content"
-                placeholder="楼层内容,支持酒馆宏。例如:{{char}}内心提醒:{{setvar::场景::酒馆}}今晚在{{getvar::场景}}见面。"
-                spellcheck="false"
-              />
-            </div>
-            <div class="sv-btn-row">
-              <button class="sv-btn ghost sv-btn-fill" @click="addFloor">＋ 新增楼层</button>
-            </div>
+            <PromptFloorsEditor v-model="floorsDraft" :simple-mode="injectMode === 'simple'" />
 
             <!-- agent 执行流程摘要 -->
             <div class="sv-inp-row">
@@ -635,62 +521,12 @@ async function saveAll(): Promise<void> {
           </div>
         </div>
 
-        <!-- 位置0 尾部 -->
-        <div class="sv-field">
-          <div class="sv-field-label"><span class="sv-supreme green" /> 位置0 · 尾部</div>
-          <div class="sv-stack">
-            <div class="pm-summary pm-disabled">
-              Dvar 变量提示词 — 即将上线(本次仅留位;届时变量状态将以尾部块注入)
-            </div>
-            <div class="sv-inp-row">
-              <label class="sv-inp-tag">预设尾部</label>
-              <button
-                class="sv-btn ghost"
-                :class="{ 'sv-btn-on': presetTailPrompt.trim() !== '' }"
-                @click="presetTailPrompt = presetTailPrompt.trim() ? '' : '以上是当前世界的补充设定,请结合以上全部内容继续。'"
-              >
-                {{ presetTailPrompt.trim() ? '已启用' : '已关闭' }}
-              </button>
-              <select v-model="presetTailRole" class="sv-select" title="注入角色:角色 = 追加为独立角色消息,用户 = 并入最新用户消息尾部">
-                <option value="user">用户</option>
-                <option value="assistant">角色</option>
-              </select>
-            </div>
-            <textarea
-              v-model="presetTailPrompt"
-              rows="3"
-              class="sv-input"
-              placeholder="复杂模式预设尾部提示词:追加到最新用户消息尾部(位置1 激发之后)。支持酒馆宏。"
-              spellcheck="false"
-            />
-            <div class="sv-inp-row">
-              <label class="sv-inp-tag">反思建议</label>
-              <button
-                class="sv-btn ghost"
-                :class="{ 'sv-btn-on': reflectAdvicePrompt.trim() !== '' }"
-                @click="reflectAdvicePrompt = reflectAdvicePrompt.trim() ? '' : '修正后请继续保持角色设定与世界观一致。'"
-              >
-                {{ reflectAdvicePrompt.trim() ? '含补充' : '无补充' }}
-              </button>
-              <select v-model="reflectAdviceRole" class="sv-select" title="注入角色:角色 = 追加为独立角色消息,用户 = 并入最新用户消息尾部">
-                <option value="user">用户</option>
-                <option value="assistant">角色</option>
-              </select>
-            </div>
-            <div class="pm-summary pm-disabled">
-              反思未通过且放弃重试时,引擎自动生成本次改进建议(≤200 token,内容随失败原因变化),
-              注入在位置1 激发之后、预设尾部之前 —— 不再位于最末尾,主体建议无需手填。
-            </div>
-            <textarea
-              v-model="reflectAdvicePrompt"
-              rows="2"
-              class="sv-input"
-              placeholder="可选补充说明:附加在自动生成的改进建议之后(留空 = 仅自动建议)。"
-              spellcheck="false"
-            />
-            <p class="sv-note">自上而下依次注入:位置1 激发 → 反思反馈(仅反思失败时自动注入)→ 预设尾部。</p>
-          </div>
-        </div>
+        <PromptTailSection
+          v-model:preset-tail-prompt="presetTailPrompt"
+          v-model:preset-tail-role="presetTailRole"
+          v-model:reflect-advice-prompt="reflectAdvicePrompt"
+          v-model:reflect-advice-role="reflectAdviceRole"
+        />
       </div>
 
       <!-- 底部 -->

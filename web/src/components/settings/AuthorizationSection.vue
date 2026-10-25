@@ -207,7 +207,7 @@ const grantedCount = computed(() => grants.value.session.length + grants.value.r
   border: 1px solid var(--sv-line, #d8d8d8); background: transparent;
   display: flex; flex-direction: column; gap: 2px;
 }
-.sv-auth-mode-card.active { border-color: #111; box-shadow: inset 0 -2px 0 #111; }
+.sv-auth-mode-card.active { border-color: var(--sv-ink); box-shadow: inset 0 -2px 0 var(--sv-ink); }
 .sv-auth-mode-card b { font-size: 13px; }
 .sv-auth-mode-card span { font-size: 11px; opacity: 0.7; }
 .sv-auth-tools { max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }

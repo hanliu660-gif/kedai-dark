@@ -12,6 +12,41 @@ use uuid::Uuid;
 /// 内置「系统助手」角色 id(稳定,幂等;无提示词,作为默认助手使用)
 pub const BUILTIN_SYSTEM_ID: &str = "builtin-system";
 
+/// `characters` 表的插入列(顺序即 SQL 占位符顺序,勿随意调整)。
+///
+/// 这张表的列集合在 V2/V3 迁移中保持稳定,插入语句只有这一种形状;此前
+/// `seed_default_character` 与 `upload` 各写了一份字面量 SQL,改列就得同时改两处。
+struct NewCharacterRow<'a> {
+    id: &'a str,
+    name: &'a str,
+    chara_name: &'a str,
+    description: &'a str,
+    file_path: String,
+    avatar_path: Option<&'a str>,
+    data_raw: String,
+    created_at: String,
+}
+
+impl NewCharacterRow<'_> {
+    /// 写一行 `characters`。返回 `rusqlite::Result` 而非 `Result<_, String>`,
+    /// 让调用方各自决定「忽略错误」还是「转成中文错误信息」。
+    fn insert(&self, conn: &rusqlite::Connection) -> rusqlite::Result<usize> {
+        conn.execute(
+            "INSERT INTO characters (id, name, chara_name, description, file_path, avatar_path, data_raw, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                self.id,
+                self.name,
+                self.chara_name,
+                self.description,
+                self.file_path,
+                self.avatar_path,
+                self.data_raw,
+                self.created_at
+            ],
+        )
+    }
+}
+
 /// 从 data_raw 提取备用开场列表(alternate_greetings):取非空字符串,空数组返回 None
 fn extract_alternate_greetings(data_raw: &Value) -> Option<Vec<String>> {
     let arr = data_raw.get("alternate_greetings")?.as_array()?;
@@ -144,19 +179,17 @@ impl CharacterService {
             serde_json::to_vec_pretty(&data_raw).unwrap_or_default(),
         );
         let data_raw_str = serde_json::to_string(&data_raw).unwrap_or_else(|_| "{}".into());
-        let _ = self.db.write().execute(
-            "INSERT INTO characters (id, name, chara_name, description, file_path, avatar_path, data_raw, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                BUILTIN_SYSTEM_ID,
-                "system",
-                "系统助手",
-                "",
-                file_path.to_string_lossy().to_string(),
-                Option::<String>::None,
-                data_raw_str,
-                created_at
-            ],
-        );
+        let _ = NewCharacterRow {
+            id: BUILTIN_SYSTEM_ID,
+            name: "system",
+            chara_name: "系统助手",
+            description: "",
+            file_path: file_path.to_string_lossy().to_string(),
+            avatar_path: None,
+            data_raw: data_raw_str,
+            created_at,
+        }
+        .insert(&self.db.write());
     }
 
     /// 幂等迁移存量 V3 角色卡:V3 卡正文位于 data 子对象,旧版本导入时顶层 V2 字段为空,
@@ -257,19 +290,17 @@ impl CharacterService {
         let created_at = now_iso();
 
         let conn = self.db.write();
-        conn.execute(
-            "INSERT INTO characters (id, name, chara_name, description, file_path, avatar_path, data_raw, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                id,
-                name,
-                chara_name,
-                description,
-                file_path.to_string_lossy(),
-                avatar_path.as_deref(),
-                data_raw,
-                created_at
-            ],
-        )
+        NewCharacterRow {
+            id: &id,
+            name: &name,
+            chara_name: &chara_name,
+            description: &description,
+            file_path: file_path.to_string_lossy().to_string(),
+            avatar_path: avatar_path.as_deref(),
+            data_raw,
+            created_at: created_at.clone(),
+        }
+        .insert(&conn)
         .map_err(|e| format!("写数据库失败: {e}"))?;
 
         let regex_scripts = crate::parsing::regex_script::extract_regex_scripts(&parsed.data);

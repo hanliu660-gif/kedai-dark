@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCacheDiagnostics } from './diagnostics';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 // 样例数据与后端 server-rs/src/services/cache_diagnostics.rs 测试同源:
 // hit 1300 / miss 700 / completion 1200(单价 0.27/2/8 元每百万)
 // → hit_rate 0.65、cost 0.011351、saved 0.002249
@@ -29,7 +30,7 @@ const sample = {
 /** mock 两跳 fetch:第一跳 bootstrap 取 token,后续为目标请求 */
 function mockFetchSequence(...responses: Array<{ body: unknown; status?: number }>): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   for (const r of responses) {
     spy.mockResolvedValueOnce(new Response(JSON.stringify(r.body), { status: r.status ?? 200 }));
   }

@@ -132,7 +132,9 @@
     "stores": { "generation": "L2", "responsibility": "Pinia 状态编排:唯一的状态变更入口(action)" },
     "composables": { "generation": "L2", "responsibility": "组合式编排逻辑(可复用业务流程)" },
     "components": { "generation": "L3", "responsibility": "UI 组件(展示层;不承载业务规则)" },
-    "sandbox": { "generation": "L3", "responsibility": "角色卡脚本沙箱宿主(iframe 生命周期/协议/净化)" }
+    "sandbox": { "generation": "L3", "responsibility": "角色卡脚本沙箱宿主(iframe 生命周期/协议/净化)" },
+    "styles": { "generation": "L1", "responsibility": "样式层:入口 style.css 只放 @import,styles/*.css 按既有分节拆分(顺序即层叠顺序,内容零改动)" },
+    "test": { "generation": "L1", "responsibility": "测试专用辅助(纯函数造假响应体;不被生产代码 import,仅 .test.ts 引用)" }
   },
   "frontendEntryFiles": {
     "App.vue": { "generation": "entry", "responsibility": "根组件与弹窗装配" },
@@ -150,6 +152,7 @@
     "taskResult.ts": { "generation": "L1", "responsibility": "任务 result 拆段契约(与 task_engine team/plan 输出标记对锁)" },
     "taskStatus.ts": { "generation": "L1", "responsibility": "三类任务状态映射与配色(与后端状态枚举对锁)" },
     "contextStats.ts": { "generation": "L1", "responsibility": "上下文健康度与推荐设置纯函数" },
+    "theme.ts": { "generation": "L1", "responsibility": "主题三态偏好(localStorage 持久化 + data-theme 写入;只依赖 platform 做 Android 判定,默认值须与 public/theme-boot.js 对锁)" },
     "devTools.ts": { "generation": "L1", "responsibility": "开发者工具纯函数(事件类型映射/过滤/截断)" },
     "exportFile.ts": { "generation": "L1", "responsibility": "导出文件保存抽象(平台分支:Android 分享/桌面对话框/浏览器下载)" },
     "lastPosition.ts": { "generation": "L1", "responsibility": "上次浏览位置 localStorage 存储层(纯存储,零依赖)" },

@@ -8,6 +8,7 @@ import {
 } from './sessions';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 // 会话 / 消息 API 形状闸门(批次 1)。fetchHistory 直接驱动聊天窗口渲染,
 // listSessions 落侧栏列表;形状不对时 undefined 会让窗口空白且无从提示。
 
@@ -20,7 +21,7 @@ function mock(body: unknown, status = 200): void {
   resetApiTokenForTest();
   const spy = vi.spyOn(globalThis, 'fetch');
   spy.mockReset();
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('t'));
   spy.mockResolvedValueOnce(new Response(JSON.stringify(body), { status }));
 }
 

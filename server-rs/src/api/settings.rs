@@ -289,330 +289,13 @@ pub async fn update_settings(
     };
     {
         let s = &mut candidate;
-
-        // 连接信息:全局共享一份
-        if let Some(v) = &body.openai_base_url {
-            // 自动补全格式:补协议、补 /v1(缺 /v1 会导致 /models 请求 404)
-            let t = normalize_base_url(v);
-            if !t.is_empty() {
-                s.openai_base_url = t;
-            }
+        // 校验失败要回原样的 4xx「字段 + 文案」响应：helper 只把文案（String）带出来，
+        // 这里再用同一个 validation() 造响应，错误体的结构与顺序与原先内联写法完全一致。
+        if let Err(msg) = apply_shared_patch(s, &body) {
+            return validation(msg);
         }
-        if let Some(v) = &body.openai_api_key {
-            let t = v.trim().to_string();
-            if !t.is_empty() {
-                s.openai_api_key = t;
-            }
-        }
-        if let Some(v) = &body.model {
-            let t = v.trim().to_string();
-            if !t.is_empty() {
-                s.model = t;
-            }
-        }
-        // 向量化配置:与连接信息同属全局共享层(不按模式隔离)
-        if let Some(v) = body.embedding_enabled {
-            s.embedding_enabled = v;
-        }
-        if let Some(v) = &body.embedding_base_url {
-            let t = normalize_base_url(v);
-            // 允许清空(关闭向量化时用户可能想抹掉地址)
-            s.embedding_base_url = if t.is_empty() { String::new() } else { t };
-        }
-        if let Some(v) = &body.embedding_api_key {
-            let t = v.trim().to_string();
-            if !t.is_empty() {
-                s.embedding_api_key = t;
-            }
-        }
-        if let Some(v) = &body.embedding_model {
-            s.embedding_model = v.trim().to_string();
-        }
-        if let Some(v) = body.embedding_dim {
-            if v == 0 || (16..=8192).contains(&v) {
-                s.embedding_dim = v;
-            } else {
-                return validation("embedding_dim 必须为 0(自动)或 16..=8192");
-            }
-        }
-
-        // 生成参数 + Agent 配置:task 模式写 task 覆盖层;roleplay 模式写扁平字段
-        // (引擎直接读扁平字段,故 roleplay 不落覆盖层)。校验逻辑两模式一致。
-        {
-            let is_task = mode == AppMode::Task;
-            // 通过校验后按模式写入:task 覆盖层或扁平字段。
-            macro_rules! apply {
-                ($s:expr, $is_task:expr, $field:ident, $value:expr) => {{
-                    let v = $value;
-                    if $is_task {
-                        $s.task.$field = Some(v);
-                    } else {
-                        $s.$field = v;
-                    }
-                }};
-            }
-            if let Some(v) = body.default_temperature {
-                if (0.0..=2.0).contains(&v) {
-                    apply!(s, is_task, default_temperature, v);
-                }
-            }
-            if let Some(v) = body.default_top_p {
-                if (0.0..=1.0).contains(&v) {
-                    apply!(s, is_task, default_top_p, v);
-                }
-            }
-            if let Some(v) = body.default_max_tokens {
-                if v == 0 || v > 131_072 {
-                    return validation("default_max_tokens 必须在 1..=131072");
-                }
-                apply!(s, is_task, default_max_tokens, v);
-            }
-            if let Some(v) = body.max_context_tokens {
-                if !(65_536..=1_048_576).contains(&v) {
-                    return validation("max_context_tokens 必须在 65536..=1048576(64K~1M)");
-                }
-                apply!(s, is_task, max_context_tokens, v);
-            }
-            // Agent 系统提示词:允许清空(空 = 用内置默认)。
-            // 类型级模式隔离(WP7):roleplay 写 RoleplayPromptConfig 扁平字段,
-            // task 写 Option<TaskPromptConfig> 覆盖层;两分支类型不同源,不走通用 apply! 宏。
-            if let Some(v) = &body.agent_system_prompt {
-                if is_task {
-                    s.task.agent_system_prompt = Some(
-                        crate::services::settings_service::TaskPromptConfig(v.clone()),
-                    );
-                } else {
-                    s.agent_system_prompt =
-                        crate::services::settings_service::RoleplayPromptConfig(v.clone());
-                }
-            }
-            // 搜索端点:允许清空(空 = 用默认 DDG 端点)
-            if let Some(v) = &body.search_endpoint {
-                let t = v.trim().to_string();
-                let endpoint = if t.is_empty() {
-                    DEFAULT_SEARCH_ENDPOINT.to_string()
-                } else {
-                    t
-                };
-                apply!(s, is_task, search_endpoint, endpoint);
-            }
-            // mvu 变量注入位置:仅接受 system / user_tail
-            if let Some(v) = &body.mvu_vars_position {
-                let t = v.trim().to_string();
-                if t == "system" || t == "user_tail" {
-                    apply!(s, is_task, mvu_vars_position, t);
-                }
-            }
-            // 反思提示词:允许清空(空 = 回退机械规则检查)
-            if let Some(v) = &body.reflect_prompt {
-                apply!(s, is_task, reflect_prompt, v.clone());
-            }
-            // 预设尾部提示词:允许清空(空 = 禁用位置0 预设尾部)
-            if let Some(v) = &body.preset_tail_prompt {
-                apply!(s, is_task, preset_tail_prompt, v.clone());
-            }
-            // 预设尾部注入角色:仅接受 user / assistant
-            if let Some(v) = &body.preset_tail_role {
-                let t = v.trim().to_string();
-                if t == "user" || t == "assistant" {
-                    apply!(s, is_task, preset_tail_role, t);
-                }
-            }
-            // 反思失败建议提示词:允许清空(空 = 禁用)
-            if let Some(v) = &body.reflect_advice_prompt {
-                apply!(s, is_task, reflect_advice_prompt, v.clone());
-            }
-            // 反思建议注入角色:仅接受 user / assistant
-            if let Some(v) = &body.reflect_advice_role {
-                let t = v.trim().to_string();
-                if t == "user" || t == "assistant" {
-                    apply!(s, is_task, reflect_advice_role, t);
-                }
-            }
-            // 授权模式(三档;旧 bypass_mode 仍接受并映射为对应档位)
-            if let Some(v) = &body.authorization_mode {
-                let parsed = match crate::tools::permissions::AuthorizationMode::parse(v.trim()) {
-                    Some(m) => m,
-                    None => {
-                        return validation("authorization_mode 仅支持 strict / loose / bypass");
-                    }
-                };
-                apply!(s, is_task, authorization_mode, parsed);
-            }
-            // 旧字段兼容:bypass_mode=true → bypass,false → strict
-            if let Some(v) = body.bypass_mode {
-                let mapped = if v {
-                    crate::tools::permissions::AuthorizationMode::Bypass
-                } else {
-                    crate::tools::permissions::AuthorizationMode::Strict
-                };
-                apply!(s, is_task, authorization_mode, mapped);
-            }
-            // 「始终需授权」清单:校验工具名存在性,未知名返回 warning(不阻塞保存)
-            if let Some(v) = &body.bypass_blacklist {
-                apply!(s, is_task, bypass_blacklist, v.clone());
-            }
-            // 授权等待超时(秒):30..=1800
-            if let Some(v) = body.tool_authorization_timeout_secs {
-                if !(30..=1800).contains(&v) {
-                    return validation("tool_authorization_timeout_secs 必须在 30..=1800");
-                }
-                apply!(s, is_task, tool_authorization_timeout_secs, v);
-            }
-            // 任务模式工具策略:all / deny_dangerous / allowlist
-            if let Some(v) = &body.task_tool_policy {
-                if !matches!(v.as_str(), "all" | "deny_dangerous" | "allowlist") {
-                    return validation("task_tool_policy 仅支持 all / deny_dangerous / allowlist");
-                }
-                apply!(s, is_task, task_tool_policy, v.clone());
-            }
-            if let Some(v) = &body.task_tool_allowlist {
-                apply!(s, is_task, task_tool_allowlist, v.clone());
-            }
-            // 工具循环轮次上限:仅接受 1..=200(防止误填 0 或超大值打爆模型请求)
-            if let Some(v) = body.max_tool_rounds {
-                if !(1..=200).contains(&v) {
-                    return validation("max_tool_rounds 必须在 1..=200");
-                }
-                apply!(s, is_task, max_tool_rounds, v);
-            }
-            // HTML 渲染开关
-            if let Some(v) = body.render_html {
-                apply!(s, is_task, render_html, v);
-            }
-            // 上下文压缩模式:仅接受 off / manual / auto
-            if let Some(v) = &body.compaction_mode {
-                let t = v.trim().to_string();
-                if t == "off" || t == "manual" || t == "auto" {
-                    apply!(s, is_task, compaction_mode, t);
-                }
-            }
-            // 上下文压缩阈值:仅接受 0.5..=0.95
-            if let Some(v) = body.compaction_threshold {
-                if !(0.5..=0.95).contains(&v) {
-                    return validation("compaction_threshold 必须在 0.5..=0.95");
-                }
-                apply!(s, is_task, compaction_threshold, v);
-            }
-            // 压缩保留条数(缓存感知管线):2..=200,缺省保持不变
-            if let Some(v) = body.compaction_keep_recent {
-                if (2..=200).contains(&v) {
-                    apply!(s, is_task, compaction_keep_recent, v);
-                }
-            }
-            // snip 零成本裁剪阈值(字节):0 = 禁用,1MB 上限
-            if let Some(v) = body.compaction_snip_bytes {
-                if v <= 1_048_576 {
-                    apply!(s, is_task, compaction_snip_bytes, v);
-                }
-            }
-            // LLM 请求快照开关
-            if let Some(v) = body.llm_request_log {
-                apply!(s, is_task, llm_request_log, v);
-            }
-            // 记忆蒸馏开关(落地项 2)
-            if let Some(v) = body.memory_distill_enabled {
-                apply!(s, is_task, memory_distill_enabled, v);
-            }
-            // 记忆注入上限(0..=50;0 = 关闭注入,越界忽略)
-            if let Some(v) = body.memory_inject_limit {
-                if v <= 50 {
-                    apply!(s, is_task, memory_inject_limit, v);
-                }
-            }
-            // 记忆槽字符预算(0..=20000;0 = 不限制,越界忽略)
-            if let Some(v) = body.memory_inject_char_budget {
-                if v <= 20_000 {
-                    apply!(s, is_task, memory_inject_char_budget, v);
-                }
-            }
-            // 每角色记忆容量上限(0..=10000;0 = 不淘汰,越界忽略)
-            if let Some(v) = body.memory_max_entries {
-                if v <= 10_000 {
-                    apply!(s, is_task, memory_max_entries, v);
-                }
-            }
-            // 技能渐进披露开关(落地项 3)
-            if let Some(v) = body.skill_progressive_disclosure {
-                apply!(s, is_task, skill_progressive_disclosure, v);
-            }
-            // 回退快照开关(批次 6.1)
-            if let Some(v) = body.undo_enabled {
-                apply!(s, is_task, undo_enabled, v);
-            }
-            // 子智能体嵌套深度上限(1..=4,越界拒绝)
-            if let Some(v) = body.subagent_max_depth {
-                if !(1..=4).contains(&v) {
-                    return validation("subagent_max_depth 必须在 1..=4");
-                }
-                apply!(s, is_task, subagent_max_depth, v);
-            }
-            // 子智能体并发上限(1..=16,越界拒绝)
-            if let Some(v) = body.subagent_max_concurrency {
-                if !(1..=16).contains(&v) {
-                    return validation("subagent_max_concurrency 必须在 1..=16");
-                }
-                apply!(s, is_task, subagent_max_concurrency, v);
-            }
-            // 子智能体结果字符上限(500..=8000,越界拒绝)
-            if let Some(v) = body.subagent_result_max_chars {
-                if !(500..=8000).contains(&v) {
-                    return validation("subagent_result_max_chars 必须在 500..=8000");
-                }
-                apply!(s, is_task, subagent_result_max_chars, v);
-            }
-            // MCP 总开关(批次 6.2):仅启动时装配,运行期改动不回溯重连,重启后生效
-            if let Some(v) = body.mcp_enabled {
-                apply!(s, is_task, mcp_enabled, v);
-            }
-            // MCP 服务器列表(全量替换):卫生清理同 load(trim 名称/命令,丢弃不可用条目)
-            if let Some(v) = &body.mcp_servers {
-                let mut servers = v.clone();
-                servers.retain_mut(|srv| {
-                    srv.name = srv.name.trim().to_string();
-                    srv.command = srv.command.trim().to_string();
-                    !srv.name.is_empty() && !srv.command.is_empty()
-                });
-                apply!(s, is_task, mcp_servers, servers);
-            }
-            // 命令执行开关(阶段 E):bool 免校验。这些是**全局**能力开关,
-            // 不随 roleplay/task 覆盖层分叉(exec: 权限是进程级事实,不是模式偏好),
-            // 故直接写扁平字段而非走 apply!(is_task,...)。
-            if let Some(v) = body.exec_enabled {
-                s.exec_enabled = v;
-            }
-            if let Some(v) = body.exec_allow_root {
-                s.exec_allow_root = v;
-            }
-            if let Some(v) = body.exec_allow_shizuku {
-                s.exec_allow_shizuku = v;
-            }
-            if let Some(v) = body.exec_allow_sandbox {
-                s.exec_allow_sandbox = v;
-            }
-            // 执行者人设完整开关(R3a;bool 免校验,task 模式写覆盖层)
-            if let Some(v) = body.task_persona_full {
-                apply!(s, is_task, task_persona_full, v);
-            }
-            // 任务模式提示词注入继承开关(2026-09-10 实测修复;bool 免校验,task 写覆盖层)
-            if let Some(v) = body.task_prompt_inject_enabled {
-                apply!(s, is_task, task_prompt_inject_enabled, v);
-            }
-            // 工具历史回灌上限(R3b):扁平全局字段(引擎 run_tool_loop 直读扁平值,
-            // 不入模式覆盖层——任务/聊天工具循环共用同一上限,与 subagent 参数的
-            // 引擎侧消费口径一致);越界拒绝,与 load 钳制区间一致
-            if let Some(v) = body.tool_history_keep_rounds {
-                if !(1..=32).contains(&v) {
-                    return validation("tool_history_keep_rounds 必须在 1..=32");
-                }
-                s.tool_history_keep_rounds = v;
-            }
-            if let Some(v) = body.tool_history_budget_tokens {
-                if v != 0 && !(1024..=1_048_576).contains(&v) {
-                    return validation("tool_history_budget_tokens 须为 0(禁用)或 1024..=1048576");
-                }
-                s.tool_history_budget_tokens = v;
-            }
+        if let Err(msg) = apply_mode_patch(s, mode, &body) {
+            return validation(msg);
         }
     }
 
@@ -685,6 +368,420 @@ pub async fn update_settings(
 
     Json(json!({ "ok": true, "settings": settings_json(&candidate.for_mode(mode)) }))
         .into_response()
+}
+// ===== update_settings 的拆分实现（2026-10-25）=====
+// 原本是一个 413 行的 handler（clippy::too_many_lines 常客）。这里按「共享层 / 生成参数 /
+// 提示词 / 授权与工具循环 / 上下文与日志 / 记忆与技能 / 子智能体 / MCP / 全局开关」切成 9 段，
+// 代码逐行原样搬运：校验文案、校验顺序、写入目标都不变；新增字段只改对应那一段。
+
+/// 通过校验后按模式写入：task 走覆盖层，其余模式写扁平字段。
+macro_rules! scoped_apply {
+    ($s:expr, $is_task:expr, $field:ident, $value:expr) => {{
+        let v = $value;
+        if $is_task {
+            $s.task.$field = Some(v);
+        } else {
+            $s.$field = v;
+        }
+    }};
+}
+
+/// 共享层：连接信息（Base URL / Key / 模型）与向量化配置，不按模式隔离。
+fn apply_shared_patch(s: &mut RuntimeSettings, body: &UpdateSettingsBody) -> Result<(), String> {
+    // 连接信息:全局共享一份
+    if let Some(v) = &body.openai_base_url {
+        // 自动补全格式:补协议、补 /v1(缺 /v1 会导致 /models 请求 404)
+        let t = normalize_base_url(v);
+        if !t.is_empty() {
+            s.openai_base_url = t;
+        }
+    }
+    if let Some(v) = &body.openai_api_key {
+        let t = v.trim().to_string();
+        if !t.is_empty() {
+            s.openai_api_key = t;
+        }
+    }
+    if let Some(v) = &body.model {
+        let t = v.trim().to_string();
+        if !t.is_empty() {
+            s.model = t;
+        }
+    }
+    // 向量化配置:与连接信息同属全局共享层(不按模式隔离)
+    if let Some(v) = body.embedding_enabled {
+        s.embedding_enabled = v;
+    }
+    if let Some(v) = &body.embedding_base_url {
+        let t = normalize_base_url(v);
+        // 允许清空(关闭向量化时用户可能想抹掉地址)
+        s.embedding_base_url = if t.is_empty() { String::new() } else { t };
+    }
+    if let Some(v) = &body.embedding_api_key {
+        let t = v.trim().to_string();
+        if !t.is_empty() {
+            s.embedding_api_key = t;
+        }
+    }
+    if let Some(v) = &body.embedding_model {
+        s.embedding_model = v.trim().to_string();
+    }
+    if let Some(v) = body.embedding_dim {
+        if v == 0 || (16..=8192).contains(&v) {
+            s.embedding_dim = v;
+        } else {
+            return Err("embedding_dim 必须为 0(自动)或 16..=8192".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// 模式相关部分：算出 is_task 后逐段调用，任一段校验失败即整体返回。
+fn apply_mode_patch(
+    s: &mut RuntimeSettings,
+    mode: AppMode,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    let is_task = mode == AppMode::Task;
+    apply_generation(s, is_task, body)?;
+    apply_prompts(s, is_task, body)?;
+    apply_permissions(s, is_task, body)?;
+    apply_runtime_limits(s, is_task, body)?;
+    apply_memory_skills(s, is_task, body)?;
+    apply_subagents(s, is_task, body)?;
+    apply_mcp(s, is_task, body)?;
+    apply_global_only(s, body)?;
+    Ok(())
+}
+
+/// 生成参数与 Agent 系统提示词（两模式校验一致，写入目标不同）。
+fn apply_generation(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    if let Some(v) = body.default_temperature {
+        if (0.0..=2.0).contains(&v) {
+            scoped_apply!(s, is_task, default_temperature, v);
+        }
+    }
+    if let Some(v) = body.default_top_p {
+        if (0.0..=1.0).contains(&v) {
+            scoped_apply!(s, is_task, default_top_p, v);
+        }
+    }
+    if let Some(v) = body.default_max_tokens {
+        if v == 0 || v > 131_072 {
+            return Err("default_max_tokens 必须在 1..=131072".to_string());
+        }
+        scoped_apply!(s, is_task, default_max_tokens, v);
+    }
+    if let Some(v) = body.max_context_tokens {
+        if !(65_536..=1_048_576).contains(&v) {
+            return Err("max_context_tokens 必须在 65536..=1048576(64K~1M)".to_string());
+        }
+        scoped_apply!(s, is_task, max_context_tokens, v);
+    }
+    // Agent 系统提示词:允许清空(空 = 用内置默认)。
+    // 类型级模式隔离(WP7):roleplay 写 RoleplayPromptConfig 扁平字段,
+    // task 写 Option<TaskPromptConfig> 覆盖层;两分支类型不同源,不走通用 apply! 宏。
+    if let Some(v) = &body.agent_system_prompt {
+        if is_task {
+            s.task.agent_system_prompt = Some(crate::services::settings_service::TaskPromptConfig(
+                v.clone(),
+            ));
+        } else {
+            s.agent_system_prompt =
+                crate::services::settings_service::RoleplayPromptConfig(v.clone());
+        }
+    }
+    Ok(())
+}
+
+/// 搜索端点 / mvu 注入位置 / 反思与预设尾部提示词。
+fn apply_prompts(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // 搜索端点:允许清空(空 = 用默认 DDG 端点)
+    if let Some(v) = &body.search_endpoint {
+        let t = v.trim().to_string();
+        let endpoint = if t.is_empty() {
+            DEFAULT_SEARCH_ENDPOINT.to_string()
+        } else {
+            t
+        };
+        scoped_apply!(s, is_task, search_endpoint, endpoint);
+    }
+    // mvu 变量注入位置:仅接受 system / user_tail
+    if let Some(v) = &body.mvu_vars_position {
+        let t = v.trim().to_string();
+        if t == "system" || t == "user_tail" {
+            scoped_apply!(s, is_task, mvu_vars_position, t);
+        }
+    }
+    // 反思提示词:允许清空(空 = 回退机械规则检查)
+    if let Some(v) = &body.reflect_prompt {
+        scoped_apply!(s, is_task, reflect_prompt, v.clone());
+    }
+    // 预设尾部提示词:允许清空(空 = 禁用位置0 预设尾部)
+    if let Some(v) = &body.preset_tail_prompt {
+        scoped_apply!(s, is_task, preset_tail_prompt, v.clone());
+    }
+    // 预设尾部注入角色:仅接受 user / assistant
+    if let Some(v) = &body.preset_tail_role {
+        let t = v.trim().to_string();
+        if t == "user" || t == "assistant" {
+            scoped_apply!(s, is_task, preset_tail_role, t);
+        }
+    }
+    // 反思失败建议提示词:允许清空(空 = 禁用)
+    if let Some(v) = &body.reflect_advice_prompt {
+        scoped_apply!(s, is_task, reflect_advice_prompt, v.clone());
+    }
+    // 反思建议注入角色:仅接受 user / assistant
+    if let Some(v) = &body.reflect_advice_role {
+        let t = v.trim().to_string();
+        if t == "user" || t == "assistant" {
+            scoped_apply!(s, is_task, reflect_advice_role, t);
+        }
+    }
+    Ok(())
+}
+
+/// 授权模式、授权超时、任务工具策略、工具循环轮次上限。
+fn apply_permissions(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // 授权模式(三档;旧 bypass_mode 仍接受并映射为对应档位)
+    if let Some(v) = &body.authorization_mode {
+        let parsed = match crate::tools::permissions::AuthorizationMode::parse(v.trim()) {
+            Some(m) => m,
+            None => {
+                return Err("authorization_mode 仅支持 strict / loose / bypass".to_string());
+            }
+        };
+        scoped_apply!(s, is_task, authorization_mode, parsed);
+    }
+    // 旧字段兼容:bypass_mode=true → bypass,false → strict
+    if let Some(v) = body.bypass_mode {
+        let mapped = if v {
+            crate::tools::permissions::AuthorizationMode::Bypass
+        } else {
+            crate::tools::permissions::AuthorizationMode::Strict
+        };
+        scoped_apply!(s, is_task, authorization_mode, mapped);
+    }
+    // 「始终需授权」清单:校验工具名存在性,未知名返回 warning(不阻塞保存)
+    if let Some(v) = &body.bypass_blacklist {
+        scoped_apply!(s, is_task, bypass_blacklist, v.clone());
+    }
+    // 授权等待超时(秒):30..=1800
+    if let Some(v) = body.tool_authorization_timeout_secs {
+        if !(30..=1800).contains(&v) {
+            return Err("tool_authorization_timeout_secs 必须在 30..=1800".to_string());
+        }
+        scoped_apply!(s, is_task, tool_authorization_timeout_secs, v);
+    }
+    // 任务模式工具策略:all / deny_dangerous / allowlist
+    if let Some(v) = &body.task_tool_policy {
+        if !matches!(v.as_str(), "all" | "deny_dangerous" | "allowlist") {
+            return Err("task_tool_policy 仅支持 all / deny_dangerous / allowlist".to_string());
+        }
+        scoped_apply!(s, is_task, task_tool_policy, v.clone());
+    }
+    if let Some(v) = &body.task_tool_allowlist {
+        scoped_apply!(s, is_task, task_tool_allowlist, v.clone());
+    }
+    Ok(())
+}
+
+/// HTML 渲染、上下文压缩参数、LLM 请求快照。
+fn apply_runtime_limits(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // 工具循环轮次上限:仅接受 1..=200(防止误填 0 或超大值打爆模型请求)
+    if let Some(v) = body.max_tool_rounds {
+        if !(1..=200).contains(&v) {
+            return Err("max_tool_rounds 必须在 1..=200".to_string());
+        }
+        scoped_apply!(s, is_task, max_tool_rounds, v);
+    }
+    // HTML 渲染开关
+    if let Some(v) = body.render_html {
+        scoped_apply!(s, is_task, render_html, v);
+    }
+    // 上下文压缩模式:仅接受 off / manual / auto
+    if let Some(v) = &body.compaction_mode {
+        let t = v.trim().to_string();
+        if t == "off" || t == "manual" || t == "auto" {
+            scoped_apply!(s, is_task, compaction_mode, t);
+        }
+    }
+    // 上下文压缩阈值:仅接受 0.5..=0.95
+    if let Some(v) = body.compaction_threshold {
+        if !(0.5..=0.95).contains(&v) {
+            return Err("compaction_threshold 必须在 0.5..=0.95".to_string());
+        }
+        scoped_apply!(s, is_task, compaction_threshold, v);
+    }
+    // 压缩保留条数(缓存感知管线):2..=200,缺省保持不变
+    if let Some(v) = body.compaction_keep_recent {
+        if (2..=200).contains(&v) {
+            scoped_apply!(s, is_task, compaction_keep_recent, v);
+        }
+    }
+    // snip 零成本裁剪阈值(字节):0 = 禁用,1MB 上限
+    if let Some(v) = body.compaction_snip_bytes {
+        if v <= 1_048_576 {
+            scoped_apply!(s, is_task, compaction_snip_bytes, v);
+        }
+    }
+    // LLM 请求快照开关
+    if let Some(v) = body.llm_request_log {
+        scoped_apply!(s, is_task, llm_request_log, v);
+    }
+    Ok(())
+}
+
+/// 记忆蒸馏 / 注入预算 / 容量、技能渐进披露、回退快照。
+fn apply_memory_skills(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // 记忆蒸馏开关(落地项 2)
+    if let Some(v) = body.memory_distill_enabled {
+        scoped_apply!(s, is_task, memory_distill_enabled, v);
+    }
+    // 记忆注入上限(0..=50;0 = 关闭注入,越界忽略)
+    if let Some(v) = body.memory_inject_limit {
+        if v <= 50 {
+            scoped_apply!(s, is_task, memory_inject_limit, v);
+        }
+    }
+    // 记忆槽字符预算(0..=20000;0 = 不限制,越界忽略)
+    if let Some(v) = body.memory_inject_char_budget {
+        if v <= 20_000 {
+            scoped_apply!(s, is_task, memory_inject_char_budget, v);
+        }
+    }
+    // 每角色记忆容量上限(0..=10000;0 = 不淘汰,越界忽略)
+    if let Some(v) = body.memory_max_entries {
+        if v <= 10_000 {
+            scoped_apply!(s, is_task, memory_max_entries, v);
+        }
+    }
+    // 技能渐进披露开关(落地项 3)
+    if let Some(v) = body.skill_progressive_disclosure {
+        scoped_apply!(s, is_task, skill_progressive_disclosure, v);
+    }
+    // 回退快照开关(批次 6.1)
+    if let Some(v) = body.undo_enabled {
+        scoped_apply!(s, is_task, undo_enabled, v);
+    }
+    Ok(())
+}
+
+/// 子智能体深度、并发与结果字符上限。
+fn apply_subagents(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // 子智能体嵌套深度上限(1..=4,越界拒绝)
+    if let Some(v) = body.subagent_max_depth {
+        if !(1..=4).contains(&v) {
+            return Err("subagent_max_depth 必须在 1..=4".to_string());
+        }
+        scoped_apply!(s, is_task, subagent_max_depth, v);
+    }
+    // 子智能体并发上限(1..=16,越界拒绝)
+    if let Some(v) = body.subagent_max_concurrency {
+        if !(1..=16).contains(&v) {
+            return Err("subagent_max_concurrency 必须在 1..=16".to_string());
+        }
+        scoped_apply!(s, is_task, subagent_max_concurrency, v);
+    }
+    // 子智能体结果字符上限(500..=8000,越界拒绝)
+    if let Some(v) = body.subagent_result_max_chars {
+        if !(500..=8000).contains(&v) {
+            return Err("subagent_result_max_chars 必须在 500..=8000".to_string());
+        }
+        scoped_apply!(s, is_task, subagent_result_max_chars, v);
+    }
+    Ok(())
+}
+
+/// MCP 总开关与服务器列表（全量替换 + 卫生清理）。
+fn apply_mcp(
+    s: &mut RuntimeSettings,
+    is_task: bool,
+    body: &UpdateSettingsBody,
+) -> Result<(), String> {
+    // MCP 总开关(批次 6.2):仅启动时装配,运行期改动不回溯重连,重启后生效
+    if let Some(v) = body.mcp_enabled {
+        scoped_apply!(s, is_task, mcp_enabled, v);
+    }
+    // MCP 服务器列表(全量替换):卫生清理同 load(trim 名称/命令,丢弃不可用条目)
+    if let Some(v) = &body.mcp_servers {
+        let mut servers = v.clone();
+        servers.retain_mut(|srv| {
+            srv.name = srv.name.trim().to_string();
+            srv.command = srv.command.trim().to_string();
+            !srv.name.is_empty() && !srv.command.is_empty()
+        });
+        scoped_apply!(s, is_task, mcp_servers, servers);
+    }
+    Ok(())
+}
+
+/// 进程级能力开关（exec）与引擎直读的扁平字段——不随模式分叉。
+fn apply_global_only(s: &mut RuntimeSettings, body: &UpdateSettingsBody) -> Result<(), String> {
+    // 命令执行开关(阶段 E):bool 免校验。这些是**全局**能力开关,
+    // 不随 roleplay/task 覆盖层分叉(exec: 权限是进程级事实,不是模式偏好),
+    // 故直接写扁平字段而非走 scoped_apply!(is_task,...)。
+    if let Some(v) = body.exec_enabled {
+        s.exec_enabled = v;
+    }
+    if let Some(v) = body.exec_allow_root {
+        s.exec_allow_root = v;
+    }
+    if let Some(v) = body.exec_allow_shizuku {
+        s.exec_allow_shizuku = v;
+    }
+    if let Some(v) = body.exec_allow_sandbox {
+        s.exec_allow_sandbox = v;
+    }
+    // 执行者人设完整开关(R3a;bool 免校验,只有 task 模式有这个开关 → 恒写覆盖层)
+    if let Some(v) = body.task_persona_full {
+        s.task.task_persona_full = Some(v);
+    }
+    // 任务模式提示词注入继承开关(2026-09-10 实测修复;bool 免校验,同上恒写覆盖层)
+    if let Some(v) = body.task_prompt_inject_enabled {
+        s.task.task_prompt_inject_enabled = Some(v);
+    }
+    // 工具历史回灌上限(R3b):扁平全局字段(引擎 run_tool_loop 直读扁平值,
+    // 不入模式覆盖层——任务/聊天工具循环共用同一上限,与 subagent 参数的
+    // 引擎侧消费口径一致);越界拒绝,与 load 钳制区间一致
+    if let Some(v) = body.tool_history_keep_rounds {
+        if !(1..=32).contains(&v) {
+            return Err("tool_history_keep_rounds 必须在 1..=32".to_string());
+        }
+        s.tool_history_keep_rounds = v;
+    }
+    if let Some(v) = body.tool_history_budget_tokens {
+        if v != 0 && !(1024..=1_048_576).contains(&v) {
+            return Err("tool_history_budget_tokens 须为 0(禁用)或 1024..=1048576".to_string());
+        }
+        s.tool_history_budget_tokens = v;
+    }
+    Ok(())
 }
 
 /// POST /api/settings/refresh-models:向已保存的 API 请求可用模型列表(立即生效,不保存)

@@ -12,6 +12,7 @@ import {
 } from './settings';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 describe('settings API', () => {
   beforeEach(() => {
     resetApiTokenForTest();
@@ -20,7 +21,7 @@ describe('settings API', () => {
 
   it('GET /settings/prompt-preview:携带 session/character/mode 查询参数', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, note: '', layers: [] }), { status: 200 }));
 
     const got = await getPromptPreview('s1', 'c1', 'task');
@@ -31,7 +32,7 @@ describe('settings API', () => {
 
   it('不传参数时裸路径(旧行为不变)', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, note: '', layers: [] }), { status: 200 }));
 
     await getPromptPreview();
@@ -47,7 +48,7 @@ describe('settings API 形状闸门', () => {
     resetApiTokenForTest();
     const spy = vi.spyOn(globalThis, 'fetch');
     spy.mockReset();
-    spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }));
+    spy.mockResolvedValueOnce(tokenResponse('t'));
     spy.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
   }
 

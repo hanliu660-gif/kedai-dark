@@ -113,10 +113,7 @@ impl std::ops::Deref for AppState {
 
 impl AppState {
     pub fn new(config: AppConfig) -> Result<Arc<AppState>, String> {
-        let db = Arc::new(Db::open(
-            &config.data_dir.join("kedai.db"),
-            &config.data_dir,
-        )?);
+        let db = open_db(&config)?;
 
         let characters = Arc::new(CharacterService::new(db.clone(), config.data_dir.clone()));
         let contract_changelog = Arc::new(ContractChangelogService::new(db.clone()));
@@ -198,20 +195,7 @@ impl AppState {
         });
         crate::tools::register_builtin_tools(&tool_registry, deps.clone());
 
-        // 启动清理:移除指向已不存在会话的孤儿授权(会话可能在历史版本中被删除而
-        // 未清理授权;失败仅告警,不影响启动)。
-        {
-            let existing: std::collections::HashSet<String> =
-                sessions.list_all().iter().map(|s| s.id.clone()).collect();
-            match tool_registry
-                .permissions()
-                .prune_orphan_session_grants(&existing)
-            {
-                Ok(0) => {}
-                Ok(n) => tracing::info!(removed = n, "清理孤儿会话授权"),
-                Err(e) => tracing::warn!(error = e, "孤儿会话授权清理失败"),
-            }
-        }
+        prune_orphan_session_grants(&sessions, &tool_registry);
 
         // 回退快照(批次 6.1「undo」):与 SessionService 共用同一 Arc<Db> 句柄
         // (ToolDeps 上没有 db 连接池,直接同源构造是最小侵入路径);注入注册表供
@@ -247,22 +231,7 @@ impl AppState {
             kaleido_state.clone(),
         );
 
-        // 工具插件加载:data/plugins/tools/*.json(白名单脚本)
-        // 两段式:L3 plugins/ 负责解析,本层负责注册(含内置重名防护,见 api::plugins::register_plugins)。
-        {
-            let loader = crate::plugins::ToolPluginLoader::new(
-                config.data_dir.join("plugins").join("tools"),
-            );
-            let (loaded, mut errors) = loader.parse_all();
-            let (count, reg_errors) = crate::api::plugins::register_plugins(loaded, &tool_registry);
-            errors.extend(reg_errors);
-            if !errors.is_empty() {
-                eprintln!("[工具插件] 加载部分失败: {}", errors.join("; "));
-            }
-            if count > 0 {
-                eprintln!("[工具插件] 已加载 {count} 个");
-            }
-        }
+        load_tool_plugins(&config.data_dir, &tool_registry);
 
         // 提示词注入配置(简单模式 + 楼层系统);先于 engine 创建以便注入引擎
         let prompt_inject = Arc::new(Mutex::new(PromptInjectService::new(
@@ -274,21 +243,7 @@ impl AppState {
 
         // 运行时主 Agent 提示词固定落在 DATA_DIR。旧版项目根文件仅作一次性兼容迁移来源；
         // 运行路径不依赖编译期 CARGO_MANIFEST_DIR。
-        let legacy_runtime_prompt = std::env::var_os("KEDAI_LEGACY_RUNTIME_PROMPT")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::current_dir()
-                    .ok()
-                    .map(|p| p.join("AGENTS_RUNTIME.md"))
-            });
-        let runtime_prompt = Arc::new(match std::env::var_os("KEDAI_RUNTIME_PROMPT_DIR") {
-            // 显式指定目录:只从该目录读,不回退内置默认(测试隔离与自定义部署)
-            Some(dir) => {
-                RuntimePromptService::with_dir(std::path::PathBuf::from(dir), legacy_runtime_prompt)
-            }
-            // 默认:DATA_DIR;文件与旧文件都缺失时回退内置默认提示词
-            None => RuntimePromptService::new(config.data_dir.clone(), legacy_runtime_prompt),
-        });
+        let runtime_prompt = Arc::new(build_runtime_prompt_service(&config));
 
         // 自定义 Agent 执行流程(custom 模式);保存时按当前已注册工具校验白名单
         let registered_tools = tool_registry
@@ -487,5 +442,58 @@ impl AppState {
         tokio::task::spawn_blocking(f)
             .await
             .map_err(|e| format!("DB 任务执行失败: {e}"))
+    }
+}
+
+/// 打开 DB(构造期唯一入口;失败即视为启动失败)。
+fn open_db(config: &AppConfig) -> Result<Arc<Db>, String> {
+    Db::open(&config.data_dir.join("kedai.db"), &config.data_dir).map(Arc::new)
+}
+
+/// 启动清理:移除指向已不存在会话的孤儿授权(会话可能被历史版本删除而授权残留)。
+/// 失败只告警——清理不成功不影响启动。
+fn prune_orphan_session_grants(sessions: &Arc<SessionService>, tool_registry: &Arc<ToolRegistry>) {
+    let existing: std::collections::HashSet<String> =
+        sessions.list_all().iter().map(|s| s.id.clone()).collect();
+    match tool_registry
+        .permissions()
+        .prune_orphan_session_grants(&existing)
+    {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(removed = n, "清理孤儿会话授权"),
+        Err(e) => tracing::warn!(error = e, "孤儿会话授权清理失败"),
+    }
+}
+
+/// 加载 data/plugins/tools/*.json 里的白名单脚本工具。
+/// 两段式:L3 `plugins/` 负责解析,本层负责注册(含内置重名防护)。
+fn load_tool_plugins(data_dir: &std::path::Path, tool_registry: &Arc<ToolRegistry>) {
+    let loader = crate::plugins::ToolPluginLoader::new(data_dir.join("plugins").join("tools"));
+    let (loaded, mut errors) = loader.parse_all();
+    let (count, reg_errors) = crate::api::plugins::register_plugins(loaded, tool_registry);
+    errors.extend(reg_errors);
+    if !errors.is_empty() {
+        eprintln!("[工具插件] 加载部分失败: {}", errors.join("; "));
+    }
+    if count > 0 {
+        eprintln!("[工具插件] 已加载 {count} 个");
+    }
+}
+
+/// 运行时主 Agent 提示词服务:固定落在 DATA_DIR;旧版项目根文件仅作一次性兼容迁移来源。
+/// 运行路径不依赖编译期 CARGO_MANIFEST_DIR。
+fn build_runtime_prompt_service(config: &AppConfig) -> RuntimePromptService {
+    let legacy = std::env::var_os("KEDAI_LEGACY_RUNTIME_PROMPT")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.join("AGENTS_RUNTIME.md"))
+        });
+    match std::env::var_os("KEDAI_RUNTIME_PROMPT_DIR") {
+        // 显式指定目录:只从该目录读,不回退内置默认(测试隔离与自定义部署)
+        Some(dir) => RuntimePromptService::with_dir(std::path::PathBuf::from(dir), legacy),
+        // 默认:DATA_DIR;文件与旧文件都缺失时回退内置默认提示词
+        None => RuntimePromptService::new(config.data_dir.clone(), legacy),
     }
 }

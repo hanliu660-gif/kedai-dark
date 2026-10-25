@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, apiErrorMessage, authorizedFetch, request, resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 describe('API bearer token', () => {
   beforeEach(() => {
     resetApiTokenForTest();
@@ -9,7 +10,7 @@ describe('API bearer token', () => {
 
   it('经同源 bootstrap 获取一次 token 并自动用于后续请求', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('test-secret'))
       .mockResolvedValueOnce(new Response('{}', { status: 200 }));
 
     await authorizedFetch('/api/chat/send', { method: 'POST', body: '{}' });
@@ -25,7 +26,7 @@ describe('API bearer token', () => {
   it('bootstrap 失败不缓存 rejected promise:下次调用重新引导', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new Error('网络错误')) // 首次 bootstrap 失败
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't2' }), { status: 200 })) // 重新引导成功
+      .mockResolvedValueOnce(tokenResponse('t2')) // 重新引导成功
       .mockResolvedValueOnce(new Response('{}', { status: 200 })); // 目标请求
 
     await expect(authorizedFetch('/api/chat/send', { method: 'POST', body: '{}' })).rejects.toThrow('网络错误');
@@ -39,9 +40,9 @@ describe('API bearer token', () => {
 
   it('401 时丢弃缓存 token 重新引导并重试一次(服务端重启 token 轮换)', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'old' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('old'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'unauthorized', code: 'UNAUTHORIZED' }), { status: 401 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'new' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('new'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     const res = await request<{ ok: boolean }>('/chat/sessions');
@@ -54,9 +55,9 @@ describe('API bearer token', () => {
 
   it('重试后仍 401 才抛 UNAUTHORIZED(不无限重试)', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'old' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('old'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'x', code: 'UNAUTHORIZED' }), { status: 401 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'new' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('new'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'x', code: 'UNAUTHORIZED' }), { status: 401 }));
 
     await expect(request('/chat/sessions')).rejects.toMatchObject({ code: 'UNAUTHORIZED', status: 401 });
@@ -72,7 +73,7 @@ describe('结构化错误码(ApiError)', () => {
   /** 模拟一次请求:bootstrap 取 token 后,目标请求返回指定错误体 */
   function mockErrorResponse(status: number, body: unknown): ReturnType<typeof vi.spyOn> {
     return vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify(body), { status }));
   }
 

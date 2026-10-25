@@ -105,11 +105,8 @@ fn blob_to_vec(blob: &[u8]) -> Option<Vec<f32>> {
     if blob.is_empty() || !blob.len().is_multiple_of(4) {
         return None;
     }
-    Some(
-        blob.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-    )
+    let (chunks, _rest) = blob.as_chunks::<4>();
+    Some(chunks.iter().map(|c| f32::from_le_bytes(*c)).collect())
 }
 
 /// 解析 sqlite-vec 返回的向量文本格式 `[1.0,2.0,...]`(容错:空白跳过,非法项返回 None)。

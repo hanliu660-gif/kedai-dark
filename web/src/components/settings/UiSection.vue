@@ -4,6 +4,7 @@
 import { useAppStore } from '../../store';
 import { storeToRefs } from 'pinia';
 import type { useDataManager } from '../../composables/useDataManager';
+import { themeMode, setThemeMode } from '../../theme';
 
 const props = withDefaults(defineProps<{
   /** useDataManager 的返回对象(壳共享实例,本区仅用 characterLabel / 撤销授权) */
@@ -24,6 +25,17 @@ const { scriptAuthorizations } = storeToRefs(store);
   <div v-show="props.show" class="sv-field">
     <div class="sv-field-label"><span class="sv-supreme yellow" /> 界面</div>
     <div class="sv-datalist">
+      <div class="sv-data-row sv-theme-row">
+        <div class="info">
+          <b>主题</b>
+          <span>默认暗色。选「跟随系统」时，跟着操作系统的深浅色外观自动切换（立即生效，不用重启）</span>
+        </div>
+        <div class="sv-auth-toggle" role="group" aria-label="主题">
+          <button type="button" :class="{ active: themeMode === 'system' }" @click="setThemeMode('system')">跟随系统</button>
+          <button type="button" :class="{ active: themeMode === 'light' }" @click="setThemeMode('light')">浅色</button>
+          <button type="button" :class="{ active: themeMode === 'dark' }" @click="setThemeMode('dark')">深色</button>
+        </div>
+      </div>
       <div class="sv-data-row">
         <div class="info">
           <b>Agent 面板</b>

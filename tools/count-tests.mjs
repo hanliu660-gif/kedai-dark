@@ -50,6 +50,14 @@ const tsFiles = walk(path.join(ROOT, 'web', 'src'), (p) => p.endsWith('.test.ts'
 const TS_CASE_RE = /^\s*(?:it|test)\s*\(/gm;
 const frontendCases = tsFiles.reduce((n, f) => n + countMatches(f, TS_CASE_RE), 0);
 
+// 循环生成的用例(`for (...) { it(...) }`)静态口径只数到那个 `it(` 一次,vitest 运行时
+// 会展开成 N 个,所以静态数必然小于 `npm test -w web` 的输出。只认「`it(` 紧跟循环头」
+// 这种形态(允许中间夹注释),避免把「循环体外后面另有 `it(`」误判成生成式。
+const LOOP_CASE_RE = /for\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\n\s*)*(?:it|test)\s*\(/;
+const loopCaseFiles = tsFiles
+  .filter((f) => LOOP_CASE_RE.test(fs.readFileSync(f, 'utf8')))
+  .map((f) => path.relative(ROOT, f).replace(/\\/g, '/'));
+
 const result = {
   backendUnit,
   backendIntegration,
@@ -70,7 +78,12 @@ const summary = [
   `后端合计     : ${result.backendTotal}`,
   `前端测试文件 : ${tsFiles.length}`,
   `前端用例     : ${frontendCases}`,
-].join('\n');
+  loopCaseFiles.length
+    ? `静态口径含循环生成:${loopCaseFiles.join(', ')}(运行时用例数会高于上面这个值)`
+    : '',
+]
+  .filter(Boolean)
+  .join('\n');
 
 if (process.argv.includes('--check')) {
   const maint = fs.readFileSync(path.join(ROOT, 'MAINTENANCE.md'), 'utf8');

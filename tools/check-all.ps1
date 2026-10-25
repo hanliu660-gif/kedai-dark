@@ -1,4 +1,4 @@
-﻿# check-all.ps1 — 本地 CI 一键检查:后端 fmt/clippy/test + 前端 typecheck/test/build
+# check-all.ps1 — 本地 CI 一键检查:后端 fmt/clippy/test + 前端 typecheck/test/build
 # 用法: npm run check  |  或 powershell -NoProfile -ExecutionPolicy Bypass -File tools/check-all.ps1
 # 参数: -SkipRust 跳过后端编译; -SkipWeb 跳过前端编译; -Quick 只跑 test 不跑 build;
 #       -AuditOnly 只跑审计段(两把 Cargo.lock + npm 生产依赖),跳过全部编译/测试/构建;
@@ -233,6 +233,11 @@ if (-not $SkipWeb -and -not $AuditOnly) {
         # 前端类型逃逸 ratchet:as never / as unknown as / 非空断言 / any 只降不升
         # (纯 Node 零依赖,与 check-arch/check-contract 同风格;基线见脚本内 BASELINE)
         Invoke-Stage 'web: type-ratchet'        { node tools/check-frontend-lint.mjs }
+        # 样式层 ratchet + D-5 结构断言:!important / #id 选择器 / style.css 行数只降不升,
+        # 且 `:root[data-theme='dark']` 块内只许自定义属性(暗色只改变量,不许写组件规则)。
+        # 2026-10-25 新增:夜间模式当初正是靠「暗色块里写组件规则 + !important」落地的,
+        # 纪律写在 MAINTENANCE.md 却无人守护,故补此门禁(基线见 check-style.mjs 的 BASELINE)。
+        Invoke-Stage 'web: style-ratchet'       { node tools/check-style.mjs }
         # 前端代码质量(ESLint flat config + eslint-plugin-vue):0 error 硬门禁。
         # 与上面 type-ratchet 目的不同(ratchet 管类型逃逸、此管代码质量),两者并存。
         # 规则集首轮克制:存量问题降级为 warn(见 web/eslint.config.js),故 0 error 可过;

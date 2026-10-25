@@ -4,6 +4,7 @@ import { createPinia } from 'pinia';
 import App from './App.vue';
 import { installGlobalErrorHandlers } from './globalErrorHandlers';
 import { useUiPrefsStore } from './stores/uiPrefs';
+import { initTheme } from './theme';
 // 展示字体(拉丁字标/数字用,本地打包离线可用)
 import '@fontsource/archivo-black';
 import './style.css';
@@ -22,5 +23,8 @@ installGlobalErrorHandlers({
     uiPrefs.globalError = message;
   },
 });
+
+// 主题：在 mount 之前定下来，避免首屏用错配色再跳一次。
+initTheme();
 
 app.mount('#app');

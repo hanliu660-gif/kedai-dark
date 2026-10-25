@@ -3040,12 +3040,17 @@ async fn resource_proxy_errors_carry_code_without_leaking_upstream_detail() {
     .await;
     assert_error_shape(status, &body, StatusCode::BAD_REQUEST, "VALIDATION");
 
-    // 上游主机无法解析(.invalid 保留域)→ 在 SSRF 解析阶段被拒:400 VALIDATION,
-    // 且不回显 DNS/OS 原文(该分支此前会拼 `os error 11001` 与「搜索端点」错域措辞)
+    // 上游主机无法解析 → 在 SSRF 解析阶段被拒:400 VALIDATION,
+    // 且不回显 DNS/OS 原文(该分支此前会拼 `os error 11001` 与「搜索端点」错域措辞)。
+    // 注意:必须用「标签超长」这种**语法非法**的主机名,而不是 `.invalid` 保留域——
+    // 不少 ISP/代理会在 DNS 层把任意不存在的域名通配解析到 198.18.0.0/15
+    // (本机实测 `.invalid` 被解析成 198.18.0.227),那样请求会走到连接失败分支变 502,
+    // 测试就变成「取决于本机 DNS 环境」。64 个 a 的标签超过 DNS 单标签 63 字符上限,
+    // getaddrinfo 直接拒绝,不依赖任何解析器行为。
     let (status, body) = send_json(
         app,
         "GET",
-        "/api/resource/proxy?url=https%3A%2F%2Fkedai-upstream-does-not-exist.invalid%2Fx.html",
+        "/api/resource/proxy?url=https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%2Eexample%2Einvalid%2Fx.html",
         json!({}),
     )
     .await;

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQuickReply, deleteQuickReply, listQuickReplies, updateQuickReply } from './quickReplies';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 describe('quickReplies API', () => {
   beforeEach(() => {
     resetApiTokenForTest();
@@ -20,7 +21,7 @@ describe('quickReplies API', () => {
 
   it('GET 默认:不带 query,返回 quick_replies 数组(仅启用项)', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ quick_replies: [record] }), { status: 200 }));
 
     const got = await listQuickReplies();
@@ -31,7 +32,7 @@ describe('quickReplies API', () => {
 
   it('GET includeDisabled:携带 all=true', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ quick_replies: [] }), { status: 200 }));
 
     await listQuickReplies(true);
@@ -41,7 +42,7 @@ describe('quickReplies API', () => {
 
   it('POST:创建,body 携带输入字段,返回 quick_reply', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, quick_reply: record }), { status: 201 }));
 
     const { id: _id, ...input } = record;
@@ -56,7 +57,7 @@ describe('quickReplies API', () => {
 
   it('PUT:按 id 更新', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, quick_reply: record }), { status: 200 }));
 
     const { id, ...input } = record;
@@ -70,7 +71,7 @@ describe('quickReplies API', () => {
 
   it('DELETE:按 id 删除', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await deleteQuickReply(1);

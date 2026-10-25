@@ -11,6 +11,10 @@
          注意:XML 注释内不得出现连续两个连字符,故此处不写 CSS 变量名。 -->
     <color name="kedai_paper">#FBEFF1</color>   <!-- 主画布淡粉 -->
     <color name="kedai_surface">#F4DBE2</color> <!-- 栏位表面 -->
+    <!-- 深色模式的画布色:必须与 web/src/style.css 里 :root[data-theme='dark'] 的
+         画布色 #0f0f11 同值。edge-to-edge 下状态栏/导航栏那圈留白由原生绘制,
+         不同步就会出现「上下两条浅色边」(真机截图确认)。 -->
+    <color name="kedai_paper_dark">#0F0F11</color>
     <color name="kedai_ink">#141414</color>     <!-- 印刷黑 -->
 
     <!-- Material 语义色:覆盖默认紫色系,状态栏/控件不再走 Material 默认主题 -->

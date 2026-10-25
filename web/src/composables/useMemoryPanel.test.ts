@@ -4,6 +4,7 @@ import { SEARCH_DEBOUNCE_MS, useMemoryPanel } from './useMemoryPanel';
 import * as api from '../api';
 import { resetApiTokenForTest } from '../api/client';
 
+import { tokenResponse } from '../test/helpers';
 // 记忆库面板交互测试:直调 useMemoryPanel composable(纯 TS,无组件实例依赖),
 // 覆盖蒸馏 / 手动添加 / 行内编辑 / 注入与置顶开关 / 删除两段式确认 / 搜索防抖 /
 // 清理归档的请求与状态反馈。渲染断言在 components/MemoryPanelUi.test.ts(SSR 通道)。
@@ -38,7 +39,7 @@ function sampleList(): api.MemoryEntry[] {
 /** mock fetch:第一跳 bootstrap,后续按序消费 */
 function mockFetch(...responses: Array<{ body: unknown; status?: number }>): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   for (const r of responses) {
     spy.mockResolvedValueOnce(new Response(r.body === null ? null : JSON.stringify(r.body), { status: r.status ?? 200 }));
   }

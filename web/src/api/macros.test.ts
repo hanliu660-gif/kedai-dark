@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expandMacros, parseVarsLines } from './macros';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 describe('macros API', () => {
   beforeEach(() => {
     resetApiTokenForTest();
@@ -10,7 +11,7 @@ describe('macros API', () => {
 
   it('POST /macros/expand:URL 与方法正确,ctx 序列化传入 body', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ expanded: '雪芽 你好' }), { status: 200 }));
 
     const got = await expandMacros('{{char}} {{user}}', {
@@ -31,7 +32,7 @@ describe('macros API', () => {
 
   it('无 ctx 时 body 携带空对象,不报错', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ expanded: '' }), { status: 200 }));
 
     const got = await expandMacros('');
@@ -43,7 +44,7 @@ describe('macros API', () => {
 
   it('请求失败时抛出服务端 error 信息', async () => {
     vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 't' }), { status: 200 }))
+      .mockResolvedValueOnce(tokenResponse('t'))
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: '展开失败' }), { status: 500 }));
 
     await expect(expandMacros('{{char}}')).rejects.toThrow('展开失败');

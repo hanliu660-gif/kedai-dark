@@ -14,7 +14,7 @@
 - **Mutex 纪律**:全项目锁中毒一律恢复(`.lock().unwrap_or_else(|e| e.into_inner())`),不 panic;**禁止持 std::sync::Mutex guard 跨 `.await`**(Clippy `await_holding_lock` 防护)。
 - **DB 并发纪律**:api handler 的同步 DB 调用必须经 `db_call/db_read/db_write`(spawn_blocking),禁止 async 上下文直接持锁;细则见 §7「DB 并发纪律」。
 - **渲染性能纪律(前端)**:消息渲染必须走 ChatMessageItem 的缓存 computed,禁止在 v-for 里直接调渲染方法。
-- **样式分层纪律(前端,2026-09 D-5 起)**:`web/src/style.css` 只保留层① 设计变量(:root 令牌)与层② 全局基础层;新增组件样式一律 `<style scoped>` 或 Tailwind 工具类,禁止再写入 style.css;修改存量组件时顺手把该组件样式搬进 scoped(「改到谁拆谁」,文件头分层约定注释为准);新增样式不得引入 `!important`(存量 11 处见 style.css)。
+- **样式分层纪律(前端,2026-09 D-5 起)**:`web/src/style.css` 只保留层① 设计变量(:root 令牌)与层② 全局基础层;新增组件样式一律 `<style scoped>` 或 Tailwind 工具类,禁止再写入 style.css;修改存量组件时顺手把该组件样式搬进 scoped(「改到谁拆谁」,文件头分层约定注释为准);新增样式不得引入 `!important`（存量 12 处，全部在 `web/src/styles/06-fallback-motion.css` 的兜底块与 reduced-motion 里）。**2026-10-25 起 `style.css` 已按既有分节切成 `web/src/styles/01-tokens…11-dark.css` 共 11 个文件，入口只剩 `@import`（顺序 = 层叠顺序，不可调换）；切分是字节级搬运，构建产物 CSS 哈希不变。** 本条自 2026-10-25 起有机器守卫:`tools/check-style.mjs`（已接入 `check-all.ps1` 的 `web: style-ratchet` 段）对整层（`style.css` + `styles/*.css`）的 `!important` 数、`#id` 选择器数、总行数做「只降不升」棘轮，并做结构断言 —— `:root[data-theme='dark']` 块内**只许**出现自定义属性（`color-scheme` 白名单除外），暗色主题只能改变量、不许写组件规则。
 - **跨端协议**(前后端 mvu)以 `docs/契约-协议与配置.md` 锁定双端一致,防行为漂移。
 - **EJS 自研解释器冻结纪律**:`parsing/assistant/ejs/`(自研迷你 JS 引擎,约 4000 行)**只接受安全修复,不再扩展新能力**。任何新模板能力必须在 `scripts/runtime.rs` 的 rquickjs 沙箱侧实现(rquickjs 自带内存/中断/栈上限,见该文件 `set_memory_limit`/`set_interrupt_handler`)。理由:自研解释器缺引擎级沙箱限额,长期维护成本与风险高于复用;**已加固**(循环步数+墙钟预算、解析深度守卫,见 §10 踩坑记录),但债务不再增长。
 - **门禁纪律(2026-09-13 起)**:`tools/check-all.ps1` 是唯一的本地 CI 入口,现已接三处触发——
@@ -105,6 +105,8 @@ kedai/
 │   └── src/
 │       ├── api/                # 目录模块(拆分自 api.ts):client/types/characters/sessions/worldbooks/... + index 聚合
 │       ├── stores/             # Pinia 七子 store(character/chat/genSettings/modelConn/resources/task/uiPrefs)
+│       │   ├── chat/           # chat store 的动作模块(state/sessionActions/mvuActions/streamActions/messageActions/chatContext)
+│       │   └── task/           # task store 的动作模块(state/runtime/liveActions/loadActions/eventActions/crudActions/modeActions/taskContext)
 │       ├── store.ts            # 全局状态门面(facade,聚合七子 store 保持原引用路径)
 │       ├── sseReducer.ts       # SSE 事件纯函数(拆分自 store)
 │       ├── mvu/                # 前端 mvu 变量系统(parser/variables/host/mvuStore)

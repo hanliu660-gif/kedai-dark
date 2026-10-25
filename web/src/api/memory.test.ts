@@ -11,6 +11,7 @@ import {
 } from './memory';
 import { resetApiTokenForTest } from './client';
 
+import { tokenResponse } from '../test/helpers';
 // 样例条目(与后端 server-rs/src/services/memory_service.rs 的 MemoryEntry 字段对齐)
 function entry(overrides: Partial<MemoryEntry> = {}): MemoryEntry {
   return {
@@ -32,7 +33,7 @@ function entry(overrides: Partial<MemoryEntry> = {}): MemoryEntry {
 /** mock 两跳 fetch:第一跳 bootstrap 取 token,后续为目标请求(与 diagnostics.test.ts 同模式) */
 function mockFetchSequence(...responses: Array<{ body: unknown; status?: number }>): ReturnType<typeof vi.spyOn> {
   const spy = vi.spyOn(globalThis, 'fetch');
-  spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+  spy.mockResolvedValueOnce(tokenResponse('test-secret'));
   for (const r of responses) {
     spy.mockResolvedValueOnce(new Response(JSON.stringify(r.body), { status: r.status ?? 200 }));
   }
@@ -201,7 +202,7 @@ describe('deleteMemory', () => {
 
   it('请求 DELETE /api/memory/:id,204 无正文时正常返回', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
-    spy.mockResolvedValueOnce(new Response(JSON.stringify({ token: 'test-secret' }), { status: 200 }));
+    spy.mockResolvedValueOnce(tokenResponse('test-secret'));
     spy.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(deleteMemory(7)).resolves.toBeUndefined();
     expect(String(spy.mock.calls[1][0])).toBe('/api/memory/7');

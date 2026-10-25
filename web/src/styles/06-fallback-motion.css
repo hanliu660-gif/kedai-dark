@@ -1,0 +1,381 @@
+/* ==== 06-fallback-motion.css · 黑底白字兜底块(!important 存量所在) + 动效体系(层②) ====
+   由 style.css 于 2026-10-25 原样切分而来;层叠顺序由 style.css 的 @import 决定,
+   本文件内部顺序不得调整。 */
+/* ============================================================
+   黑底白字兜底(防覆盖)
+   所有黑色/深色背景块内的文字保持高对比,保证可读性。
+   置于文件末尾,特异性 + !important 双保险,防御任何未知覆盖。
+
+   ⚠ 暗色改造注意：原版这里一律写死 #fff，会破坏主题反向。
+   这些元素的底色是 var(--sv-ink)（暗色下变浅），而 !important 写死的白字
+   不会跟着变，结果就是「白字压浅底」，比不改还糟。改成走令牌后自动跟随：
+     · var(--sv-white)      深色块上的前景 —— 两主题自动相反
+     · var(--sv-on-accent)  饱和色块上的前景 —— 两主题恒白
+     · var(--sv-on-ink-dim) 深色块上的次级文字
+   ============================================================ */
+
+/* 角色选中态 */
+.sv-char-item.active,
+.sv-char-item.active .sv-char-name,
+.sv-char-item.active .sv-char-desc {
+  color: var(--sv-white) !important;
+}
+.sv-char-item.active .sv-char-desc {
+  color: var(--sv-on-ink-dim) !important;
+}
+
+/* 模式按钮选中态(黑底) */
+.sv-mode button.active {
+  color: var(--sv-white) !important;
+}
+/* 授权切换选中态(深粉底 —— 饱和色,不随主题反向) */
+.sv-auth-toggle button.active {
+  color: var(--sv-on-pink-deep) !important;
+}
+
+/* 主按钮(黑底) */
+.sv-btn.primary,
+.sv-btn.primary:hover {
+  color: var(--sv-white) !important;
+}
+
+/* 设置导航选中态 */
+.sv-hub-nav-item.active {
+  color: var(--sv-white) !important;
+}
+
+/* 发送按钮 / Agent 抽屉标识 / markdown 代码块(黑底) —— 用户气泡已改走 --sv-bubble-self-* 令牌，不再需要 !important */
+.sv-btn-send,
+.sv-btn-send:hover:not(:disabled),
+.sv-agent-toggle,
+.sv-agent-toggle:hover,
+.sv-agent-toggle.active,
+.sv-msg-bubble.sv-msg-md pre {
+  color: var(--sv-white) !important;
+}
+
+/* 方块头像：默认黑底走 --sv-white；alt-blue / alt-red 是饱和底，恒白 */
+.sv-avatar.char {
+  color: var(--sv-white) !important;
+}
+.sv-avatar.char.alt-blue,
+.sv-avatar.char.alt-red {
+  color: var(--sv-on-accent) !important;
+}
+
+/* ===== 音频播放器(阶段五 5a) ===== */
+/* 右下角悬浮「♪」按钮(面板折叠/关闭时):方形黑底,直角教义 */
+.sv-audio-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--z-toggle);
+  width: 40px;
+  height: 40px;
+  border: var(--bw-thin) solid var(--sv-ink);
+  background: var(--sv-ink);
+  color: var(--sv-white);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+.sv-audio-toggle svg { width: 18px; height: 18px; }
+.sv-audio-toggle:hover {
+  background: var(--sv-pink-deep);
+  border-color: var(--sv-ink);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-hover);
+}
+.sv-audio-toggle:active {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-press);
+}
+
+/* 面板容器(独立于 Sidebar/AgentPanel 布局,右下角悬浮) */
+.sv-audio-float {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--z-toggle);
+}
+.sv-audio-panel {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  background: var(--sv-surface);
+  border: var(--bw) solid var(--sv-ink);
+  box-shadow: var(--shadow-hover);
+}
+.sv-audio-panel.collapsed {
+  /* 折叠只隐藏内容区(模板 v-if 控制),面板保留头部黑条可再次展开 */
+  box-shadow: none;
+}
+.sv-audio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--sv-ink);
+  color: var(--sv-white);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+.sv-audio-title {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sv-audio-title svg { width: 13px; height: 13px; }
+.sv-audio-mini {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 2px 6px;
+}
+.sv-audio-mini:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+.sv-audio-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--sv-line, rgba(128, 128, 128, 0.2));
+}
+.sv-audio-tab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--sv-ink);
+  opacity: 0.65;
+  border-bottom: var(--bw-thin) solid transparent;
+}
+.sv-audio-tab.active {
+  opacity: 1;
+  font-weight: 700;
+  border-bottom-color: var(--sv-red);
+}
+.sv-audio-channel {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sv-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sv-audio-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+}
+.sv-audio-btn {
+  border: 1px solid var(--sv-line, rgba(128, 128, 128, 0.3));
+  background: transparent;
+  color: var(--sv-ink);
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.sv-audio-btn:hover {
+  background: var(--sv-pink);
+}
+.sv-audio-btn.active {
+  background: var(--sv-pink);
+}
+.sv-audio-play {
+  min-width: 44px;
+  font-weight: 700;
+}
+.sv-audio-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--sv-line, rgba(128, 128, 128, 0.3));
+  background: var(--sv-bg-elev, #fff);
+  color: var(--sv-ink);
+  font-size: 12px;
+  padding: 3px 4px;
+}
+.sv-audio-range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--sv-red);
+}
+.sv-audio-time {
+  font-size: 11px;
+  opacity: 0.7;
+  min-width: 34px;
+  text-align: right;
+}
+.sv-audio-actions {
+  justify-content: space-between;
+}
+.sv-audio-count {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.sv-audio-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed var(--sv-line, rgba(128, 128, 128, 0.3));
+  padding-top: 8px;
+}
+.sv-audio-editor-row {
+  display: flex;
+  gap: 6px;
+}
+.sv-audio-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--sv-line, rgba(128, 128, 128, 0.3));
+  background: var(--sv-bg-elev, #fff);
+  color: var(--sv-ink);
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.sv-audio-save {
+  background: var(--sv-ink);
+  color: var(--sv-white);
+  border-color: var(--sv-ink);
+}
+.sv-audio-native {
+  display: none;
+}
+
+/* ===== 消息渲染面板(阶段五 5b,TH-render 等价物) ===== */
+/* 纯展示容器:按阴影规则不挂投影(硬边由全局 [class*="sv-"] 规则保证) */
+.sv-render-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  margin: 4px 0;
+  border: var(--bw) solid var(--sv-ink, #141414);
+  overflow: hidden;
+  background: var(--sv-white, #fff);
+}
+.sv-render-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--sv-line, rgba(128, 128, 128, 0.2));
+  font-size: 12px;
+}
+.sv-render-panel-title {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.sv-render-panel-toggle {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 2px 6px;
+}
+.sv-render-panel-toggle:hover {
+  opacity: 1;
+  background: var(--sv-pink);
+}
+.sv-render-panel-frame {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 0;
+  background: #fff;
+}
+.sv-render-panel-note {
+  padding: 5px 10px;
+  font-size: 11px;
+  opacity: 0.55;
+  border-top: 1px solid var(--sv-line, rgba(128, 128, 128, 0.2));
+}
+
+/* ============================================================
+   动效体系(克制档):只动 transform / opacity
+   ============================================================ */
+
+/* 消息入场:新插入的 .sv-msg 自动播放(v-for 追加节点触发 animation) */
+@keyframes sv-msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 模态开合:遮罩淡入淡出,面板上浮 + 轻缩放(Vue <Transition name="sv-modal">) */
+.sv-modal-enter-active,
+.sv-modal-leave-active {
+  transition: opacity var(--dur-normal) var(--ease-standard);
+}
+.sv-modal-enter-active .sv-modal,
+.sv-modal-leave-active .sv-modal {
+  transition: transform var(--dur-normal) var(--ease-out);
+}
+.sv-modal-enter-from,
+.sv-modal-leave-to {
+  opacity: 0;
+}
+.sv-modal-enter-from .sv-modal,
+.sv-modal-leave-to .sv-modal {
+  transform: translateY(8px) scale(0.98);
+}
+
+/* 顶层模式切换(角色扮演 ↔ 任务):中间区整体淡入淡出 + 水平位移。
+   只动 transform / opacity,符合克制档动效规范,自动被 prefers-reduced-motion 降级。 */
+.sv-mode-enter-active,
+.sv-mode-leave-active {
+  transition: opacity var(--dur-slow) var(--ease-standard), transform var(--dur-slow) var(--ease-out);
+}
+.sv-mode-enter-from {
+  opacity: 0;
+  transform: translateX(-18px);
+}
+.sv-mode-leave-to {
+  opacity: 0;
+  transform: translateX(18px);
+}
+
+/* 侧栏角色列表 ↔ 任务导航的淡入淡出 */
+.sv-fade-enter-active,
+.sv-fade-leave-active {
+  transition: opacity var(--dur-normal) var(--ease-standard);
+}
+.sv-fade-enter-from,
+.sv-fade-leave-to {
+  opacity: 0;
+}
+
+/* 任务详情区入场:挂载时淡入 */
+@keyframes sv-task-detail-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 无障碍:用户偏好减少动效时,全部动效即时完成 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
