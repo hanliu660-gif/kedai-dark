@@ -50,7 +50,7 @@ cargo build --manifest-path server-rs/Cargo.toml
 ## 构建提醒(后续模型必读)
 
 - **改完任何前后端代码后,`dist\` 下的 exe 与项目根 `Kedai.exe` 不会自动更新。** 用 `target\debug\` 二进制验证通过后,交付/试用 exe 版前必须跑一次 `.\build.ps1`(默认双端同步:前端 + release + 便携版 + 构建指纹 sidecar;详见 MAINTENANCE.md §4)。只改了代码只跑过 debug,不等于 exe 版已更新。
-- 快速迭代可用 `.\build.ps1 -TestOnly`(只产测试版),但记住便携版会因此未同步,交付前补一次完整 `.\build.ps1`。
+- 快速迭代优先用 `.\build.ps1 -Dev`(debug profile + 不打包便携版,2026-10-26 实测冷 135s / 热 28s),产物 `server-rs\target\debug\kedai-server.exe` 可直接跑;`.\build.ps1 -TestOnly` 走的是 release,仍要吃 LTO 链接(约 8m 级)。注意 `-Dev` 与 `-TestOnly` **不能同时用**(脚本主动抛错:语义重叠),`-Dev` 与 `-WithPortable` 也互斥。便携版会因此未同步,交付前补一次完整 `.\build.ps1`。
 - **本机环境**:裸 PowerShell/cmd/Git Bash 里可能没有 cargo 环境(MSVC toolchain 未注入)。构建/测试前先执行
   `call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"`,
   或在已加载 vcvars64 的 shell 里再调用 build.ps1 / cargo;Git Bash 中可用 `cmd //c "<bat 包装>"` 形式嵌套。
