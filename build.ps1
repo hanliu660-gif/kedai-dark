@@ -12,6 +12,7 @@
 #   .\build.ps1 -Tauri        # 双端同步之外再追加 NSIS 安装包(需 tauri CLI)
 #   .\build.ps1 -WithPortable # 兼容旧用法;双端同步已是默认,此开关为无操作
 #   .\build.ps1 -Clean        # 构建成功后额外清掉 target 回收磁盘(默认保留,下次增量)
+#   .\build.ps1 -Parallel     # 后端与便携版两条 release 链接并行(需 >=8 GB 空闲内存,见 -ParallelMinFreeGB)
 #
 # 前端新鲜度:web/dist 在编译期经 include_dir! 嵌入 kedai-server(见 server-rs/src/api/mod.rs),
 # 由 server-rs/build.rs 声明 rerun-if-changed 保证 cargo 感知;脚本另做 mtime 检测兜底。
@@ -34,6 +35,13 @@ param(
     # 构建成功后清掉 target(回收数 GB 磁盘)。默认**不清**,以便下次增量编译。
     # 发布/交付前若要一个干净的全量构建,加本开关。
     [switch]$Clean,
+    # 双二进制并行:server-rs(release)与 src-tauri(便携版)各用独立 target 目录,
+    # 互不抢 cargo 锁,可同时链接。**默认关**:两条 LTO 链接并发会让峰值内存翻倍,
+    # 本机 13.75 GB 在只剩 4~5 GB 空闲时必然换页,反而更慢。开之前先用
+    # -ParallelMinFreeGB 与实际空闲内存对齐。
+    [switch]$Parallel,
+    # -Parallel 的内存护栏:空闲物理内存低于该值时直接拒绝,不做任何构建。
+    [int]$ParallelMinFreeGB = 8,
     # 后端 cargo target 根(仅作用于 server-rs,不影响 src-tauri 便携版产物路径)。
     # 默认 server-rs\target。当该目录被安全软件拦截「新建可执行文件的执行」时
     # (build script exe 报 os error 5),用本参数把后端产物外置到白名单目录,例如:
@@ -110,6 +118,10 @@ if ($TestOnly -and $Dev) {
 
 # 双端同步是默认行为;-TestOnly / -Dev 是明确的单端快速通道
 $BuildPortable = -not $TestOnly -and -not $Dev
+
+if ($Parallel -and (-not $BuildPortable -or $Dev -or $TestOnly)) {
+    throw "-Parallel 仅在完整构建(前端 + 后端 + 便携版)时可用;-Dev / -TestOnly 本来就不并行"
+}
 
 # 后端产物目录(仅 server-rs):优先级 -RustTargetDir 参数 > CARGO_TARGET_DIR 环境变量
 # > 默认 server-rs\target。
@@ -222,6 +234,25 @@ if (-not $NoWeb) {
 }
 
 # 3) Rust 编译
+# -Parallel:先把便携版(src-tauri,单独 target)丢到后台,再在前台编 server-rs,
+# 两条 release 链接错峰重叠。失败信息从日志文件读回。
+$parallelProc = $null
+$parallelLog = Join-Path $env:TEMP "kedai-portable-parallel.log"
+if ($Parallel) {
+    $freeGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 2)
+    if ($freeGB -lt $ParallelMinFreeGB) {
+        # PS 5.1 不允许把 + 放在行首续行,故拆成两条赋值。
+        $parallelMsg = "-Parallel 需要至少 $ParallelMinFreeGB GB 空闲物理内存,当前只有 $freeGB GB;两条 LTO 链接并发会换页。"
+        $parallelMsg += "关掉占内存的程序后重试,或直接去掉 -Parallel(串行)。"
+        throw $parallelMsg
+    }
+    Write-Host "[并行] 便携版转入后台(空闲 $freeGB GB >= $ParallelMinFreeGB GB),前台先编后端 ..." -ForegroundColor Cyan
+    $portableArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'tools\build-portable.ps1'), '-NoWeb')
+    if (-not $Clean) { $portableArgs += '-KeepTarget' }
+    $parallelProc = Start-Process -FilePath (Get-Command powershell).Source -ArgumentList $portableArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $parallelLog
+    Write-Host "[并行] 便携版日志:$parallelLog" -ForegroundColor DarkGray
+}
+
 Write-Host "[2/3] 编译 Rust 后端 ..." -ForegroundColor Green
 Push-Location "$Root\server-rs"
 try {
@@ -355,12 +386,22 @@ if ($Tauri -and -not $BuildPortable -and (Test-Path "$Root\src-tauri\target")) {
 #    由 build-portable.ps1 组装 dist\Kedai-portable、写 sidecar 并统一清理 src-tauri\target。
 #    被调脚本失败会以终止错误传播,此处无需再判退出码。
 if ($BuildPortable) {
-    Write-Host "[3/3] 构建便携版 dist\Kedai-portable\Kedai.exe(与测试版同一份前端) ..." -ForegroundColor Green
-    # 默认 -KeepTarget:便携版脚本收尾不再整删 target,下次构建走增量(-Clean 时才清)。
-    if ($Clean) {
-        & "$Root\tools\build-portable.ps1" -NoWeb
+    if ($parallelProc) {
+        Write-Host "[3/3] 等待后台便携版构建收尾(-Parallel) ..." -ForegroundColor Green
+        $parallelProc.WaitForExit()
+        if ($parallelProc.ExitCode -ne 0) {
+            if (Test-Path $parallelLog) { Get-Content $parallelLog -Tail 30 | ForEach-Object { Write-Host $_ } }
+            throw "并行便携版构建失败(exit=$($parallelProc.ExitCode));日志:$parallelLog"
+        }
+        Get-Content $parallelLog -Tail 6 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     } else {
-        & "$Root\tools\build-portable.ps1" -NoWeb -KeepTarget
+        Write-Host "[3/3] 构建便携版 dist\Kedai-portable\Kedai.exe(与测试版同一份前端) ..." -ForegroundColor Green
+        # 默认 -KeepTarget:便携版脚本收尾不再整删 target,下次构建走增量(-Clean 时才清)。
+        if ($Clean) {
+            & "$Root\tools\build-portable.ps1" -NoWeb
+        } else {
+            & "$Root\tools\build-portable.ps1" -NoWeb -KeepTarget
+        }
     }
 }
 
