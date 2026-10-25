@@ -11,10 +11,14 @@
 #   .\build.ps1 -NoWeb        # 复用现有 web/dist,仅重编 Rust(双端)
 #   .\build.ps1 -Tauri        # 双端同步之外再追加 NSIS 安装包(需 tauri CLI)
 #   .\build.ps1 -WithPortable # 兼容旧用法;双端同步已是默认,此开关为无操作
+#   .\build.ps1 -Clean        # 构建成功后额外清掉 target 回收磁盘(默认保留,下次增量)
 #
 # 前端新鲜度:web/dist 在编译期经 include_dir! 嵌入 kedai-server(见 server-rs/src/api/mod.rs),
 # 由 server-rs/build.rs 声明 rerun-if-changed 保证 cargo 感知;脚本另做 mtime 检测兜底。
-# 末尾删除 target 仅用于释放磁盘,不是新鲜度的保证手段。
+# 末尾保留 target 以复用增量(2026-10-26 起):此前每次构建后整删 target,导致
+# 「314 个 crate 全量冷编」,实测一次 12m33s。改默认保留后,未改动的 crate 直接复用,
+# 只有自身 crate + 链接重做。**新鲜度不依赖删 target**:web/dist 嵌入由 build.rs 的
+# rerun-if-changed 保证;需要回收磁盘时显式加 -Clean。
 #
 # 构建指纹:每个 dist 产物写出 <exe>.build.json(version/build_time/dist_hash,
 # 见 tools/Write-BuildStamp.ps1),供 start.ps1 与 launcher 启动前比对两版是否同步;
@@ -27,6 +31,9 @@ param(
     [switch]$WithPortable,
     [switch]$TestOnly,
     [switch]$SkipChecks,
+    # 构建成功后清掉 target(回收数 GB 磁盘)。默认**不清**,以便下次增量编译。
+    # 发布/交付前若要一个干净的全量构建,加本开关。
+    [switch]$Clean,
     # 后端 cargo target 根(仅作用于 server-rs,不影响 src-tauri 便携版产物路径)。
     # 默认 server-rs\target。当该目录被安全软件拦截「新建可执行文件的执行」时
     # (build script exe 报 os error 5),用本参数把后端产物外置到白名单目录,例如:
@@ -298,13 +305,16 @@ if (-not $Dev) {
         $stampPath = Write-KedaiBuildStamp -Root $Root -ExePath $dest
         Write-Host "[指纹] 已写出 $(Split-Path $stampPath -Leaf)" -ForegroundColor Green
     }
-    # 清理产物释放磁盘(下次构建全量重编,是有意取舍)。
+    # 清理产物释放磁盘(仅在 -Clean 时;默认保留缓存以便下次增量)。
     # 路径必须与实际产物目录一致(2026-09-13 批次 1 修正):外置时硬编码 server-rs\target
     # 会清理不到。**但外置目录可能与他人共用**(本机 D:\kedai-build 下还挂着 Android 构建的
     # junction 目标 android-app-build)——2026-09-13 实测踩坑:整删外置目录把 Android 构建目录
     # 一并删除,导致 APK 构建在 `app:mergeUniversalReleaseJniLibsFolders` 报「无法创建目录」。
     # 故:默认路径整删(整个 target 都是 cargo 的);外置目录只清 cargo 自己的 profile 子目录。
-    if ($CargoTargetDir -eq "$Root\server-rs\target") {
+    if (-not $Clean) {
+        Write-Host "[保留] 编译缓存留在 $CargoTargetDir(默认;要回收磁盘请加 -Clean)" -ForegroundColor DarkGray
+    }
+    if ($Clean -and $CargoTargetDir -eq "$Root\server-rs\target") {
         if (Test-Path $CargoTargetDir) {
             try {
                 Remove-Item -Recurse -Force $CargoTargetDir -ErrorAction Stop
@@ -313,7 +323,7 @@ if (-not $Dev) {
                 Write-Host "[警告] 清理 $CargoTargetDir 失败: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
-    } else {
+    } elseif ($Clean) {
         foreach ($sub in @("debug", "release", "tmp", "CACHEDIR.TAG", ".rustc_info.json")) {
             $p = Join-Path $CargoTargetDir $sub
             if (Test-Path $p) {
@@ -346,7 +356,12 @@ if ($Tauri -and -not $BuildPortable -and (Test-Path "$Root\src-tauri\target")) {
 #    被调脚本失败会以终止错误传播,此处无需再判退出码。
 if ($BuildPortable) {
     Write-Host "[3/3] 构建便携版 dist\Kedai-portable\Kedai.exe(与测试版同一份前端) ..." -ForegroundColor Green
-    & "$Root\tools\build-portable.ps1" -NoWeb
+    # 默认 -KeepTarget:便携版脚本收尾不再整删 target,下次构建走增量(-Clean 时才清)。
+    if ($Clean) {
+        & "$Root\tools\build-portable.ps1" -NoWeb
+    } else {
+        & "$Root\tools\build-portable.ps1" -NoWeb -KeepTarget
+    }
 }
 
 # 5) 图形启动器与快捷方式(幂等):项目根 Kedai.exe 是双击正式入口(过期询问重建/

@@ -1,8 +1,11 @@
 ﻿# 构建正式 Windows 便携目录:dist\Kedai-portable\Kedai.exe
 # -NoWeb:跳过前端构建,复用现有 web/dist(供 build.ps1 接续调用,避免重复构建)
+# -KeepTarget:打包后**保留** server-rs\src-tauri 的 target,供下次增量编译
+#   (默认 False 与旧行为一致;build.ps1 默认传本开关,仅在 -Clean 时不传)
 param(
     [string]$OutputDir = "",
-    [switch]$NoWeb
+    [switch]$NoWeb,
+    [switch]$KeepTarget
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,6 +114,7 @@ Write-Host "[OK] 便携目录:$OutputDir" -ForegroundColor Green
 Write-Host "入口:$OutputDir\Kedai.exe"
 
 # 打包完成,清除编译产物目录(释放磁盘;下次构建需重新编译)。
+# **默认由 build.ps1 传 -KeepTarget 保留缓存**;只有显式 -Clean 链路才会走到删除。
 # 文件被占用(如 Kedai.exe 仍在运行)时删除可能失败,仅警告不中止。
 # server-rs 产物目录:构建可能把后端产物外置(CARGO_TARGET_DIR)——2026-09-13 批次 1 起跟随;
 # **但外置目录可能与他人共用**(本机 D:\kedai-build 下挂着 Android 构建的 junction 目标
@@ -129,6 +133,9 @@ if ($ServerRustTarget -eq $DefaultServerTarget) {
     )
     Write-Host "[提示] 外置产物目录只清 cargo 子目录,保留同目录下其它数据: $ServerRustTarget" -ForegroundColor DarkGray
 }
+if ($KeepTarget) {
+    Write-Host "[保留] 编译缓存:$(Join-Path $Root 'server-rs\target') 与 src-tauri\target(默认;要回收磁盘请加 -Clean)" -ForegroundColor DarkGray
+} else {
 foreach ($dir in $CleanDirs) {
     if (Test-Path $dir) {
         try {
@@ -138,6 +145,7 @@ foreach ($dir in $CleanDirs) {
             Write-Host "[警告] 清理 $dir 失败: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
+}
 }
 
 # src-tauri\target 删除后,之前 Android 构建在 jniLibs 里留的 .so 符号链接会悬空,
