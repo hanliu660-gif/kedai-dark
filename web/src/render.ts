@@ -163,8 +163,17 @@ export function demoteInlineHandlers(html: string): string {
  * 身份/版本/区域选择)依赖表单交互;disabled/checked/selected/value 等状态
  * 属性保留,事件处理器一律剥离(交互经 jQuery 子集绑定)。
  */
+/**
+ * sanitize-html 2.17 起支持 `allowedEmptyAttributes`(声明「值为空也保留」的属性),
+ * 但 `@types/sanitize-html` 2.16.1 尚未声明该字段;这里用交叉类型补齐,
+ * 避免 `as never` / `as unknown as`(前端类型 ratchet 只降不升)。
+ */
+type SanitizeVisibleOptions = NonNullable<Parameters<typeof sanitizeHtml>[1]> & {
+  allowedEmptyAttributes: string[];
+};
+
 export function sanitizeVisibleHtml(html: string): string {
-  return sanitizeHtml(html, {
+  const options: SanitizeVisibleOptions = {
     allowedTags: [
       'div', 'span', 'p', 'br', 'hr', 'strong', 'em', 'b', 'i', 'u', 's', 'small',
       'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
@@ -173,6 +182,17 @@ export function sanitizeVisibleHtml(html: string): string {
       'button',
       // 表单控件:开场界面(身份/版本/区域选择、协议勾选)依赖输入交互
       'form', 'label', 'input', 'select', 'option', 'optgroup', 'textarea', 'fieldset', 'legend',
+      // 语义容器:酒馆前端卡(整页 <html> 卡)用 <main>/<section>/<nav> 搭骨架,
+      // 卡自己的 CSS 就挂在这些节点上(`main.sv-stage{max-width:940px}`、
+      // `nav.sv-stepper{display:grid}`)。旧白名单没有它们,sanitize-html 的
+      // discard 模式会把标签连同 class 一起揭掉(子节点被提级),卡的分栏 grid 父级
+      // 消失、子项掉进 flex 父容器 → 一列列 20px 宽的竖排单字(RE 卡实测:14 个
+      // <section> + 1 个 <main> + 1 个 <nav> 全被揭掉)。标签本身无脚本风险,
+      // 属性仍走同一套白名单与声明级清洗。
+      'main', 'section', 'article', 'nav', 'header', 'footer', 'aside',
+      'figure', 'figcaption',
+      // 文本级语义标签(卡注释、时间戳、键位提示)
+      'mark', 'cite', 'q', 'time', 'abbr', 'kbd', 'samp', 'var',
     ],
     allowedAttributes: {
       // id 必须保留:状态栏脚本(jQuery 子集)用 #id 选择器定位元素,剥离后脚本静默空转;
@@ -180,7 +200,9 @@ export function sanitizeVisibleHtml(html: string): string {
       // width/height 属性保留(实跑问题 5):酒馆状态栏常用 <table width="100%"> 或
       // <div width=…> 排版,旧白名单只放行 img,表格宽度属性被剥后塌成内容宽,
       // 表现为「状态栏文案显示不全/错位」。
-      '*': ['class', 'title', 'aria-label', 'role', 'data-*', 'id', 'style'],
+      // hidden 必须保留:角色卡整页界面大量使用「默认隐藏、脚本就绪后再显示」的
+      // <section hidden> 分层(开场页/档案表单/结算页),剥掉后所有分层同时露出。
+      '*': ['class', 'title', 'aria-label', 'role', 'data-*', 'id', 'style', 'hidden'],
       div: ['style', 'class', 'id', 'width', 'height', 'align'],
       table: ['style', 'class', 'id', 'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align'],
       thead: ['style', 'class', 'id', 'align'],
@@ -201,6 +223,10 @@ export function sanitizeVisibleHtml(html: string): string {
       fieldset: ['disabled', 'class', 'id', 'style'],
     },
     allowedSchemes: ['data', 'https'],
+    // sanitize-html 会把「值为空且属 nonBooleanAttributes」的属性删掉,而 hidden
+    // 就在该名单里(它是真布尔属性,清单口径偏保守) → 显式放行空值,否则
+    // `<section hidden>` 会被还原成可见。checked/disabled/selected 同理(表单卡)。
+    allowedEmptyAttributes: ['hidden', 'checked', 'disabled', 'selected', 'multiple'],
     allowedSchemesByTag: { img: ['data', 'https'] },
     allowProtocolRelative: false,
     transformTags: {
@@ -220,7 +246,8 @@ export function sanitizeVisibleHtml(html: string): string {
       }),
     },
     disallowedTagsMode: 'discard',
-  });
+  };
+  return sanitizeHtml(html, options);
 }
 
 /**

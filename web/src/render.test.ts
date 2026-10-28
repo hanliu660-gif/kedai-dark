@@ -15,6 +15,7 @@ import {
   stableFrameNonce,
   demoteInlineHandlers,
   sanitizeMessageHtml,
+  sanitizeVisibleHtml,
 } from './render';
 import type { RegexScript } from './api';
 
@@ -98,10 +99,26 @@ describe('sanitizeScopedCss', () => {
     expect(safe).toContain('data:image/svg+xml');
   });
 
-  it('拒绝外部资源和非白名单 at-rule', () => {
-    const safe = sanitizeScopedCss('@import "x"; @font-face{x:y} @media(max-width:1px){.x{color:red}} @keyframes k{from{opacity:0}}');
-    expect(safe).not.toMatch(/@import|@font-face|@media/i);
+  it('拒绝外部资源 at-rule(@import/@page),但保留条件规则与 @font-face', () => {
+    const safe = sanitizeScopedCss('@import "x"; @font-face{font-family:kd;src:url(https://cdn.test/f.woff2)} @media(max-width:1px){.x{color:red}} @supports (display:grid){.y{display:grid}} @keyframes k{from{opacity:0}}');
+    expect(safe).not.toMatch(/@import/i);
+    // 条件规则必须保留:@media 是整页前端卡唯一的窄栏兜底,丢弃即塌成一字一行
+    expect(safe).toContain('@media(max-width:1px)');
+    expect(safe).toContain('.x { color: red }');
+    expect(safe).toContain('@supports (display:grid)');
+    expect(safe).toContain('.y { display: grid }');
+    expect(safe).toContain('@font-face');
+    expect(safe).toContain('https://cdn.test/f.woff2');
     expect(safe).toContain('@keyframes k');
+  });
+
+  it('条件规则内部仍做声明级清洗(expression/javascript:/http url 不能借 @media 混进来)', () => {
+    const safe = sanitizeScopedCss(
+      '@media(max-width:600px){.x{width:expression(alert(1));background:url(javascript:alert(1))}.y{background:url(https://cdn.test/ok.png)}}',
+    );
+    expect(safe).toContain('@media(max-width:600px)');
+    expect(safe).not.toMatch(/expression|javascript:/i);
+    expect(safe).toContain('https://cdn.test/ok.png');
   });
 });
 
@@ -626,6 +643,60 @@ describe('scopeCss(body/html 根选择器重写)', () => {
   it('@media 内的 body 选择器同样重写', () => {
     const { css } = scopeCss('@media (max-width: 600px) { body.dark .p { color: #fff; } }', 'sc4');
     expect(css).toContain('[data-kd-scope="sc4"].dark .p');
+  });
+
+  it(':root 重写到作用域容器本体(卡的令牌块必须命中,不能变成 [attr] :root)', () => {
+    // 酒馆前端卡: :root{--paper:#f3e8d4;--ink:#2d2824;color-scheme:light}
+    // 旧实现产出 `[data-kd-scope="k1"] :root` —— 容器是 div,永不匹配,卡的主题全灭
+    const { css } = scopeCss(':root{--paper:#f3e8d4;--ink:#2d2824;color-scheme:light}', 'r1');
+    expect(css).toContain('[data-kd-scope="r1"] {');
+    expect(css).not.toContain(':root');
+    expect(css).toContain('--paper:#f3e8d4');
+  });
+
+  it(':root 带行内选择器/多级根前导时折叠到容器上', () => {
+    expect(scopeCss(':root.theme-dark .card{color:#fff}', 'r2').css).toContain(
+      '[data-kd-scope="r2"].theme-dark .card',
+    );
+    expect(scopeCss('html body .card{color:#fff}', 'r3').css).toContain('[data-kd-scope="r3"] .card');
+    expect(scopeCss('html{background:#111}', 'r4').css).toContain('[data-kd-scope="r4"] {');
+  });
+
+  it('@media 内的 :root 同样重写(断点里的令牌覆写)', () => {
+    const { css } = scopeCss('@media (max-width: 600px){:root{--paper:#fff}}', 'r5');
+    expect(css).toContain('@media (max-width: 600px)');
+    expect(css).toContain('[data-kd-scope="r5"] {');
+    expect(css).not.toContain(':root');
+  });
+});
+
+describe('sanitizeVisibleHtml 语义容器(整页前端卡骨架)', () => {
+  it('main/section/nav/article/header/footer/aside 保留,class 不丢', () => {
+    const html =
+      '<main class="sv-stage"><section class="sv-book" id="book" style="display:none">' +
+      '<nav class="sv-stepper"><button class="sv-step-tab">1</button></nav>' +
+      '<article class="sv-sheet"><header class="sv-head">h</header><footer class="sv-foot">f</footer>' +
+      '<aside class="sv-side">s</aside></article></section></main>';
+    const out = sanitizeVisibleHtml(html);
+    // 标签在 → 卡自己的 `main.sv-stage{max-width:940px}` / `nav.sv-stepper{display:grid}` 才命中
+    expect(out).toContain('<main class="sv-stage">');
+    expect(out).toContain('<section class="sv-book" id="book" style="display:none">');
+    expect(out).toContain('<nav class="sv-stepper">');
+    expect(out).toContain('<article class="sv-sheet">');
+    expect(out).toContain('<header class="sv-head">');
+    expect(out).toContain('<footer class="sv-foot">');
+    expect(out).toContain('<aside class="sv-side">');
+  });
+
+  it('hidden 布尔属性保留(默认隐藏的分层不该同时露出)', () => {
+    const out = sanitizeVisibleHtml('<section class="sv-complete" hidden><p>档案已经封存</p></section>');
+    expect(out).toMatch(/<section class="sv-complete" hidden(=("")?)?>/);
+  });
+
+  it('语义容器上的事件处理器/危险属性仍被清洗(安全边界不变)', () => {
+    const out = sanitizeVisibleHtml('<section class="a" onclick="steal()" style="width:expression(alert(1))">x</section>');
+    expect(out).toContain('<section class="a">');
+    expect(out).not.toMatch(/onclick|expression/i);
   });
 });
 

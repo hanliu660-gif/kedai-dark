@@ -59,12 +59,18 @@ const VERBOSE = process.argv.includes('--verbose');
  * 与两处原本只以 var() 兜底形态出现、现在需要可覆写的声明;暗色一律靠令牌覆写实现,
  * 组件规则零改动,所以增量必须在令牌层(base 那 8 行是暗色噪点的 mix-blend-mode 覆写
  * 与注释——深底上 multiply 会把噪点糊成死黑,只能换 screen)。
+ * CARD-A 变动(酒馆整页角色卡渲染,只升 shell 832→838):整页卡的容器是自带分段/断行
+ * 策略的文档,宿主 `.sv-msg-bubble` 的 `pre-wrap` + `word-break:break-word` 会把卡内
+ * 中文拆成一字一行(实测 940px 设计稿在 517px 容器内塌成 20px 宽的高条)。修法是给
+ * `[data-kd-scope]` 容器恢复 `white-space/word-break/overflow-wrap: normal`(3 行声明)
+ * + 放宽 `:has()` 气泡上限至满宽并把理由写进注释(3 行注释);宿主自身规则零改动,
+ * 所以增量只能落在容器段。
  */
 const LINE_BASELINE = {
   'style.css': 49,
   'styles/tokens.css': 247,
   'styles/base.css': 130,
-  'styles/shell.css': 832,
+  'styles/shell.css': 838,
   'styles/panels.css': 971,
   'styles/content.css': 1007,
   'styles/task.css': 997,

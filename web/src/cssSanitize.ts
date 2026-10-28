@@ -14,6 +14,8 @@
  * 偏移/pointer-events/cursor/content、vw/vh 视口单位、https 与 data:image 的 url()。
  * 仍禁:behavior/binding(IE 脚本绑定)、expression()、@import、javascript:,
  * 以及非白名单的 url()(http 混合内容、data: 文档、file: 本地读取)。
+ * 条件规则(@media/@supports/@container/@layer)与 @font-face 递归/声明级清洗后保留
+ * (整页前端卡靠断点做窄栏兜底,丢弃即塌;见下方分支注释)。
  */
 export function sanitizeScopedCss(css: string): string {
   const cleanBlocks = (input: string, keyframe = false): string => splitCssBlocks(input)
@@ -22,6 +24,20 @@ export function sanitizeScopedCss(css: string): string {
       if (isAt) {
         if (/^@(?:-webkit-)?keyframes\s+[\w-]+$/i.test(name)) {
           return `${name}{${cleanBlocks(inner, true)}}`;
+        }
+        // 条件/分组规则(@media/@supports/@container/@layer)递归清洗内部规则后保留:
+        // 酒馆前端卡按整页设计,断点是它唯一的响应式兜底(RE 卡 3 个 <style> 共 10 个
+        // @media,max-width:600px 那条负责窄栏布局)。整块丢弃会让卡的宽屏规则在窄气泡
+        // 里照旧生效,把四列/两列压成一字一行;而 scopeCss 本就支持对这些 at-rule 递归
+        // 加前缀(见其注释与单测),丢在更上游这步等于把那份能力变成死代码。
+        if (/^@(?:media|supports|container|layer|scope)\b/i.test(name)) {
+          const sub = cleanBlocks(inner);
+          return sub ? `${name}{${sub}}` : '';
+        }
+        // @font-face 在声明级清洗后保留(卡自带字体);@import/@charset/@page 仍丢弃
+        if (/^@font-face$/i.test(name)) {
+          const body = sanitizeCssDeclarations(inner);
+          return body ? `@font-face { ${body} }` : '';
         }
         return '';
       }
@@ -179,11 +195,29 @@ function splitCssDeclarations(input: string): string[] {
  * `body.theme-blue .tide-card`,wuwa 状态栏 35 处)——作用域容器就是「文档根」:
  * 前导 body/html 重写为容器自身,紧邻 body 的类/伪类/属性选择器落到容器上
  * (与沙箱 $('body') → 容器的特判对称;$('body').addClass('theme-blue') 因而生效)。
+ *
+ * `:root` 同属「文档根」:酒馆前端卡把主题令牌全写在 `:root{--paper:…;--ink:…}`。
+ * 旧实现只认 body/html,`:root` 落到兜底分支变成 `[attr] :root` —— 容器是 div,
+ * 这个选择器永不匹配,卡的全部令牌与 color-scheme 失效,卡会继承宿主的同名令牌
+ * (Kedai 自身也用 --sv-* 命名空间)表现为暗底暗字。故三者一并重写到容器本体。
  */
 function scopeSelector(s: string, attr: string): string {
   if (!s || s.startsWith(attr)) return s;
-  const m = /^(?:html(?![\w-])\s+)?body(?![\w-])((?:[.:#][\w-]+(?:\([^)]*\))?|\[[^\]]*\])*)([\s\S]*)$/.exec(s);
-  if (m) return `${attr}${m[1] ?? ''}${m[2] ?? ''}`;
+  // 逐个剥掉前导根标记(:root / html / body),把它们的行内选择器攒到容器上;
+  // `html body .x` 这类多级前导也一并折叠。最多 4 跳,防止死循环。
+  const rootAt = /^(?::root(?![\w-])|html(?![\w-])|body(?![\w-]))((?:[.:#][\w-]+(?:\([^)]*\))?|\[[^\]]*\])*)\s*/;
+  let rest = s;
+  let own = '';
+  let hops = 0;
+  while (hops < 4) {
+    const m = rootAt.exec(rest);
+    if (!m) break;
+    own += m[1] ?? '';
+    rest = rest.slice(m[0].length);
+    hops++;
+    if (!rest) break;
+  }
+  if (hops > 0) return rest ? `${attr}${own} ${rest}` : `${attr}${own}`;
   return `${attr} ${s}`;
 }
 

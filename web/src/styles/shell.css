@@ -282,15 +282,21 @@
 
 /* 状态栏/卡内 HTML 的渲染容器(实跑问题 5):酒馆状态栏按整幅聊天区宽度设计,
    塞进 max-width:min(560px,78%) 的气泡后容易横向溢出/被裁,表现为「文案显示不全」。
-   含 data-kd-scope 卡片的气泡放宽到 92%,容器自身允许横向滚动兜底(不裁内容、不撑破布局)。
+   含 data-kd-scope 卡片的气泡放宽到满宽,容器自身允许横向滚动兜底(不裁内容、不撑破布局)。
    注::has() 在 WebView2/Chromium 均已支持;不支持时仅退回原宽度,不影响可用性。 */
 .sv-msg.assistant .sv-msg-bubble:has([data-kd-scope]) {
-  max-width: 92%;
+  max-width: 100%;
 }
+/* 卡内 HTML 是整页文档(自带分段/字距/断行策略),宿主的 pre-wrap + break-word
+   会把卡的排版语义覆盖成「逐字断行」。作用域容器内恢复 normal,
+   由卡自己的 CSS 决定换行(实测:940px 设计稿在 517px 容器内被 break-word 拆成一字一行)。 */
 .sv-msg-bubble [data-kd-scope] {
   max-width: 100%;
   overflow-x: auto;
   overflow-y: visible;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 /* 方块头像 */
