@@ -10,6 +10,14 @@ import { parseUpdateVariable } from './mvu/parser';
 const STATUS_VAR_RE = /<\/?\s*status_current_variable\s*>/gi;
 
 /**
+ * 酒馆正文包装标签(`<maintext>…</maintext>`)剥离:内容保留,只去掉标签本身。
+ * 起因:B1 批实测的卡片把正文整段包在 `<maintext>` 里交给 SillyTavern 排版,
+ * ST 不认识这个标签会当文本渲染。Kedai 的 HTML 白名单本就不含它,
+ * 于是它以字面 `</maintext>` 出现在气泡顶部(魔法少女的星庇岛卡实测)。
+ */
+const MAIN_TEXT_RE = /<\/?\s*maintext\s*>/gi;
+
+/**
  * 剥离 HTML 注释(含**未闭合的尾部注释**)。酒馆式 HTML 渲染路径在 markdown 化之前调用。
  * 未闭合注释按「至文本结尾」剥除:流式输出下注释常跨帧未闭合,若把 `<!--` 后的半截
  * 文本当正文渲染,注释闭合的下一帧会出现「多一行再消失」的闪字面跳变;
@@ -19,12 +27,16 @@ export function stripHtmlComments(text: string): string {
   return text.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/, '');
 }
 
-/** 剥离协议块/段标签:UpdateVariable 块 + status_current_variable 标签 */
+/** 剥离协议块/段标签:UpdateVariable 块 + status_current_variable 标签 + maintext 包装标签 */
 export function stripProtocolBlocks(text: string): string {
   let t = parseUpdateVariable(text).cleaned;
   if (STATUS_VAR_RE.test(t)) {
     STATUS_VAR_RE.lastIndex = 0;
     t = t.replace(STATUS_VAR_RE, '');
+  }
+  if (MAIN_TEXT_RE.test(t)) {
+    MAIN_TEXT_RE.lastIndex = 0;
+    t = t.replace(MAIN_TEXT_RE, '');
   }
   return t;
 }

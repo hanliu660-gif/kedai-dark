@@ -105,6 +105,12 @@ export interface MessageRenderKeyInput {
   scopeId: string;
   /** 宏展开用角色名(脚本替换串中的 {{char}}) */
   charName: string;
+  /**
+   * 整页脚本文档是否走隔离文档路径(角色卡脚本已授权 + HTML 渲染开启)。
+   * 参与键:未授权时同一文本渲染成静态内联卡片,授权后渲染成 iframe 壳,
+   * 两者输出结构不同,不能共用缓存条目。
+   */
+  framePages?: boolean;
 }
 
 /**
@@ -113,18 +119,21 @@ export interface MessageRenderKeyInput {
  * 故不存在「不同输入拼出同一键」的歧义。
  */
 export function buildMessageRenderKey(i: MessageRenderKeyInput): string {
-  return `${i.scopeId}\n${i.scriptHash}\n${i.depth}\n${i.renderHtml ? 1 : 0}\n${i.charName}\n${i.text}`;
+  return `${i.scopeId}\n${i.scriptHash}\n${i.depth}\n${i.renderHtml ? 1 : 0}\n${i.framePages ? 1 : 0}\n${i.charName}\n${i.text}`;
 }
 
 /**
  * 构造脚本块解析缓存键。口径沿用原 `ChatWindow` 实现(scopeId + scriptHash + depth + text),
  * `depth` 参与是因为同一条消息在不同楼层深度下脚本适用性不同(实跑问题 7 R2)。
+ * `framePages` 参与:整页脚本文档在开/关隔离文档路径下产出的块数量与结构不同
+ * (开启后该块不产生镜像脚本块),两者不能共用条目。
  */
 export function buildScriptBlocksKey(
   scopeId: string,
   scriptHash: string,
   depth: number,
   text: string,
+  framePages?: boolean,
 ): string {
-  return `${scopeId}\n${scriptHash}\n${depth}\n${text}`;
+  return `${scopeId}\n${scriptHash}\n${depth}\n${framePages ? 1 : 0}\n${text}`;
 }

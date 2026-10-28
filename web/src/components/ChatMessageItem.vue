@@ -39,6 +39,12 @@ const props = defineProps<{
   depth?: number;
   /** 正则脚本内容版本 hash:作为缓存失效兜底依赖(脚本变化时必变) */
   scriptHash: string;
+  /**
+   * 当前角色卡脚本是否已授权(JS 授权门禁)。
+   * 整页脚本文档(酒馆前端渲染卡)的界面要靠作者脚本装配,未授权时仍走
+   * 静态内联渲染(脚本被剥);授权后改走隔离文档路径,消息自动重渲染。
+   */
+  scriptAuthorized: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -255,6 +261,7 @@ const html = computed<string>(() => {
     depth,
     scopeId,
     charName: store.currentCharacterName,
+    framePages: props.scriptAuthorized,
   });
   const cached = messageHtmlCache.get(key);
   if (cached !== undefined) return cached;
@@ -287,7 +294,7 @@ function renderMessageHtml(text: string, scopeId: string, depth: number): string
       // userName 缺省「用户」,与后端 content_display 展开一致)
       const scoped = renderScopedScripts(text, props.scripts, `msg-${props.m.id}`, depth, {
         charName: store.currentCharacterName,
-      });
+      }, props.scriptAuthorized);
       if (scoped) return scoped.html;
     }
     // HTML 子集路径(酒馆式,RPFLOW 提交 3):脚本未命中的消息正文按 HTML 白名单渲染

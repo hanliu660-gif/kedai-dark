@@ -342,8 +342,513 @@ function installTavernHelper(charData, worldbook) {
     replacePreset: replacePresetImpl,
     eventOn: function () { return function () {}; },
     eventOff: function () {},
-    eventEmit: function () { return Promise.resolve(false); }
+    eventEmit: function () { return Promise.resolve(false); },
+    // 楼层 id:kedai 的卡内界面不按酒馆楼层存档,这里给 null(作者卡一律先做
+    // typeof 检查与 null 容错:拿不到真实 id 时退化为「不按楼层挂变量」)。
+    // 存在但不可用的原因:作者脚本常写 `typeof f === 'function' ? f() : null`,
+    // 直接缺字段会让「是否具备该 API」的探测分支走错。
+    getLastMessageId: function () { return null; },
+    getCurrentMessageId: function () { return null; }
   };
+}
+
+// ---- MVU(MagVarUpdate)垫片 ----
+// 酒馆整页卡的通用依赖:window.Mvu.getMvuData/replaceMvuData + 变量事件。
+// 变量真身在宿主(单会话一份),这里只持快照:读走快照,写回经 mvu-replace 上报宿主落库。
+// 与沙箱 boot-script 里的 Mvu 面向作者脚本的形态保持一致(同一批卡片两边都要能跑)。
+function installMvu(snapshot) {
+  var state = {
+    stat_data: (snapshot && snapshot.stat_data && typeof snapshot.stat_data === 'object') ? snapshot.stat_data : {},
+    display_data: (snapshot && snapshot.display_data && typeof snapshot.display_data === 'object') ? snapshot.display_data : {}
+  };
+  function view() {
+    var stat = {};
+    try { stat = JSON.parse(JSON.stringify(state.stat_data || {})); } catch (e) { stat = {}; }
+    var disp = {};
+    try { disp = JSON.parse(JSON.stringify(state.display_data || {})); } catch (e) { disp = {}; }
+    return { stat_data: stat, display_data: disp };
+  }
+  var bus = {};
+  function on(ev, cb) {
+    if (typeof cb !== 'function') return function () {};
+    (bus[ev] || (bus[ev] = [])).push(cb);
+    return function () { off(ev, cb); };
+  }
+  function off(ev, cb) {
+    var list = bus[ev];
+    if (!list) return;
+    var i = list.indexOf(cb);
+    if (i >= 0) list.splice(i, 1);
+  }
+  function emit(ev, payload) {
+    var list = bus[ev];
+    if (list) for (var i = 0; i < list.length; i++) { try { list[i](payload); } catch (e) { /* 订阅者异常不影响写回 */ } }
+    return Promise.resolve(true);
+  }
+  var Mvu = {
+    getVariables: view,
+    getMvuData: view,
+    replaceMvuData: function (data) {
+      if (!data || typeof data !== 'object') return;
+      var stat = (data.stat_data && typeof data.stat_data === 'object') ? data.stat_data : {};
+      var disp = (data.display_data && typeof data.display_data === 'object') ? data.display_data : stat;
+      try { state.stat_data = JSON.parse(JSON.stringify(stat)); } catch (e) { state.stat_data = {}; }
+      try { state.display_data = JSON.parse(JSON.stringify(disp)); } catch (e) { state.display_data = {}; }
+      // 上报宿主:变量真身在 chat store,只有落库后刷新/切会话才不会丢
+      kdPost({ type: 'mvu-replace', data: { stat_data: state.stat_data, display_data: state.display_data } });
+      emit(Mvu.events.VARIABLE_UPDATE_ENDED, view());
+      return Promise.resolve();
+    },
+    parseMessage: function (text) {
+      var raw = String(text == null ? '' : text);
+      var cleaned = raw.replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, '');
+      return { cleaned: cleaned, commands: [] };
+    },
+    isDuringExtraAnalysis: false,
+    events: { VARIABLE_UPDATE_ENDED: 'mag_variable_updated', VARIABLE_UPDATE_STARTED: 'mag_variable_update_started' },
+    on: on,
+    off: off,
+    emit: emit,
+    waitGlobalInitialized: function (name) {
+      return (name === 'Mvu' || name === 'MagicalAstrogy') ? Promise.resolve() : Promise.resolve();
+    }
+  };
+  window.Mvu = Mvu;
+  // 作者卡常直接读裸全局(不与 window.Mvu 归一),两套都装
+  if (typeof window.getAllVariables !== 'function') window.getAllVariables = view;
+  if (typeof window.eventOn !== 'function') window.eventOn = on;
+  if (typeof window.eventOff !== 'function') window.eventOff = off;
+  if (typeof window.eventEmit !== 'function') window.eventEmit = emit;
+  if (typeof window.getVariables !== 'function') window.getVariables = function () { return view(); };
+  if (typeof window.waitGlobalInitialized !== 'function') {
+    window.waitGlobalInitialized = function (name) { return Mvu.waitGlobalInitialized(name); };
+  }
+}
+
+// ---- 酒馆运行期裸全局垫片(作者脚本直接调用的 ST 内建函数) ----
+// 实测缺口(「露出日记-0615」「圣像之下」等整页前端卡):它们的装配脚本写
+//   状态('init_data', errorCatched(() => { const t = getCurrentMessageId(); ... }))
+// 这三样在酒馆里是**裸全局**,不属于 TavernHelper 命名空间;缺一个就 ReferenceError,
+// 整个 Vue 应用停在未挂载状态 → 宿主里只剩卡自带的空容器(用户看到的「完全读取不了」)。
+// 这里按酒馆语义补最小实现,并把作者脚本的异常汇总上报宿主便于排查:
+//   - errorCatched(fn): 包一层 try/catch(酒馆同款:出错记录、不向外抛);
+//   - getCurrentMessageId()/getLastMessageId(): 当前楼层 id,由宿主 boot 下发,缺省 null;
+//   - getChatMessages(ids): 经 RPC 回宿主读真实消息(含 MVU 变量树 data.stat_data)。
+function installStGlobals(bootMsg) {
+  if (typeof window.errorCatched !== 'function') {
+    window.errorCatched = function (fn) {
+      if (typeof fn !== 'function') return fn;
+      return function () {
+        try {
+          return fn.apply(this, arguments);
+        } catch (e) {
+          recordError('errorCatched', e);
+          try { console.error('[kd-compat] errorCatched:', e); } catch (err) { /* 忽略 */ }
+          return undefined;
+        }
+      };
+    };
+  }
+  var messageId = (bootMsg && typeof bootMsg.messageId === 'string' && bootMsg.messageId) || null;
+  if (typeof window.getCurrentMessageId !== 'function') {
+    window.getCurrentMessageId = function () { return messageId; };
+  }
+  if (typeof window.getLastMessageId !== 'function') {
+    window.getLastMessageId = function () { return messageId; };
+  }
+  if (typeof window.getChatMessages !== 'function') {
+    window.getChatMessages = function (idOrIds, options) {
+      return tavernCall('getChatMessages', [idOrIds === undefined ? null : idOrIds, options || null]);
+    };
+  }
+  if (window.TavernHelper && typeof window.TavernHelper.getChatMessages !== 'function') {
+    window.TavernHelper.getChatMessages = window.getChatMessages;
+  }
+}
+
+// ---- jQuery 精简实现(作者脚本的 $ 依赖) ----
+// 实测缺口(「露出日记-0615」):装配脚本的主入口是酒馆同款 `$()`——
+//   `$(() => { createApp(...).mount('#app'); $('#app'), $(window).on('pagehide', ...) })`
+// 酒馆页面自带 jQuery,Kedai 的隔离文档没有,于是第一行就 ReferenceError:$ 未定义,
+// Vue 应用永不挂载(宿主里只剩卡自带的粉底空容器)。
+// 这里只实现整页前端卡真正用到的子集(查询/事件/属性/样式/插入/ready),
+// 不做 ajax/animate 等有副作用的大件;作者页若自带 jQuery(script src)会在本垫片之后加载,
+// 因此本实现在 `$.fn` 上打标记,`installJQueryLite` 只在缺失时安装。
+function installJQueryLite() {
+  if (window.$ && window.$.fn && window.$.fn.__kdLite !== true) return; // 作者页自带真 jQuery:不覆盖
+  if (window.$ && window.$.fn && window.$.fn.__kdLite === true) return; // 已装过
+  var PROTO = {};
+  function wrap(nodes) {
+    var c = Object.create(PROTO);
+    c.length = nodes.length;
+    for (var i = 0; i < nodes.length; i++) c[i] = nodes[i];
+    return c;
+  }
+  function asElem(n) { return n && n.nodeType === 1 ? n : null; }
+  function each(c, fn) { for (var i = 0; i < c.length; i++) fn.call(c[i], i, c[i]); return c; }
+  PROTO.each = function (fn) { return each(this, fn); };
+  PROTO.on = function (ev, sel, fn) {
+    if (typeof sel === 'function') { fn = sel; sel = null; }
+    var types = String(ev).split(/\s+/).filter(Boolean);
+    // 简化:不做事件委托(卡里用到的都是直接绑定),sel 存在时把选择器元素上的监听转发给自身子树
+    return each(this, function (i, el) {
+      if (!el || !el.addEventListener) return;
+      var target = sel && asElem(el) ? el : el;
+      for (var k = 0; k < types.length; k++) {
+        var t = types[k];
+        var handler = sel && asElem(el)
+          ? function (e) {
+              var hit = el.querySelectorAll(sel);
+              for (var h = 0; h < hit.length; h++) {
+                if (hit[h] === e.target || hit[h].contains(e.target)) { fn.call(e.target, e); break; }
+              }
+            }
+          : fn;
+        target.addEventListener(t, handler, false);
+        (el.__kdHandlers || (el.__kdHandlers = [])).push({ type: t, handler: handler });
+      }
+    });
+  };
+  PROTO.off = function (ev) {
+    var types = ev ? String(ev).split(/\s+/).filter(Boolean) : null;
+    return each(this, function (i, el) {
+      var list = el && el.__kdHandlers;
+      if (!list || !el.removeEventListener) return;
+      for (var k = list.length - 1; k >= 0; k--) {
+        if (!types || types.indexOf(list[k].type) >= 0) {
+          el.removeEventListener(list[k].type, list[k].handler, false);
+          list.splice(k, 1);
+        }
+      }
+    });
+  };
+  PROTO.one = function (ev, fn) {
+    var self = this;
+    var wrapped = function (e) { self.off(ev, wrapped); fn.call(this, e); };
+    return self.on(ev, wrapped);
+  };
+  PROTO.trigger = function (ev) {
+    var type = String(ev).trim();
+    return each(this, function (i, el) {
+      if (!el) return;
+      var e;
+      try { e = new Event(type, { bubbles: true, cancelable: true }); } catch (err) { e = document.createEvent('Event'); e.initEvent(type, true, true); }
+      el.dispatchEvent(e);
+    });
+  };
+  PROTO.click = function (fn) {
+    if (typeof fn === 'function') return this.on('click', fn);
+    return this.trigger('click');
+  };
+  ['text', 'html', 'val', 'attr', 'prop', 'css', 'data', 'width', 'height', 'scrollTop'].forEach(function (name) {
+    PROTO[name] = function (a, b) {
+      var isGet = arguments.length === 0 || (name === 'css' && typeof a === 'string' && arguments.length === 1);
+      if (isGet) {
+        var el = asElem(this[0]) || this[0];
+        if (!el) return name === 'text' || name === 'html' || name === 'css' || name === 'data' ? '' : undefined;
+        if (name === 'text') return el.textContent;
+        if (name === 'html') return el.innerHTML;
+        if (name === 'val') return el.value;
+        if (name === 'attr' || name === 'prop' || name === 'data') {
+          var key = name === 'data' ? 'data-' + a : a;
+          return el.getAttribute ? el.getAttribute(key) : el[a];
+        }
+        if (name === 'css') {
+          var got = el.ownerDocument.defaultView.getComputedStyle(el).getPropertyValue(a);
+          return el.style && el.style.getPropertyValue ? (el.style.getPropertyValue(a) || got) : got;
+        }
+        if (name === 'width') return el.getBoundingClientRect().width;
+        if (name === 'height') return el.getBoundingClientRect().height;
+        if (name === 'scrollTop') return el.scrollTop;
+        return undefined;
+      }
+      return each(this, function (i, el) {
+        if (!el) return;
+        if (name === 'text') { el.textContent = String(a); return; }
+        if (name === 'html') { el.innerHTML = String(a); return; }
+        if (name === 'val') { el.value = a; return; }
+        if (name === 'attr') { if (a === 'class') el.className = String(b); else el.setAttribute(a, b); return; }
+        if (name === 'prop') { el[a] = b; return; }
+        if (name === 'data') { el.setAttribute('data-' + a, b); return; }
+        if (name === 'css') {
+          if (a && typeof a === 'object') {
+            for (var k in a) if (Object.prototype.hasOwnProperty.call(a, k)) el.style.setProperty(k, a[k]);
+          } else if (el.style && el.style.setProperty) {
+            el.style.setProperty(a, b);
+          }
+          return;
+        }
+        if (name === 'width') { el.style.width = typeof a === 'number' ? a + 'px' : String(a); return; }
+        if (name === 'height') { el.style.height = typeof a === 'number' ? a + 'px' : String(a); return; }
+        if (name === 'scrollTop') { el.scrollTop = a; return; }
+      });
+    };
+  });
+  ['addClass', 'removeClass', 'toggleClass'].forEach(function (name) {
+    PROTO[name] = function (cls) {
+      var list = String(cls || '').split(/\s+/).filter(Boolean);
+      return each(this, function (i, el) {
+        if (!el || !el.classList) return;
+        for (var k = 0; k < list.length; k++) {
+          if (name === 'addClass') el.classList.add(list[k]);
+          else if (name === 'removeClass') el.classList.remove(list[k]);
+          else el.classList.toggle(list[k]);
+        }
+      });
+    };
+  });
+  PROTO.hasClass = function (cls) {
+    for (var i = 0; i < this.length; i++) if (asElem(this[i]) && this[i].classList.contains(cls)) return true;
+    return false;
+  };
+  PROTO.find = function (sel) {
+    var out = [];
+    each(this, function (i, el) {
+      if (!el || !el.querySelectorAll) return;
+      out = out.concat(Array.prototype.slice.call(el.querySelectorAll(sel)));
+    });
+    return wrap(out);
+  };
+  PROTO.closest = function (sel) {
+    var out = [];
+    each(this, function (i, el) {
+      var hit = el && el.closest ? el.closest(sel) : null;
+      if (hit) out.push(hit);
+    });
+    return wrap(out);
+  };
+  PROTO.is = function (sel) {
+    for (var i = 0; i < this.length; i++) if (asElem(this[i]) && this[i].matches(sel)) return true;
+    return false;
+  };
+  PROTO.eq = function (i) { return wrap(i < 0 ? [this[this.length + i]].filter(Boolean) : [this[i]].filter(Boolean)); };
+  PROTO.first = function () { return this.eq(0); };
+  PROTO.last = function () { return this.eq(this.length - 1); };
+  PROTO.get = function (i) { return i === undefined ? Array.prototype.slice.call(this) : this[i]; };
+  PROTO.show = function () { return each(this, function (i, el) { if (asElem(el)) el.style.display = ''; }); };
+  PROTO.hide = function () { return each(this, function (i, el) { if (asElem(el)) el.style.display = 'none'; }); };
+  PROTO.remove = function () { return each(this, function (i, el) { if (el && el.remove) el.remove(); }); };
+  PROTO.empty = function () { return each(this, function (i, el) { if (el) el.innerHTML = ''; }); };
+  ['append', 'prepend', 'after', 'before', 'appendTo'].forEach(function (name) {
+    PROTO[name] = function (content) {
+      return each(this, function (i, el) {
+        if (!el) return;
+        var frag;
+        if (typeof content === 'string') {
+          var tpl = document.createElement('template');
+          tpl.innerHTML = content;
+          frag = tpl.content;
+        } else if (content instanceof Node) {
+          frag = content;
+        } else if (content && typeof content.length === 'number') {
+          frag = document.createDocumentFragment();
+          for (var k = 0; k < content.length; k++) if (content[k] instanceof Node) frag.appendChild(content[k]);
+        }
+        if (!frag) return;
+        if (name === 'append' || name === 'appendTo') el.appendChild(frag);
+        else if (name === 'prepend') el.insertBefore(frag, el.firstChild);
+        else if (name === 'after') el.parentNode && el.parentNode.insertBefore(frag, el.nextSibling);
+        else if (name === 'before') el.parentNode && el.parentNode.insertBefore(frag, el);
+      });
+    };
+  });
+  function $(arg, ctx) {
+    if (typeof arg === 'function') {
+      // ready:脚本在 body 重建后执行,文档已就绪,直接放入微/宏任务队列执行
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { try { arg.call(document, $); } catch (e) { recordError('ready', e); } });
+      else setTimeout(function () { try { arg.call(document, $); } catch (e) { recordError('ready', e); } }, 0);
+      return undefined;
+    }
+    if (arg === window || arg === document || (arg && arg.nodeType)) return wrap([arg]);
+    if (typeof arg === 'string') {
+      var s = arg.trim();
+      if (s.charAt(0) === '<') {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = s;
+        return wrap(Array.prototype.slice.call(tpl.content.childNodes));
+      }
+      var root = ctx ? (ctx.nodeType === 1 ? ctx : document) : document;
+      return wrap(Array.prototype.slice.call(root.querySelectorAll(s)));
+    }
+    if (arg && typeof arg.length === 'number') return wrap(Array.prototype.slice.call(arg));
+    return wrap([]);
+  }
+  $.fn = PROTO;
+  $.fn.__kdLite = true;
+  $.isFunction = function (x) { return typeof x === 'function'; };
+  $.isArray = Array.isArray;
+  $.each = function (obj, fn) {
+    if (obj && typeof obj.length === 'number') { for (var i = 0; i < obj.length; i++) if (fn.call(obj[i], i, obj[i]) === false) break; }
+    else for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k) && fn.call(obj[k], k, obj[k]) === false) break;
+    return obj;
+  };
+  $.extend = function () {
+    var deep = false, out = arguments[0] || {}, i = 1;
+    if (typeof out === 'boolean') { deep = out; out = arguments[1] || {}; i = 2; }
+    for (; i < arguments.length; i++) {
+      var src = arguments[i];
+      if (!src) continue;
+      for (var k in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
+        if (deep && src[k] && typeof src[k] === 'object') out[k] = $.extend(true, out[k] || {}, src[k]);
+        else out[k] = src[k];
+      }
+    }
+    return out;
+  };
+  window.$ = $;
+  window.jQuery = $;
+}
+
+// ---- lodash 精简实现(作者脚本的 _ 依赖) ----
+// 实测缺口(同上卡):变量树读写全走 lodash —— `_.get(data, '角色.性欲', 0)`、
+// `_.set(vars, 'x.y', v)`、`_.has` / `_.clamp` / `_.add`(统计卡里出现 24+15+3 次)。
+// 酒馆页面自带 lodash,Kedai 的隔离文档没有 → `$o` 里第一行 ReferenceError。
+// 只补常用纯函数(get/set/has/clamp/add 与判定/集合/节流),不碰模板与链式调用。
+function installLodashLite() {
+  if (window._ && typeof window._.get === 'function') return;
+  function toPath(p) {
+    if (Array.isArray(p)) return p.slice();
+    return String(p == null ? '' : p)
+      .replace(/\[(\d+)\]/g, '.$1')
+      .split('.')
+      .filter(function (s) { return s !== ''; });
+  }
+  var _ = {
+    get: function (obj, path, def) {
+      var parts = toPath(path);
+      var cur = obj;
+      for (var i = 0; i < parts.length; i++) {
+        if (cur == null) return def;
+        cur = cur[parts[i]];
+      }
+      return cur === undefined ? def : cur;
+    },
+    set: function (obj, path, value) {
+      var parts = toPath(path);
+      if (!parts.length) return obj;
+      var cur = obj;
+      for (var i = 0; i < parts.length - 1; i++) {
+        var k = parts[i];
+        if (cur[k] == null || typeof cur[k] !== 'object') cur[k] = /^\d+$/.test(parts[i + 1]) ? [] : {};
+        cur = cur[k];
+      }
+      cur[parts[parts.length - 1]] = value;
+      return obj;
+    },
+    has: function (obj, path) {
+      var parts = toPath(path);
+      var cur = obj;
+      for (var i = 0; i < parts.length; i++) {
+        if (cur == null || !Object.prototype.hasOwnProperty.call(cur, parts[i])) return false;
+        cur = cur[parts[i]];
+      }
+      return true;
+    },
+    unset: function (obj, path) {
+      var parts = toPath(path);
+      var cur = obj;
+      for (var i = 0; i < parts.length - 1; i++) {
+        if (cur == null) return true;
+        cur = cur[parts[i]];
+      }
+      if (cur && parts.length) { try { delete cur[parts[parts.length - 1]]; } catch (e) { /* 忽略 */ } }
+      return true;
+    },
+    clamp: function (n, lo, hi) {
+      if (hi === undefined) { hi = lo; lo = undefined; }
+      n = Number(n);
+      if (lo !== undefined && n < lo) n = lo;
+      if (hi !== undefined && n > hi) n = hi;
+      return n;
+    },
+    add: function (a, b) { return Number(a) + Number(b); },
+    subtract: function (a, b) { return Number(a) - Number(b); },
+    multiply: function (a, b) { return Number(a) * Number(b); },
+    divide: function (a, b) { return Number(a) / Number(b); },
+    round: function (n, p) { var f = Math.pow(10, p || 0); return Math.round(Number(n) * f) / f; },
+    random: function (lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); },
+    isNil: function (v) { return v === null || v === undefined; },
+    isString: function (v) { return typeof v === 'string'; },
+    isNumber: function (v) { return typeof v === 'number'; },
+    isArray: Array.isArray,
+    isFunction: function (v) { return typeof v === 'function'; },
+    isObject: function (v) { return v !== null && typeof v === 'object'; },
+    isEmpty: function (v) {
+      if (v == null) return true;
+      if (Array.isArray(v) || typeof v === 'string') return v.length === 0;
+      for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) return false;
+      return true;
+    },
+    keys: function (o) { return o == null ? [] : Object.keys(o); },
+    values: function (o) { return o == null ? [] : Object.keys(o).map(function (k) { return o[k]; }); },
+    entries: function (o) { return o == null ? [] : Object.keys(o).map(function (k) { return [k, o[k]]; }); },
+    cloneDeep: function cloneDeep(v) {
+      if (v == null || typeof v !== 'object') return v;
+      try { return JSON.parse(JSON.stringify(v)); } catch (e) { return v; }
+    },
+    merge: function merge(a) {
+      for (var i = 1; i < arguments.length; i++) {
+        var src = arguments[i];
+        if (!src || typeof src !== 'object') continue;
+        for (var k in src) {
+          if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
+          if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k]) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) merge(a[k], src[k]);
+          else a[k] = src[k];
+        }
+      }
+      return a;
+    },
+    defaults: function (a) {
+      a = a || {};
+      for (var i = 1; i < arguments.length; i++) {
+        var src = arguments[i] || {};
+        for (var k in src) if (a[k] === undefined) a[k] = src[k];
+      }
+      return a;
+    },
+    pick: function (o, keys) {
+      var out = {};
+      (Array.isArray(keys) ? keys : [].slice.call(arguments, 1)).forEach(function (k) { if (o && k in o) out[k] = o[k]; });
+      return out;
+    },
+    omit: function (o, keys) {
+      var drop = Array.isArray(keys) ? keys : [].slice.call(arguments, 1);
+      var out = {};
+      for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k) && drop.indexOf(k) < 0) out[k] = o[k];
+      return out;
+    },
+    map: function (arr, fn) { return (arr || []).map(function (v, i) { return fn(v, i); }); },
+    filter: function (arr, fn) { return (arr || []).filter(function (v, i) { return fn(v, i); }); },
+    find: function (arr, fn) { return (arr || []).find(function (v, i) { return fn(v, i); }); },
+    includes: function (arr, v) { return (arr || []).indexOf(v) >= 0; },
+    uniq: function (arr) { return Array.from(new Set(arr || [])); },
+    sum: function (arr) { return (arr || []).reduce(function (a, b) { return a + Number(b || 0); }, 0); },
+    toNumber: function (v) { var n = Number(v); return isNaN(n) ? 0 : n; },
+    toString: function (v) { return v == null ? '' : String(v); },
+    debounce: function (fn, wait) {
+      var t = 0;
+      return function () {
+        var self = this, args = arguments;
+        clearTimeout(t);
+        t = setTimeout(function () { fn.apply(self, args); }, wait || 0);
+      };
+    },
+    throttle: function (fn, wait) {
+      var last = 0, t = 0;
+      return function () {
+        var self = this, args = arguments, now = Date.now();
+        var remain = wait - (now - last);
+        if (remain <= 0) { clearTimeout(t); t = 0; last = now; fn.apply(self, args); }
+        else if (!t) t = setTimeout(function () { t = 0; last = Date.now(); fn.apply(self, args); }, remain);
+      };
+    },
+    isEqual: function (a, b) {
+      try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return a === b; }
+    }
+  };
+  window._ = _;
+  window.lodash = _;
 }
 
 // ---- TavernHelper.generate RPC 桥(iframe → 宿主 → /api/chat/generate-raw) ----
@@ -403,6 +908,42 @@ function installParentShim() {
   try { window.parent = proxy; } catch (e) { /* 不可遮蔽则维持原行为 */ }
 }
 
+// ---- Vue 全局运行时(酒馆整页卡按 SillyTavern 习惯直接读 window.Vue)----
+// ST 前端本身把 Vue 3 挂成全局,作者脚本因此写 `const app = Vue.createApp(...)`。
+// Kedai 的宿主应用是 ESM 打包,全局并没有 Vue;这里加载一份同源的 Vue 全局构建
+// (`/vendor/vue.global.prod.js`,随 web/public/ 一起进 dist,与 theme-boot.js 同一套路,
+// 由 vite 原样拷进 dist/vendor/;只在需要时被本框架拉取,不进首屏、不被 check-bundle 计入)。
+// 加载失败不阻断 boot:不依赖 Vue 的作者页照常执行。
+var vueLoading = null;
+function loadVueGlobal() {
+  if (window.Vue) return Promise.resolve(true);
+  if (vueLoading) return vueLoading;
+  vueLoading = new Promise(function (resolve) {
+    var s = document.createElement('script');
+    s.src = '/vendor/vue.global.prod.js';
+    s.onload = function () { resolve(true); };
+    s.onerror = function () { resolve(false); };
+    document.head.appendChild(s);
+  });
+  return vueLoading;
+}
+
+// 把 author 文档里的 <script> 复制成可执行元素(importNode 来的脚本不会执行)。
+// storage/caches 字面量替换成内存 shim:\bcaches\b 同时覆盖裸 caches / window.caches /
+// self.caches / globalThis.caches(__kdCaches 经 var 提升为全局对象属性,四种写法都解析到 shim)。
+function installScriptElement(src, parent) {
+  var s = document.createElement('script');
+  for (var a = 0; a < src.attributes.length; a++) {
+    s.setAttribute(src.attributes[a].name, src.attributes[a].value);
+  }
+  s.textContent = (src.textContent || '')
+    .replace(/\blocalStorage\b/g, '__kdMemoryStorage')
+    .replace(/\bsessionStorage\b/g, '__kdSessionStorage')
+    .replace(/\bcaches\b/g, '__kdCaches');
+  parent.appendChild(s);
+  return s;
+}
+
 // ---- boot:接收作者页面 HTML + 存储快照,DOM 重建执行 ----
 var booted = false;
 addEventListener('message', function (event) {
@@ -414,6 +955,11 @@ addEventListener('message', function (event) {
   if (m.nonce !== bootNonce || !bootNonce || booted) return;
   if (m.type !== 'boot' || typeof m.html !== 'string') return;
   booted = true;
+  // 重建过程中的局部变量在 try 外声明:catch 里要读它们做诊断统计(recordBoot)
+  let doc = null;
+  const deferredBodyScripts = [];
+  const deferredHeadScripts = [];
+  try {
   // 先恢复存储快照(作者初始化脚本会立即读 localStorage/caches 做下载完成判定)
   const snap = m.snapshot || {};
   try { __kdMemoryStorage.__prime(snap.local); } catch (e) { /* 快照损坏不阻断 boot */ }
@@ -422,19 +968,36 @@ addEventListener('message', function (event) {
   // 再装 TavernHelper shim(作者初始化即读卡数据推导口令;变量读写落在已 prime 的存储上;
   // worldbook 供世界书同步接口读取)
   try { installTavernHelper(m.charData || null, m.worldbook || null); } catch (e) { /* shim 失败不阻断 boot */ }
+  // MVU(MagVarUpdate)垫片:酒馆整页卡几乎都用它读写变量树,并把它当「环境就绪」的判据
+  // (如「圣像之下」:轮询 window.Mvu.replaceMvuData 是否就绪,缺了就只显示静态开场)。
+  // 变量真身在宿主 chat store,这里拿 boot 下发的快照,写回经 mvu-replace 上报宿主。
+  try { installMvu(m.mvu || null); } catch (e) { /* shim 失败不阻断 boot */ }
+  // 酒馆裸全局(errorCatched / getCurrentMessageId / getChatMessages):整页前端卡的
+  // 装配脚本一上来就用它们,缺任何一个是 ReferenceError,Vue 应用永远不挂载。
+  try { installStGlobals(m); } catch (e) { /* 同上 */ }
+  // jQuery 精简实现:酒馆页面自带 $,整页卡的装配入口几乎都是 $(() => mount('#app'))
+  try { installJQueryLite(); } catch (e) { /* 同上 */ }
+  // lodash 精简实现:变量树读写(_.get / _.set)是状态栏类卡的基本操作
+  try { installLodashLite(); } catch (e) { /* 同上 */ }
   // 再装 window.parent 代理(作者脚本执行前;宽屏机制读 parent.document 不再抛)
   try { installParentShim(); } catch (e) { /* 不可遮蔽则维持原行为 */ }
-  const doc = new DOMParser().parseFromString(m.html, 'text/html');
-  // 先重建 body(作者脚本(React/Vue)挂载目标 #root 必须先存在),再执行 head 脚本
+  doc = new DOMParser().parseFromString(m.html, 'text/html');
+  // 先重建 body(作者脚本(React/Vue)挂载目标 #root 必须先存在),再执行脚本
+  // body 里的 <script> 不能随手 importNode(导入的脚本不执行),统一收集到最后按序执行:
+  // 酒馆「前端渲染」卡的装配脚本大多写在 body 尾部,且依赖届时 DOM 已就位。
   const body = document.body;
   while (body.firstChild) body.removeChild(body.firstChild);
   for (let i = 0; i < doc.body.childNodes.length; i++) {
     const child = doc.body.childNodes[i];
+    if (child.nodeType === 1 && child.tagName.toUpperCase() === 'SCRIPT') {
+      deferredBodyScripts.push(child);
+      continue;
+    }
     if (child.nodeType === 1) body.appendChild(document.importNode(child, true));
     else if (child.nodeType === 3 && child.textContent.trim()) body.appendChild(child.cloneNode(true));
   }
-  // 重建 head:脚本用 appendChild 新元素触发执行(动态插入的 module script 可执行),
-  // localStorage/sessionStorage/caches 引用替换为内存 shim;其余节点(style/base/link)importNode 保留
+  // 重建 head:非脚本节点(style/base/link/meta)importNode 保留;脚本与 body 一样收集延后,
+  // 因为「整页卡」的 head 脚本依赖 Vue 全局运行时,而该运行时是异步加载的(见 loadVueGlobal)。
   const head = document.head;
   while (head.firstChild) head.removeChild(head.firstChild);
   const srcHead = doc.head;
@@ -443,22 +1006,94 @@ addEventListener('message', function (event) {
     if (child.nodeType !== 1) continue;
     const tag = child.tagName.toUpperCase();
     if (tag === 'SCRIPT') {
-      const s = document.createElement('script');
-      for (let a = 0; a < child.attributes.length; a++) {
-        s.setAttribute(child.attributes[a].name, child.attributes[a].value);
-      }
-      // \bcaches\b 同时覆盖裸 caches / window.caches / self.caches / globalThis.caches
-      // (__kdCaches 经 var 提升为全局对象属性,四种写法都解析到 shim)
-      s.textContent = (child.textContent || '')
-        .replace(/\blocalStorage\b/g, '__kdMemoryStorage')
-        .replace(/\bsessionStorage\b/g, '__kdSessionStorage')
-        .replace(/\bcaches\b/g, '__kdCaches');
-      head.appendChild(s);
+      deferredHeadScripts.push(child);
     } else {
       head.appendChild(document.importNode(child, true));
     }
   }
+  // 执行顺序:Vue 就位 → head 脚本(按文档顺序)→ body 脚本(按文档顺序),
+  // 与浏览器解析顺序一致;storage/caches 字面量替身在 installScriptElement 里做。
+  loadVueGlobal().then(function () {
+    for (let i = 0; i < deferredHeadScripts.length; i++) installScriptElement(deferredHeadScripts[i], head);
+    for (let i = 0; i < deferredBodyScripts.length; i++) installScriptElement(deferredBodyScripts[i], body);
+    reportHeight();
+  });
+  recordBoot(m, doc, deferredHeadScripts.length, deferredBodyScripts.length, null);
+  } catch (bootError) {
+    // 重建过程本身失败(解析/importNode 异常)时记下统计并把错误留给本机排查;
+    // 不回传宿主:作者页写坏不该让宿主报错弹窗。
+    recordBoot(m, doc, deferredHeadScripts.length, deferredBodyScripts.length, bootError);
+  }
 });
+
+// boot 自检(诊断用,供本机排查「界面空白」:作者文档有没有被重建、脚本有没有跑起来)。
+// 只在内存里存最近一次 boot 的统计,不外发、不影响渲染。
+// 另外把作者脚本的运行时错误留在 window.__kdErrors(最多 20 条):作者页空白时宿主侧
+// 看不到它的 console 细节,只能靠这里的栈定位是哪一步失败。
+var kdErrors = [];
+window.__kdErrors = kdErrors;
+function recordError(kind, e) {
+  try {
+    if (kdErrors.length >= 20) return;
+    var msg = e && (e.stack || e.message) ? (e.stack || e.message) : String(e);
+    var line = String(msg).slice(0, 600);
+    kdErrors.push({ kind: kind, message: line });
+    // 同时投给宿主:整页前端卡装配失败时,宿主侧只看到一片空白,
+    // 作者脚本的栈在跨源 iframe 里读不到,必须由这里主动上报(宿主只打印不落库)。
+    kdPost({ type: 'kd-error', kind: kind, message: line });
+  } catch (err) { /* 诊断字段失败不影响渲染 */ }
+}
+addEventListener('error', function (e) {
+  recordError('error', e.error || (e.message + ' @' + (e.filename || '') + ':' + (e.lineno || 0)));
+});
+addEventListener('unhandledrejection', function (e) { recordError('rejection', e.reason); });
+
+function recordBoot(m, doc, headScripts, bodyScripts, error) {
+  try {
+    window.__kdBoot = {
+      htmlLength: typeof m === 'string' ? m.length : (m && m.html ? m.html.length : 0),
+      parsedHeadNodes: doc && doc.head ? doc.head.childNodes.length : -1,
+      parsedBodyNodes: doc && doc.body ? doc.body.childNodes.length : -1,
+      headScripts: headScripts || 0,
+      bodyScripts: bodyScripts || 0,
+      builtHeadNodes: document.head ? document.head.childNodes.length : -1,
+      builtBodyNodes: document.body ? document.body.childNodes.length : -1,
+      vue: typeof window.Vue,
+      mvu: typeof window.Mvu,
+      error: error ? String((error && error.stack) || error) : null,
+    };
+  } catch (e) { /* 诊断字段失败不影响渲染 */ }
+}
+// ---- 内容高度上报 ----
+// 资源卡壳在宿主里是固定高度的 iframe(作者页多为全屏设计),而酒馆「整页前端」卡是
+// 一张**自然高度的长页**(封面 940×900 起步,流程页更高):固定高度会把封面切掉一截。
+// 这里把文档 scrollHeight 上报宿主按需改高;ResizeObserver 覆盖脚本装配后(postMessage
+// 到 DOM 变动)的尺寸变化,另有 2s 轮询兜底(作者脚本用 canvas/瞬态动画时不触发 RO)。
+function reportHeight() {
+  try {
+    var de = document.documentElement, b = document.body;
+    var h = Math.max(de ? de.scrollHeight : 0, b ? b.scrollHeight : 0);
+    if (h > 0) kdPost({ type: 'height', height: h });
+  } catch (e) { /* 尺寸不可读时保持宿主默认高度 */ }
+}
+var heightTimer = 0;
+var lastHeight = 0;
+function scheduleHeight() {
+  if (heightTimer) return;
+  heightTimer = setTimeout(function () {
+    heightTimer = 0;
+    try {
+      var de = document.documentElement, b = document.body;
+      var h = Math.max(de ? de.scrollHeight : 0, b ? b.scrollHeight : 0);
+      if (h > 0 && Math.abs(h - lastHeight) >= 8) { lastHeight = h; reportHeight(); }
+    } catch (e) { /* 忽略 */ }
+  }, 150);
+}
+if (typeof ResizeObserver === 'function') {
+  try { new ResizeObserver(scheduleHeight).observe(document.body); } catch (e) { /* 忽略 */ }
+}
+window.addEventListener('load', reportHeight);
+setInterval(function () { reportHeight(); }, 2000);
 // 每次文档加载都发 ready(首次加载与 reload 都走这里),父页面监听常驻,
 // 收到 ready 即以缓存 HTML + 最新快照 boot;nonce 丢失时 ready 无 nonce,
 // 父页面识别为「nonce 丢失的重载」并重建 src 恢复。

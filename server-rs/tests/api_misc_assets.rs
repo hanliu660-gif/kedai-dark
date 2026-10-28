@@ -461,6 +461,48 @@ async fn render_frame_document_is_served() {
     assert!(html.contains("booted"), "宿主文档应含 boot 闩锁");
 }
 
+#[tokio::test]
+async fn resource_frame_document_is_served() {
+    // 整页脚本卡 B1:GET /resource-frame.html 是「卡 HTML + 作者脚本」的真实文档宿主。
+    // 该文档必须能:
+    //   1. 执行作者内联/远程 module 脚本 → CSP 需 'self' + 'unsafe-inline' + https:
+    //      ('self' 供本机 /vendor/vue.global.prod.js;https: 供 CDN 上的 MVU/pinia)
+    //   2. 在执行作者脚本前装载 Vue 全局运行时、并带 MVU 垫片
+    //      → 文档正文含 loadVueGlobal 与 kedai-resource-frame-v1
+    let app = test_app();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/resource-frame.html")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()["content-type"], "text/html; charset=utf-8");
+    let csp = resp.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        csp.contains("script-src 'self' 'unsafe-inline' https:"),
+        "CSP 需放行本机 Vue 运行时与 CDN module 脚本: {csp}"
+    );
+    assert!(csp.contains("frame-ancestors 'self'"));
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8_lossy(&bytes);
+    assert!(
+        html.contains("kedai-resource-frame-v1"),
+        "宿主文档应含资源框架 channel"
+    );
+    assert!(
+        html.contains("loadVueGlobal"),
+        "宿主文档应在执行作者脚本前装载 Vue 全局运行时"
+    );
+}
+
 // ===== 缓存诊断端点(缓存感知管线) =====
 
 /// 上传入口:文件名经净化后与原始名不一致即拒绝(「..」路径穿越 / 非法字符);

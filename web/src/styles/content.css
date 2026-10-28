@@ -301,6 +301,10 @@
   overflow: hidden;
   background: var(--sv-white, #fff);
 }
+/* 整页脚本卡:作者按 940px 页面设计,壳体不要限 640px(气泡侧已放宽到满宽) */
+.sv-resource-card[data-kd-inline-card="1"] {
+  max-width: none;
+}
 .sv-resource-card-head {
   display: flex;
   align-items: center;

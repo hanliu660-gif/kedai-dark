@@ -330,7 +330,18 @@ fn resource_frame_headers(mut response: Response<Body>) -> Response<Body> {
             // (立绘/文本/音频)经 URL.createObjectURL 生成本地 blob: URL 加载,
             // CSP 不含 blob: 会全部拦截,表现为开场消息/立绘/数值丢失。
             // blob: 只能由该文档自身的 opaque origin 创建,不放宽跨源边界。
-            "default-src 'self'; script-src 'unsafe-inline'; connect-src https: http: blob:; \
+            //
+            // script-src 放行 https:(2026-10-29 整页脚本卡):酒馆「前端渲染」卡的装配
+            // 脚本多为 ES module,顶部 `import 'https://testingcf.jsdelivr.net/…'` 引
+            // MVU / pinia / Vue 运行时。缺 https: 时这些 import 全被 CSP 拒绝,表现为
+            // `ReferenceError: Vue is not defined`、界面只剩空壳。
+            // 安全边界不变:该文档是无 allow-same-origin 的 opaque origin,脚本拿不到宿主
+            // DOM/localStorage/token,与「作者给的 HTML 在新窗口打开」等价;作者内联脚本本就
+            // 可执行任意代码,放行远程脚本只多了「作者可事后改代码」的供应链面。
+            // 需要更严时收紧这一处即可(整页脚本卡退回静态渲染,不崩)。
+            // 'self' 用于加载本机内置的 Vue 全局运行时(/vendor/vue.global.prod.js):
+            // 作者脚本按 ST 习惯读全局 Vue,离线时不能指望 CDN。
+            "default-src 'self'; script-src 'self' 'unsafe-inline' https:; connect-src https: http: blob:; \
              img-src https: http: data: blob:; style-src 'self' 'unsafe-inline' https: http:; \
              font-src 'self' https: http: data: blob:; media-src https: http: blob:; \
              object-src 'none'; frame-src https: http:; child-src https: http:; \

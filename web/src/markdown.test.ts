@@ -63,6 +63,17 @@ describe('stripMvuBlocks', () => {
   it('同时剥离 UpdateVariable 块与 status_current_variable 标签', () => {
     expect(stripMvuBlocks('a<UpdateVariable>x</UpdateVariable><status_current_variable>y</status_current_variable>b')).toBe('ayb');
   });
+
+  // B1(2026-10-29):酒馆正文包装标签 `</maintext>` 曾被当正文渲染在气泡顶部(魔法少女卡实测)
+  it('剥离 <maintext> 包装标签且内容保留', () => {
+    expect(stripMvuBlocks('<maintext>正文</maintext>')).toBe('正文');
+    expect(stripMvuBlocks('前</maintext>后')).toBe('前后');
+  });
+
+  it('maintext 大小写不敏感且不误伤同前缀词', () => {
+    expect(stripMvuBlocks('<MAINTEXT>a</MAINTEXT>')).toBe('a');
+    expect(stripMvuBlocks('<maintextual>x</maintextual>')).toBe('<maintextual>x</maintextual>');
+  });
 });
 
 // RPFLOW 提交 3:酒馆式 HTML 渲染路径的文本层工具

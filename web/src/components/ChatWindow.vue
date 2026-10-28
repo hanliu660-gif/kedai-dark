@@ -96,14 +96,16 @@ function renderScriptsCached(
   scripts: Parameters<typeof renderScopedScripts>[1],
   scopeId: string,
   depth: number,
+  framePages?: boolean,
 ): ReturnType<typeof renderScopedScripts> {
   // depth 参与缓存键:同一条消息在不同楼层深度下脚本适用性不同(实跑问题 7 R2)
-  const key = buildScriptBlocksKey(scopeId, currentScriptHash.value, depth, text);
+  // framePages 参与:整页脚本文档改走隔离文档后不再产出镜像脚本块(见 render.ts)
+  const key = buildScriptBlocksKey(scopeId, currentScriptHash.value, depth, text, framePages);
   const hit = scriptBlocksCache.get(key);
   if (hit !== undefined) return hit;
   const scoped = renderScopedScripts(text, scripts, scopeId, depth, {
     charName: currentCharacter.value?.chara_name ?? currentCharacter.value?.name ?? '',
-  });
+  }, framePages);
   scriptBlocksCache.set(key, scoped ?? null);
   return scoped;
 }
@@ -151,7 +153,16 @@ async function executeCurrentMessageScripts(): Promise<void> {
 
 // 远程资源卡片宿主(扫描/投递/存储同步/TavernHelper RPC 桥,实现见 composable);
 // 宽屏按钮点击委托由 composable 挂载时自行接线,window message 监听下方显式接线
-const frames = useResourceFrames({ scrollArea, currentCharacter, currentCharacterId });
+// MVU 变量树一并下发:酒馆整页卡以 window.Mvu 为环境就绪判据,缺了只渲染静态开场;
+// 框架内 replaceMvuData 经 onMvuReplace 回到 store,与 AI 回复的变量更新同一条落库链路
+const frames = useResourceFrames({
+  scrollArea,
+  currentCharacter,
+  currentCharacterId,
+  mvuVariables,
+  messages,
+  onMvuReplace: (data) => void store.replaceMvuVariables(data),
+});
 
 /** 渲染面板投递(实现已迁入 RenderPanelHost;此处保留薄封装,原调用点不动) */
 async function hydrateRenderPanels(): Promise<void> {
@@ -412,6 +423,7 @@ function bindRowRef(id: number, target: unknown): void {
           :render-html="renderHtml"
           :scripts="currentScripts"
           :script-hash="currentScriptHash"
+          :script-authorized="currentScriptAuthorized"
           :depth="messages.length - 1 - i"
           @start-edit="startEdit"
           @save-edit="saveEdit"

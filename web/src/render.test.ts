@@ -16,7 +16,12 @@ import {
   demoteInlineHandlers,
   sanitizeMessageHtml,
   sanitizeVisibleHtml,
+  isScriptedPageDocument,
+  stripDocumentFence,
+  buildInlineCardHtml,
+  inlineCardNonce,
 } from './render';
+import { inlineCardPayload, resetInlineCards } from './inlineCardRegistry';
 import type { RegexScript } from './api';
 
 describe('scopeCss', () => {
@@ -839,5 +844,113 @@ describe('sanitizeMessageHtml(酒馆式消息白名单,RPFLOW 提交 3)', () => 
   it('注释剥除;s 标签放行(删除线卡片常用)', () => {
     expect(sanitizeMessageHtml('a<!-- 隐藏 -->b')).toBe('ab');
     expect(sanitizeMessageHtml('原价<s>99</s>现价')).toContain('<s>99</s>');
+  });
+});
+
+// 整页脚本卡「前端渲染」:替换串是一份完整 HTML 文档 + 自带 <script>,界面由脚本
+// 运行时装配。这类内容必须落进同一个真实文档(隔离文档路径),不能内联进气泡,
+// 也不能把脚本抽到镜像沙箱(那里 getElementById 只有门面对象)。
+const PAGE_DOC =
+  '```html\n' +
+  '<!DOCTYPE html>\n<html><head><style>.stage{max-width:940px}</style></head>\n' +
+  '<body><div class="stage" id="st">档案</div>\n' +
+  "<script>document.getElementById('st').classList.add('ready')</script></body></html>\n" +
+  '```';
+
+function pageScript(): RegexScript[] {
+  return [
+    {
+      id: 'p1',
+      script_name: '欢迎页面',
+      find_regex: '<StartPage/>',
+      replace_string: PAGE_DOC,
+      markdown_only: false,
+      enabled: true,
+    },
+  ];
+}
+
+describe('isScriptedPageDocument', () => {
+  it('完整文档 + <script> 才算整页脚本卡(围栏先剥)', () => {
+    expect(isScriptedPageDocument(PAGE_DOC)).toBe(true);
+    // 无围栏的裸文档也认
+    expect(isScriptedPageDocument(PAGE_DOC.replace(/^```html\n/, ''))).toBe(true);
+  });
+
+  it('只有片段/没有脚本的替换串不命中(普通状态栏仍走内联作用域路径)', () => {
+    // 纯 HTML 片段:没有 <html>/<!DOCTYPE>
+    expect(isScriptedPageDocument('<div class="sb"><script>1</script></div>')).toBe(false);
+    // 完整文档但没有脚本(纯静态排版卡)
+    expect(isScriptedPageDocument('<!DOCTYPE html><html><body><p>hi</p></body></html>')).toBe(false);
+    expect(isScriptedPageDocument('')).toBe(false);
+  });
+
+  it('只有 <head> 片段的整页卡也命中(露出日记-0615)', () => {
+    // 实测该卡开场页写作 `<head><script type="module">…</script></head><body>…</body>`,
+    // 没有 <html> 外壳,且 head 与 body 之间隔着近百 KB 内联脚本 —— 只认 <head> 这一级标记;
+    // 漏判会让它退回内联气泡,而它的界面是 Vue 应用、必须真实文档
+    const frag = '```html\n<head><script type="module">const e=Vue;</script></head><body><div id="app"></div></body>\n```';
+    expect(isScriptedPageDocument(frag)).toBe(true);
+    // 连 <head> 都没有的状态栏片段(style + div + script)不命中
+    expect(isScriptedPageDocument('<style>.a{}</style><div class="sb"><script>1</script></div>')).toBe(false);
+  });
+
+  it('文档壳标记只在开头一段里找(后面的 <head> 不算)', () => {
+    // 状态栏片段的脚本里常带 `<head>` 之类的字符串;只有开头的壳标记才算整页文档
+    const s = `<div class="sb"><script>const tpl = 1;</script></div>${'x'.repeat(4200)}<head></head>`;
+    expect(isScriptedPageDocument(s)).toBe(false);
+  });
+  it('围栏前带作者分隔符时只取围栏内的文档(圣像之下 RE 的 `====`)', () => {
+    // 实测卡写法:`====\n```html\n<!DOCTYPE html>…` —— 分隔符与围栏标记都不能漏进文档正文
+    const s = '====\n```html\n<!DOCTYPE html><html><body><p>x</p></body></html>\n```';
+    expect(stripDocumentFence(s).startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(stripDocumentFence(s)).not.toContain('====');
+    expect(isScriptedPageDocument(`====\n${PAGE_DOC}`)).toBe(true);
+    // 围栏后不是标签(作者只是插了一段代码块)时保持原说明文字
+    expect(stripDocumentFence('说明如下\n```js\nlet a = 1;\n```')).toContain('说明如下');
+  });
+});
+
+describe('buildInlineCardHtml', () => {
+  it('产出隔离文档壳:同源 iframe + 稳定 nonce,且无第三方域名确认面', () => {
+    const html = buildInlineCardHtml('m7-0');
+    expect(html).toContain('sv-inline-card');
+    expect(html).toContain('data-kd-resource="1"');
+    expect(html).toContain('data-kd-inline-card="1"');
+    expect(html).toContain('sandbox="allow-scripts allow-popups allow-forms allow-modals"');
+    expect(html).toContain('src="/resource-frame.html#');
+    // 技术栈内同源文档,不做域名确认、也不给「在新窗口打开」
+    expect(html).not.toContain('在新窗口打开');
+    // 同一 seed 必须产出同一 src:否则 v-html 每次重渲染都会重建 iframe、脚本重跑
+    expect(html).toBe(buildInlineCardHtml('m7-0'));
+    expect(inlineCardNonce('m7-0')).not.toBe(inlineCardNonce('m7-1'));
+  });
+});
+
+describe('renderScopedScripts:整页脚本卡的隔离文档路径', () => {
+  it('framePages 打开时产出 iframe 壳、文档登记待投递、不产生镜像脚本块', () => {
+    resetInlineCards();
+    const r = renderScopedScripts('正文 <StartPage/>', pageScript(), 'm7', 0, undefined, true);
+    if (!r) throw new Error('framePages 路径不应返回 null');
+    expect(r.html).toContain('sv-inline-card');
+    expect(r.html).not.toContain('data-kd-scope');
+    // 脚本随文档在隔离文档里执行,不再交给镜像沙箱调度器
+    expect(r.blocks).toHaveLength(0);
+    const payload = inlineCardPayload(inlineCardNonce('m7-0'));
+    if (!payload) throw new Error('framePages 路径必须登记待投递文档');
+    expect(payload.html).toContain('id="st"');
+    // 围栏已剥:投递的正文必须是可解析的文档,不能带 ``` 围栏
+    expect(payload.html.startsWith('<!DOCTYPE html>')).toBe(true);
+  });
+
+  it('framePages 关闭时维持原内联渲染(未授权 = 不动作者脚本)', () => {
+    resetInlineCards();
+    const r = renderScopedScripts('正文 <StartPage/>', pageScript(), 'm7', 0);
+    if (!r) throw new Error('内联路径不应返回 null');
+    expect(r.html).toContain('data-kd-scope');
+    expect(r.html).not.toContain('sv-inline-card');
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0].scripts.length).toBeGreaterThan(0);
+    expect(inlineCardPayload(inlineCardNonce('m7-0'))).toBeUndefined();
   });
 });

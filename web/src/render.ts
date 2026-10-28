@@ -12,6 +12,7 @@ import type { RegexScript } from './api';
 import { parseUpdateVariable } from './mvu/parser';
 import { renderMarkdown } from './markdown';
 import { applyKeyframeRename, sanitizeScopedCss, sanitizeStyleAttribute, scopeCss } from './cssSanitize';
+import { registerInlineCard } from './inlineCardRegistry';
 
 // CSS 清洗/作用域化实现已抽至 ./cssSanitize(沙箱运行期 <style> 通道复用同一管线);
 // 此处 re-export 保持对外导入面不变
@@ -448,10 +449,94 @@ function isStatusRenderScript(s: RegexScript): boolean {
 }
 
 /**
+ * 检出「整页脚本卡」:替换串是一份完整 HTML 文档且自带 `<script>`。
+ *
+ * 酒馆「前端渲染」类角色卡(圣像之下 RE、露出日记、性开放等)的共同写法 ——
+ * 正则把开场白整段替换成 ```` ```html <!DOCTYPE html>… <script>…</script> ````,
+ * 界面(DOM、切页、按钮)全由脚本在运行时装配。这类内容必须在**同一真实文档**
+ * 里渲染:内联进气泡后脚本无处可跑,抽到镜像沙箱又拿不到真实节点
+ * (见 inlineCardRegistry.ts 抬头说明)。
+ *
+ * 判定很保守:必须有 `<script>`,且开头带文档壳标记(`<html>` / `<!DOCTYPE html>` / `<head>`
+ * ——实测「露出日记-0615」的开场页是 `<head>…</head><body>…` 片段,没有 `<html>` 外壳,
+ * 且 `<head>` 与 `<body>` 之间隔着近百 KB 的内联脚本,所以只认 `<head>` 这一级标记);
+ * 普通状态栏 HTML 片段(只含 div/style/script)不会命中,仍走原有作用域内联路径。
+ * 壳标记只在开头一段里找:脚本正文里出现的 `<body` 之类字符串不算文档壳。
+ */
+export function isScriptedPageDocument(replaceString: string): boolean {
+  if (!replaceString) return false;
+  const s = stripDocumentFence(replaceString);
+  if (!/<script\b/i.test(s)) return false;
+  const head = s.slice(0, 4000);
+  return /<html\b/i.test(head) || /<!doctype\s+html/i.test(head) || /<head\b/i.test(head);
+}
+
+/**
+ * 剥离 markdown 代码围栏,取出文档正文。
+ *
+ * 整页卡的真实写法五花八门(实测):
+ * - 标准围栏:```` ```html\n<!DOCTYPE html>… ``` ````
+ * - 围栏前还带作者自己的分隔符:圣像之下 RE 是 `====\n```` ```html\n<!DOCTYPE html>…`
+ *   ——只从行首剥围栏会把这行 `====` 和围栏标记一起漏进文档,渲染成正文顶部的一行乱码。
+ * 故:找到第一个围栏开启标记,**若围栏之后紧跟标签**,就认定围栏是文档边界,其前面的
+ * 说明文字/分隔符全部丢弃;围栏后不是标签(作者只是插了一段代码块)时保持原样。
+ */
+export function stripDocumentFence(replaceString: string): string {
+  let s = replaceString;
+  const opener = /```(?:html|html\.handlebars)?[ \t]*\r?\n/i;
+  const m = opener.exec(s);
+  if (m) {
+    const rest = s.slice(m.index + m[0].length);
+    if (/^\s*</.test(rest)) s = rest;
+  }
+  const fenceEnd = /\r?\n?```\s*$/;
+  if (fenceEnd.test(s)) s = s.replace(fenceEnd, '');
+  return s.trim();
+}
+
+/**
+ * 构建「整页脚本卡」的 iframe 壳(文档正文另行登记,由 useResourceFrames 投递)。
+ *
+ * 与远程资源卡的壳同构(共用 .sv-resource-card 样式与宽屏按钮),差别只在于
+ * 文档来自角色卡正则脚本而非作者服务器,故没有「在新窗口打开」链接,
+ * 也没有域名确认(不是第三方站点)。nonce 按 seed 稳定派生:同一消息重渲染产出
+ * 同一 src,v-html 不变 → iframe 不被重建(否则脚本每帧重跑)。
+ */
+export function buildInlineCardHtml(seed: string): string {
+  const nonce = inlineCardNonce(seed);
+  const safeSeed = escapeHtml(seed);
+  return (
+    `<div class="sv-resource-card sv-inline-card" id="sv-inl-${safeSeed}" data-kd-resource="1" data-kd-inline-card="1" ` +
+    `data-kd-resource-nonce="${escapeHtml(nonce)}" data-kd-inline-nonce="${escapeHtml(nonce)}">` +
+    `<div class="sv-resource-card-head">` +
+    `<span class="sv-resource-card-title">角色卡界面</span>` +
+    `<span class="sv-resource-card-side">` +
+    // 宽屏:整页卡的舞台按 940px 设计,聊天列宽装不下时由宿主把整卡撑满视口
+    // (点击委托在 useResourceFrames::onWideClick,与资源卡共用)
+    `<button type="button" class="sv-resource-card-wide" data-kd-resource-wide="1">宽屏</button>` +
+    `</span>` +
+    `</div>` +
+    `<iframe class="sv-resource-card-frame" data-kd-resource-frame="1" data-kd-inline-frame="1" ` +
+    `sandbox="allow-scripts allow-popups allow-forms allow-modals" referrerpolicy="no-referrer" ` +
+    `src="/resource-frame.html#${escapeHtml(nonce)}" title="角色卡界面"></iframe>` +
+    `<div class="sv-resource-card-note">角色卡界面由作者脚本在隔离文档中装配;若未显示,可关闭 HTML 渲染查看纯文本正文。</div>` +
+    `</div>`
+  );
+}
+
+/** 整页卡的稳定 nonce(壳的 src 与文档登记的键同源) */
+export function inlineCardNonce(seed: string): string {
+  return stableFrameNonce(`inline\u0001${seed}`);
+}
+
+/**
  * 应用脚本后返回渲染结果:完整 html + 待执行脚本块。
  * 未命中任何脚本返回 null(由调用方走 markdown 渲染)。
  * seed 可选:稳定 scopeId(同消息重渲染复用同一容器,避免脚本重复执行)。
  * ChatWindow 一次性 v-html html;DOM 挂载后逐块 setMvuHostContext 并执行 scripts。
+ * framePages:打开后,整页脚本文档(见 isScriptedPageDocument)改为 iframe 壳 +
+ *   文档投递路径(真实 DOM,脚本自行装配界面),不再抽脚本到镜像沙箱执行。
+ *   只应在「HTML 渲染开启且角色卡脚本已授权」时打开——它是执行作者脚本的通道。
  */
 export function renderScopedScripts(
   text: string,
@@ -459,6 +544,7 @@ export function renderScopedScripts(
   seed?: string,
   depth?: number,
   macros?: DisplayMacroCtx,
+  framePages?: boolean,
 ): ScopedRenderResult | null {
   // 先剥离 mvu <UpdateVariable> 块(仅用于变量更新,不进入任何渲染)
   const { cleaned } = parseUpdateVariable(text);
@@ -509,18 +595,32 @@ export function renderScopedScripts(
     });
   }
   if (placeholders.length === 0) return null;
-  // 只构建一次,保证 html 容器 scopeId 与 blocks 一致
-  const built = placeholders.map((p, i) => ({
-    index: i,
-    scoped: buildScopedScriptHtml(p.value, seed ? `${seed}-${i}` : undefined),
-  }));
+  // 只构建一次,保证 html 容器 scopeId 与 blocks 一致。
+  // 整页脚本文档(framePages 开)走 iframe 壳:文档正文登记到 inlineCardRegistry,
+  // 由 useResourceFrames 投递给 /resource-frame.html;这类块**不产生** blocks
+  // (脚本在独立文档内自己跑,不再交给镜像沙箱调度器)。
+  const built = placeholders.map((p, i) => {
+    const blockSeed = seed ? `${seed}-${i}` : undefined;
+    if (framePages && blockSeed && isScriptedPageDocument(p.value)) {
+      const shellSeed = `${seed ?? ''}-${i}`;
+      registerInlineCard(inlineCardNonce(shellSeed), stripDocumentFence(p.value));
+      return {
+        index: i,
+        pageFrame: true,
+        scoped: { html: buildInlineCardHtml(shellSeed), scripts: [], scopeId: '' },
+      };
+    }
+    return { index: i, pageFrame: false, scoped: buildScopedScriptHtml(p.value, blockSeed) };
+  });
   // 过滤空容器:替换值经清洗后为空(如包裹脚本把占位符包成围栏后,围栏内标签被
   // 白名单丢弃)时不再注入,避免消息尾部出现空 div;也不产生脚本块
   const valid = built.filter((b) => b.scoped.html.trim().length > 0);
-  const blocks: Array<{ scopeId: string; scripts: string[] }> = valid.map((b) => ({
-    scopeId: b.scoped.scopeId,
-    scripts: b.scoped.scripts,
-  }));
+  const blocks: Array<{ scopeId: string; scripts: string[] }> = valid
+    .filter((b) => !b.pageFrame)
+    .map((b) => ({
+      scopeId: b.scoped.scopeId,
+      scripts: b.scoped.scripts,
+    }));
   for (const b of valid) {
     source = source.replace(placeholders[b.index].ph, `\u0000KDAI_BLOCK_${b.index}\u0000`);
   }

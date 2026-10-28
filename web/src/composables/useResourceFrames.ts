@@ -21,6 +21,7 @@ import { getCharacter } from '../api/characters';
 import type { CharacterRecord } from '../api/types';
 import { applyResourceSync, loadResourceSnapshot, type ResourceSyncMessage } from '../resourceStore';
 import { allowResourceDomain, isResourceDomainAllowed, resourceDomainOf } from '../resourceDomains';
+import { inlineCardPayload } from '../inlineCardRegistry';
 
 /** 卡片说明区默认文案(与 render.ts::buildRemoteResourceHtml 的初值同源,单处维护) */
 const DEFAULT_RESOURCE_NOTE =
@@ -47,12 +48,39 @@ export interface UseResourceFramesOptions {
   currentCharacter: Ref<CharacterRecord | null>;
   /** 当前角色 id(TavernHelper RPC 转发生成时的 character_id) */
   currentCharacterId: Ref<string | null>;
+  /**
+   * 当前会话的 MVU 变量树(可选)。酒馆整页卡把 `window.Mvu` 当环境就绪判据:
+   * 缺了它只渲染静态开场(「未能读取档案:检测到缺少MVU」)。变量真身在 chat store,
+   * boot 时下发给框架做只读快照。
+   */
+  mvuVariables?: Ref<MvuVarsSnapshot | null>;
+  /** 框架内脚本调用 Mvu.replaceMvuData 时回写宿主(不传则框架内改动只留在文档里) */
+  onMvuReplace?: (data: MvuVarsSnapshot) => void;
+  /**
+   * 当前会话消息(可选)。实证:整页前端卡需要「按楼层读变量」——
+   * 露出日记卡的初始化是 `getChatMessages(getCurrentMessageId())[0].data.stat_data`,
+   * 没有这个 RPC 就直接 ReferenceError/空数据,Vue 应用不挂载。
+   * 只读用途:不回写、不暴露世界书写入口。
+   */
+  messages?: Ref<Array<{ id: string | number; role: string; content: string }>>;
+}
+
+/** MVU 变量树快照(stat_data 为用户可见状态,display_data 为展示层) */
+export interface MvuVarsSnapshot {
+  stat_data: Record<string, unknown>;
+  display_data: Record<string, unknown>;
 }
 
 interface ResourceEntry {
   url: string;
   nonce: string;
   frame: HTMLIFrameElement;
+  /**
+   * 整页脚本卡的内联文档 nonce(来自 render.ts::buildInlineCardHtml 的壳)。
+   * 置位表示 HTML 不是从作者服务器抓的,而是角色卡正则脚本产出的完整文档,
+   * 正文由 inlineCardRegistry 暂存、此处直接投递。
+   */
+  inlineNonce?: string;
   /** 当前文档代数是否已成功投递 boot(reload 后 ready 会复位为 false) */
   booted: boolean;
   /** 代理拉取连续失败次数(退避重试用,成功投递后清零) */
@@ -84,6 +112,16 @@ function logTavernCall(entry: Record<string, unknown>): void {
   } catch {
     /* 忽略(隐私模式/配额满) */
   }
+}
+
+/**
+ * 把可能带 Vue 代理/循环引用的对象转成可结构化克隆的纯数据。
+ * postMessage 的 structuredClone 遇到 Proxy 会抛 DataCloneError,必须先序列化。
+ */
+function sanitizePlaneObject(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object') return {};
+  const parsed: unknown = JSON.parse(JSON.stringify(input));
+  return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
 }
 
 export function useResourceFrames(opts: UseResourceFramesOptions) {
@@ -127,8 +165,17 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
     const win = frame.contentWindow;
     if (!win) return;
     try {
-      const body = await fetchResourceHtml(url);
-      const html = body.base_url ? `<base href="${escapeAttr(body.base_url)}">\n${body.html}` : body.html;
+      // 整页脚本卡:正文来自渲染期登记的内联文档(no fetch,作者服务器不参与);
+      // 登记表因容量淘汰而缺失时不下发,等下次渲染/hydrate 重试。
+      let html: string;
+      if (entry.inlineNonce) {
+        const payload = inlineCardPayload(entry.inlineNonce);
+        if (!payload) return;
+        html = payload.html;
+      } else {
+        const body = await fetchResourceHtml(url);
+        html = body.base_url ? `<base href="${escapeAttr(body.base_url)}">\n${body.html}` : body.html;
+      }
       const snapshot = await loadResourceSnapshot(url);
       // 酒馆助手式资源页需要当前角色卡元数据推导资源包口令(TavernHelper shim)
       const ch = opts.currentCharacter.value;
@@ -167,8 +214,32 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
           /* 循环引用等异常:不下发 */
         }
       }
+      // MVU 变量快照:框架内 window.Mvu 读它就够了;写回见 mvu-replace 上行。
+      // 必须转成纯 JSON 再投递——pinia ref 里是 Vue 响应式代理,直接 postMessage 会
+      // 抛 DataCloneError(#<Object> could not be cloned),整条 boot 失败、卡片空白。
+      let mvuSnapshot: MvuVarsSnapshot | null = null;
+      const rawMvu = opts.mvuVariables?.value;
+      if (rawMvu) {
+        try {
+          mvuSnapshot = {
+            stat_data: sanitizePlaneObject(rawMvu.stat_data),
+            display_data: sanitizePlaneObject(rawMvu.display_data),
+          };
+        } catch {
+          mvuSnapshot = null; // 循环引用等异常:按无变量继续 boot
+        }
+      }
       win.postMessage(
-        { channel: 'kedai-resource-frame-v1', nonce, type: 'boot', html, snapshot, charData, worldbook },
+        {
+          channel: 'kedai-resource-frame-v1',
+          nonce,
+          type: 'boot',
+          html,
+          snapshot,
+          charData,
+          worldbook,
+          mvu: mvuSnapshot,
+        },
         '*',
       );
       entry.booted = true;
@@ -189,7 +260,7 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
 
   /** 加载失败的可见反馈:说明区追加「重试」(iframe 内仍是宿主模板文档,重试即重新 boot,无需重建框架) */
   function showResourceError(entry: ResourceEntry, message: string): void {
-    const card = entry.frame.closest('[data-kd-resource-url]');
+    const card = entry.frame.closest('[data-kd-resource="1"]');
     const note = card?.querySelector<HTMLElement>('.sv-resource-card-note');
     if (!note) return;
     note.textContent = `资源界面加载失败:${message}。`;
@@ -214,7 +285,7 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
    * 「在新窗口打开」链接不受影响(T1 既有裁决的兼容面保留)。
    */
   function showResourceDomainConfirm(frame: HTMLIFrameElement, url: string): void {
-    const card = frame.closest('[data-kd-resource-url]') as HTMLElement | null;
+    const card = frame.closest('[data-kd-resource="1"]') as HTMLElement | null;
     const note = card?.querySelector<HTMLElement>('.sv-resource-card-note');
     const host = resourceDomainOf(url) ?? url;
     if (!card || !note) return;
@@ -288,6 +359,34 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
     }
     if (m.type === 'tavern-call') {
       void handleTavernCall(entry, m as { callId?: string; method?: string; args?: unknown });
+      return;
+    }
+    if (m.type === 'mvu-replace') {
+      // 框架内 Mvu.replaceMvuData:变量真身在 host chat store,这里同步落库
+      const data = (m as { data?: unknown }).data;
+      if (data && typeof data === 'object') opts.onMvuReplace?.(data as MvuVarsSnapshot);
+      return;
+    }
+    if (m.type === 'kd-error') {
+      // 框架内作者脚本的运行时异常:跨源读不到 iframe 的控制台,只能由框架侧上报。
+      // 只打印不落库(不含正文/变量,只有栈与消息),供「界面空白」时定位。
+      const detail = m as { kind?: unknown; message?: unknown };
+      const what = typeof detail.kind === 'string' ? detail.kind : 'error';
+      const text = typeof detail.message === 'string' ? detail.message : '';
+      if (text) console.warn(`[资源页脚本] ${what}: ${text}`);
+      return;
+    }
+    if (m.type === 'height') {
+      // 整页卡是自然高度的长页,固定 520px 会截断;按文档上报的高度自适应。
+      // 宽屏态由 CSS flex 撑满,不受这里的 inline height 影响(裁剪在 120~4000 之外的异常值)
+      const h = Number((m as { height?: unknown }).height);
+      if (Number.isFinite(h) && h >= 120) {
+        const clamped = Math.min(Math.round(h), 4000);
+        if (entry.frame.dataset.kdContentHeight !== String(clamped)) {
+          entry.frame.dataset.kdContentHeight = String(clamped);
+          entry.frame.style.height = `${clamped}px`;
+        }
+      }
     }
   }
 
@@ -297,6 +396,50 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
    * 作者页参数形态:{user_input, injects:[{role,content,position}], overrides:{chat_history:{prompts}}}
    * —— 组装为扁平 messages:chat_history.prompts + in_chat injects + user_input。
    */
+  /**
+   * 酒馆 getChatMessages 的宿主实现(只读)。
+   * 酒馆消息对象的关键字段:`message_id` / `role` / `message` / `data`;
+   * 整页卡从 `data.stat_data` 里取 MVU 变量树,故把当前会话变量快照挂到每条消息上
+   * (kedai 的 MVU 变量本就是会话级一份,不做按楼层分叉,语义等同)。
+   * ids 支持:单 id、id 数组、楼层序号(数字)、'latest';缺省/null 返回全部。
+   */
+  function readChatMessages(args: unknown): Array<Record<string, unknown>> {
+    const snapshot = {
+      stat_data: sanitizePlaneObject(opts.mvuVariables?.value?.stat_data ?? {}),
+      display_data: sanitizePlaneObject(opts.mvuVariables?.value?.display_data ?? {}),
+    };
+    const list = opts.messages?.value ?? [];
+    const rows = list.map((msg, index) => ({
+      message_id: msg.id,
+      id: msg.id,
+      role: msg.role,
+      name: msg.role === 'user' ? 'user' : 'character',
+      message: msg.content,
+      content: msg.content,
+      data: JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>,
+      index,
+    }));
+    const raw = Array.isArray(args) ? args[0] : args;
+    const ids: unknown[] = Array.isArray(raw) ? raw : [raw];
+    if (ids.length === 0 || ids[0] === null || ids[0] === undefined) return rows;
+    const picked: Array<Record<string, unknown>> = [];
+    for (const id of ids) {
+      if (typeof id === 'string' && id === 'latest') {
+        const last = rows[rows.length - 1];
+        if (last) picked.push(last);
+        continue;
+      }
+      if (typeof id === 'number') {
+        const byIndex = rows[id];
+        if (byIndex) picked.push(byIndex);
+        continue;
+      }
+      const hit = rows.find((r) => r.id === id);
+      if (hit) picked.push(hit);
+    }
+    return picked;
+  }
+
   async function handleTavernCall(
     entry: ResourceEntry,
     m: { callId?: string; method?: string; args?: unknown },
@@ -311,6 +454,14 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
         '*',
       );
     };
+    // 读消息(酒馆 getChatMessages):整页前端卡用它把「当前楼层 + 该楼层的变量树」
+    // 读出来初始化界面(露出日记卡:`getChatMessages(getCurrentMessageId())[0].data.stat_data`)。
+    // kedai 的 MVU 变量是会话级一份,这里把当前快照挂到每条消息的 data 上,与
+    // TavernHelper.generate 的变量语义一致;不含世界书/正文改写,纯只读。
+    if (m.method === 'getChatMessages') {
+      reply(true, readChatMessages(m.args));
+      return;
+    }
     if (m.method !== 'generate') {
       reply(false, undefined, `不支持的调用:${m.method}`);
       return;
@@ -406,15 +557,24 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
     const frames = opts.scrollArea.value.querySelectorAll<HTMLIFrameElement>('iframe[data-kd-resource-frame="1"]');
     for (const frame of frames) {
       if (frame.dataset.kdWired) continue;
-      const card = frame.closest('[data-kd-resource-url]') as HTMLElement | null;
-      const rawUrl = card?.dataset.kdResourceUrl;
+      const card = frame.closest('[data-kd-resource="1"]') as HTMLElement | null;
       const nonce = card?.dataset.kdResourceNonce;
-      if (!rawUrl || !nonce) continue;
-      const url = decodeURIComponent(rawUrl);
-      // FE-5 A:未确认的域名不注册框架、不预拉取(只在卡片内就地确认,见 showResourceDomainConfirm)
-      if (!isResourceDomainAllowed(url)) {
-        showResourceDomainConfirm(frame, url);
-        continue;
+      if (!card || !nonce) continue;
+      // 整页脚本卡(角色卡正则脚本产出的完整文档):无 URL,正文由渲染期登记;
+      // 远程资源卡:有 data-kd-resource-url,需过域名白名单再预拉取。
+      const inlineNonce = card.dataset.kdInlineNonce;
+      let url: string;
+      if (inlineNonce) {
+        url = `inline:${inlineNonce}`;
+      } else {
+        const rawUrl = card.dataset.kdResourceUrl;
+        if (!rawUrl) continue;
+        url = decodeURIComponent(rawUrl);
+        // FE-5 A:未确认的域名不注册框架、不预拉取(只在卡片内就地确认,见 showResourceDomainConfirm)
+        if (!isResourceDomainAllowed(url)) {
+          showResourceDomainConfirm(frame, url);
+          continue;
+        }
       }
       const win = frame.contentWindow;
       if (!win) {
@@ -437,6 +597,7 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
         url,
         nonce,
         frame,
+        inlineNonce,
         booted: false,
         attempts: 0,
         repairs: 0,
@@ -444,8 +605,9 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
         callCount: 0,
       };
       resourceFrames.set(win, entry);
-      // 预拉取作者页面 HTML(与模板加载并行;失败不缓存,boot 分支会退避重试)
-      void fetchResourceHtml(url).catch(() => undefined);
+      // 预拉取作者页面 HTML(与模板加载并行;失败不缓存,boot 分支会退避重试)。
+      // 整页脚本卡不需要网络,正文在渲染期已登记。
+      if (!inlineNonce) void fetchResourceHtml(url).catch(() => undefined);
       // ready 可能先于常驻监听注册(模板加载很快):超时兜底直接投递,
       // 宿主文档 booted 闩锁只接受第一条 boot,重复投递无害。
       // 12s 覆盖代理下载大资源页(如吸血鬼卡 1.25MB)+ 宿主文档重建时间。
@@ -463,7 +625,7 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
   function onWideClick(e: MouseEvent): void {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-kd-resource-wide="1"]');
     if (!btn || !opts.scrollArea.value?.contains(btn)) return;
-    const card = btn.closest<HTMLElement>('[data-kd-resource-url]');
+    const card = btn.closest<HTMLElement>('[data-kd-resource="1"]');
     if (!card) return;
     const wide = card.dataset.kdWide !== '1';
     card.dataset.kdWide = wide ? '1' : '';

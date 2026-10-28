@@ -65,14 +65,19 @@ const VERBOSE = process.argv.includes('--verbose');
  * `[data-kd-scope]` 容器恢复 `white-space/word-break/overflow-wrap: normal`(3 行声明)
  * + 放宽 `:has()` 气泡上限至满宽并把理由写进注释(3 行注释);宿主自身规则零改动,
  * 所以增量只能落在容器段。
+ * CARD-B 变动(酒馆整页脚本卡改隔离文档宿主,只升 shell 838→843 / content 1007→1011):
+ * 整页卡的界面由作者脚本在 `/resource-frame.html` 里装配,壳体沿用远程资源卡片样式,
+ * 但作者按 940px 页面设计,`max-width:640px` 会把它挤窄 —— shell 那 5 行是给
+ * `:has([data-kd-inline-card])` 的气泡放宽(含理由注释),content 那 4 行是壳体自身的
+ * `max-width:none` 覆写(含理由注释);宿主既有规则零改动。
  */
 const LINE_BASELINE = {
   'style.css': 49,
   'styles/tokens.css': 247,
   'styles/base.css': 130,
-  'styles/shell.css': 838,
+  'styles/shell.css': 843,
   'styles/panels.css': 971,
-  'styles/content.css': 1007,
+  'styles/content.css': 1011,
   'styles/task.css': 997,
   'styles/mobile.css': 433,
 };

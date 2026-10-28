@@ -753,6 +753,14 @@ globalThis.Mvu=Mvu;globalThis.getAllVariables=getAllVariables;
 globalThis.getVariables=getVariables;globalThis.replaceVariables=replaceVariables;globalThis.insertOrAssignVariables=insertOrAssignVariables;
 globalThis.eventOn=eventOn;globalThis.eventOff=eventOff;globalThis.eventEmit=eventEmit;
 globalThis.waitGlobalInitialized=waitGlobalInitialized;globalThis.errorCatched=errorCatched;globalThis.toastr=toastr;
+// 酒馆运行期裸全局(实测缺口:露出日记-0615 的卡级脚本「悬浮球-0613」「额外请求-0615」
+// 一进函数体就调 getScriptId(),缺失即 ReferenceError,整批卡级脚本判失败并显示红字)。
+// getScriptId():酒馆里返回当前脚本 id,卡用它做正则绑定/设置面板的键;kedai 无脚本 id
+// 概念,给稳定占位值即可(同一会话内一致,卡片按等值判等)。
+globalThis.getScriptId=function(){return 'kedai-script';};
+// SillyTavern:卡级脚本常读 extensionSettings 做插件协作开关。酒馆里是宿主对象;
+// 这里给最小可写对象,避免 ReferenceError 连锁(写入只落在沙箱内存,不产生副作用)。
+globalThis.SillyTavern=globalThis.SillyTavern||{extensionSettings:{},chat:[],characters:[],name1:'user'};
 const Dom=Object.freeze({setText:(selector,text)=>rpc('setText',selector,text),setHtml:(selector,html)=>rpc('setHtml',selector,html),setAttribute:(selector,name,value)=>rpc('setAttribute',selector,name,value)});
 const fetch=undefined,XMLHttpRequest=undefined,WebSocket=undefined,EventSource=undefined,indexedDB=undefined,caches=undefined,localStorage=__kdMemoryStorage,sessionStorage=__kdSessionStorage;
 // ---- 酒馆事件常量(对齐酒馆助手 tavern_events;值即事件总线键) ----

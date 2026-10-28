@@ -287,6 +287,11 @@
 .sv-msg.assistant .sv-msg-bubble:has([data-kd-scope]) {
   max-width: 100%;
 }
+/* 整页脚本卡(酒馆「前端渲染」卡的界面由作者脚本在隔离文档里装配)同样按整幅聊天区
+   宽度设计:940px 设计稿塞进 min(560px,78%) 会被压缩到 560,故与上面同口径放宽。 */
+.sv-msg.assistant .sv-msg-bubble:has([data-kd-inline-card]) {
+  max-width: 100%;
+}
 /* 卡内 HTML 是整页文档(自带分段/字距/断行策略),宿主的 pre-wrap + break-word
    会把卡的排版语义覆盖成「逐字断行」。作用域容器内恢复 normal,
    由卡自己的 CSS 决定换行(实测:940px 设计稿在 517px 容器内被 break-word 拆成一字一行)。 */

@@ -640,6 +640,51 @@ export const useChatStore = defineStore('app.chat', () => {
     }
   }
 
+  /**
+   * 角色卡脚本主动写回变量树(整页卡/资源页里 `Mvu.replaceMvuData`)。
+   *
+   * 与 applyMvuUpdate 走同一条「写入 → 事件 → 广播 → 持久化」链路,区别只是数据源来自
+   * 作者脚本而非 AI 回复里的 `<UpdateVariable>`。容量保护:超 512KB 的快照拒收
+   * (作者脚本可能误把整个 DOM 塞进变量树,落库会让会话每次加载都变慢)。
+   */
+  async function replaceMvuVariables(next: { stat_data?: unknown; display_data?: unknown }): Promise<void> {
+    const stat = next?.stat_data && typeof next.stat_data === 'object' ? next.stat_data : {};
+    const disp =
+      next?.display_data && typeof next.display_data === 'object' ? next.display_data : stat;
+    let size = 0;
+    try {
+      size = JSON.stringify({ stat_data: stat, display_data: disp }).length;
+    } catch {
+      console.warn('角色卡脚本写回的变量无法序列化,已忽略');
+      return;
+    }
+    if (size > 512 * 1024) {
+      console.warn(`角色卡脚本写回的变量过大(${Math.round(size / 1024)}KB),已忽略`);
+      return;
+    }
+    mvuVariables.value = {
+      stat_data: stat as Record<string, unknown>,
+      display_data: disp as Record<string, unknown>,
+    };
+    emitMvuEvent('mag_variable_updated', {
+      stat_data: mvuVariables.value.stat_data,
+      display_data: mvuVariables.value.display_data,
+    });
+    broadcastMvuUpdate(mvuVariables.value);
+    const sid = currentSessionId.value;
+    const last = [...messages.value].reverse().find((m) => m.role === 'assistant' && m.id > 0);
+    if (sid && last) {
+      try {
+        await api.saveMessageVariables(sid, last.id, {
+          stat_data: mvuVariables.value.stat_data,
+          display_data: mvuVariables.value.display_data,
+        });
+      } catch (e) {
+        console.warn('保存变量快照失败', e);
+      }
+    }
+  }
+
   /** 清空当前会话 */
   async function clearCurrentChat(): Promise<void> {
     const sid = currentSessionId.value;
@@ -698,6 +743,7 @@ export const useChatStore = defineStore('app.chat', () => {
     loadHistory,
     loadTokenTotals,
     updateContextTokens,
+    replaceMvuVariables,
     sendMessage,
     startStream,
     resendMessage,

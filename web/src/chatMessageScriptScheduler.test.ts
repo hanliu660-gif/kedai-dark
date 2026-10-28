@@ -48,7 +48,9 @@ describe('executeCurrentMessageScripts', () => {
       expect.objectContaining({ characterId: 'character-a', scriptHash: 'hash-a' }),
     );
     // 实跑问题 7 R2:调度器把真实楼层深度传给 renderScripts(与渲染侧同口径)
-    expect(options.renderScripts).toHaveBeenCalledWith('渲染正文', options.scripts, 'msg-42', 0);
+    // CARD-B1:第五参 framePages=true —— 整页脚本文档已改走隔离文档,镜像调度器必须用同一
+    // 开关重算,否则会按内联路径再算出一份脚本块(容器不存在 → 「未找到状态栏脚本容器」)
+    expect(options.renderScripts).toHaveBeenCalledWith('渲染正文', options.scripts, 'msg-42', 0, true);
   });
 
   it('未授权时跳过,授权 false -> true 后补执行已有消息', async () => {

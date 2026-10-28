@@ -32,6 +32,7 @@ export interface MessageScriptSchedulerOptions<TMessage extends SchedulableMessa
     scripts: TScript[],
     scopeId: string,
     depth: number,
+    framePages?: boolean,
   ) => { blocks: ScriptBlock[] } | null;
   runMessageScripts: (
     root: HTMLElement,
@@ -57,11 +58,15 @@ export async function executeCurrentMessageScripts<TMessage extends SchedulableM
     // 真实楼层深度:渲染侧 ChatMessageItem 用 messages.length-1-i,这里同口径
     // (实跑问题 7 R2:旧实现写死 0,带 min_depth 的脚本在首楼不执行)
     const depth = options.depthOf(message, index, total);
+    // 与渲染侧同口径:整页脚本文档在渲染期走隔离文档路径,这里必须用同一开关重算,
+    // 否则会把「已改走 iframe 的卡」再按内联路径算出一份脚本块,容器不存在 →
+    // 报「未找到状态栏脚本容器」。隔离文档里的脚本由文档自己执行,不进镜像调度器。
     const scoped = options.renderScripts(
       options.renderText(message),
       options.scripts,
       `msg-${message.id}`,
       depth,
+      true,
     );
     if (!scoped || scoped.blocks.length === 0) continue;
     try {

@@ -71,6 +71,7 @@ function mountItem(m: UiMessage, over: Record<string, unknown> = {}) {
       scripts: [],
       depth: 0,
       scriptHash: 'h0',
+      scriptAuthorized: false,
       ...over,
     },
   });

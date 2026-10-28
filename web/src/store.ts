@@ -62,6 +62,7 @@ export const useAppStore = defineStore('app', () => {
     loadHistory: chat.loadHistory,
     loadTokenTotals: chat.loadTokenTotals,
     updateContextTokens: chat.updateContextTokens,
+    replaceMvuVariables: chat.replaceMvuVariables,
     sendMessage: chat.sendMessage,
     startStream: chat.startStream,
     onSseEvent: chat.onSseEvent,

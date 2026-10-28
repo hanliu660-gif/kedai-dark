@@ -43,6 +43,20 @@ interface JqCollection {
   each(fn: (this: Element, i: number, el: Element) => void): JqCollection;
   hide(): JqCollection;
   show(): JqCollection;
+  filter(sel: string | ((this: Element, i: number, el: Element) => boolean)): JqCollection;
+  find(sel: string): JqCollection;
+  closest(sel: string): JqCollection;
+  eq(i: number): JqCollection;
+  first(): JqCollection;
+  last(): JqCollection;
+  is(sel: string): boolean;
+  attr(name: string, v?: string): JqCollection | string | null;
+  prop(name: string, v?: unknown): JqCollection | unknown;
+  append(content: string | Element): JqCollection;
+  remove(): JqCollection;
+  empty(): JqCollection;
+  trigger(ev: string): JqCollection;
+  click(fn?: (this: Element, ev: Event) => void): JqCollection;
   [index: number]: Element;
 }
 
@@ -82,6 +96,48 @@ const coll: JqCollection = {
     return this;
   },
   show() {
+    return this;
+  },
+  filter() {
+    return this;
+  },
+  find() {
+    return this;
+  },
+  closest() {
+    return this;
+  },
+  eq() {
+    return this;
+  },
+  first() {
+    return this;
+  },
+  last() {
+    return this;
+  },
+  is() {
+    return false;
+  },
+  attr(): null {
+    return null;
+  },
+  prop() {
+    return this;
+  },
+  append() {
+    return this;
+  },
+  remove() {
+    return this;
+  },
+  empty() {
+    return this;
+  },
+  trigger() {
+    return this;
+  },
+  click() {
     return this;
   },
 };
@@ -153,7 +209,102 @@ function makeColl(elems: Element[]): JqCollection {
     for (const el of elems) (el as HTMLElement).style.display = '';
     return c;
   };
+  c.filter = function (sel: string | ((this: Element, i: number, el: Element) => boolean)) {
+    if (typeof sel === 'function') return makeColl(elems.filter((el, i) => sel.call(el, i, el)));
+    return makeColl(elems.filter((el) => matchesSel(el, sel)));
+  };
+  c.find = function (sel: string) {
+    const out: Element[] = [];
+    for (const el of elems) {
+      const nodes = el.querySelectorAll(sel);
+      out.push(...Array.from(nodes));
+    }
+    return makeColl(out);
+  };
+  c.closest = function (sel: string) {
+    const out: Element[] = [];
+    for (const el of elems) {
+      let cur: Element | null = el;
+      while (cur) {
+        if (matchesSel(cur, sel)) {
+          out.push(cur);
+          break;
+        }
+        cur = cur.parentElement;
+      }
+    }
+    return makeColl(out);
+  };
+  c.eq = function (i: number) {
+    const idx = i < 0 ? elems.length + i : i;
+    const one = elems[idx];
+    return makeColl(one ? [one] : []);
+  };
+  c.first = function () {
+    return makeColl(elems.length ? [elems[0]] : []);
+  };
+  c.last = function () {
+    return makeColl(elems.length ? [elems[elems.length - 1]] : []);
+  };
+  c.is = function (sel: string) {
+    return elems.some((el) => matchesSel(el, sel));
+  };
+  c.attr = function (name: string, v?: string) {
+    if (v === undefined) return elems.length ? elems[0].getAttribute(name) : null;
+    for (const el of elems) el.setAttribute(name, v);
+    return c;
+  };
+  c.prop = function (name: string, v?: unknown) {
+    // 用 Reflect 读写:作者脚本会往 DOM 元素上挂自定义属性($('x').prop('checked', true)),
+    // Element 类型没有索引签名,换成类型断言就成了 ratchet 涨记账,Reflect 是零断言的等价手段。
+    if (v === undefined) return elems.length ? Reflect.get(elems[0], name) : undefined;
+    for (const el of elems) Reflect.set(el, name, v);
+    return c;
+  };
+  c.append = function (content: string | Element) {
+    for (const el of elems) {
+      if (typeof content === 'string') el.insertAdjacentHTML('beforeend', content);
+      else el.appendChild(content);
+    }
+    return c;
+  };
+  c.remove = function () {
+    for (const el of elems) el.parentElement?.removeChild(el);
+    return c;
+  };
+  c.empty = function () {
+    for (const el of elems) el.textContent = '';
+    return c;
+  };
+  c.trigger = function (ev: string) {
+    for (const el of elems) el.dispatchEvent(new Event(String(ev), { bubbles: true }));
+    return c;
+  };
+  c.click = function (fn?: (this: Element, ev: Event) => void) {
+    if (typeof fn === 'function') return c.on('click', fn);
+    for (const el of elems) (el as HTMLElement).click?.();
+    return c;
+  };
   return c;
+}
+
+/** 选择器判定:镜像元素门面可能没有 matches,退化到 id/class/标签粗匹配 */
+function matchesSel(el: Element, selector: string): boolean {
+  const s = selector.trim();
+  if (!s) return false;
+  const matches = (el as Element & { matches?: (q: string) => boolean }).matches;
+  if (typeof matches === 'function') {
+    try {
+      return matches.call(el, s);
+    } catch {
+      return false;
+    }
+  }
+  const idMatch = /^#([\w-]+)$/.exec(s);
+  if (idMatch) return el.id === idMatch[1];
+  const clsMatch = /^\.([\w-]+)$/.exec(s);
+  if (clsMatch) return el.classList.contains(clsMatch[1]);
+  return el.tagName.toLowerCase() === s.toLowerCase();
 }
 
 // root 允许 Document:未 setJQueryRoot 时回退 document(既有运行时行为),
