@@ -18,6 +18,26 @@
 - 不泄露聊天正文、API Key 或本地真实数据。
 - 不顺手实现未要求的安全/API 批次。**Git 提交按下方「Git 提交纪律」执行（2026-09-15 起由「一律不提交」改为「完成并验证后按体例提交」）。**
 
+## 酒馆「整页前端卡」渲染链路(本机分支独占,2026-10-29 起)
+
+酒馆生态的卡常用正则脚本把 `<start>…</start>` 换成**一整页 HTML + 内联脚本**(Vue/MVU/ST 全局 API
+装配界面)。本机分支分三层处理,**动其中任一层前先看 `docs/功能-变更史.md` 的 `2026-10-29-carda` /
+`2026-10-29-b1*` 条目**:
+
+1. **静态内联**(`web/src/render.ts` 的 `renderScopedScripts` + `cssSanitize.ts`):作用域化 CSS。
+   `sanitizeScopedCss` 必须放行 `@media/@supports/@container/@layer/@scope/@font-face`(曾整类丢弃);
+   `scopeSelector` 把 `:root`/`html`/`body` 折叠到容器本体(否则成死选择器,令牌全灭);
+   `sanitizeVisibleHtml` 需保留语义容器标签与 `hidden` 等布尔属性。
+2. **整页 + 带脚本**(`isScriptedPageDocument` → `buildInlineCardHtml` → `inlineCardRegistry` →
+   `useResourceFrames`):把 HTML 投进 `/resource-frame.html` 的真实文档宿主,卡脚本才能看到真实 DOM。
+   帧内垫片在 `server-rs/src/api/resource_frame_template.html`(TavernHelper / Mvu / ST 全局 /
+   jQuery-lite / lodash / 存储 shim / 补发 `DOMContentLoaded` / `updateVariablesWith` /
+   `createChatMessages` / `triggerSlash` / 高度只量 body)。**该文件是 `include_str!` 常量,改完必须重编 Rust。**
+3. **作者远程资源页**(`buildRemoteResourceHtml`):只认 https,走同一宿主文档;不要为整页卡另造 iframe。
+
+已知边界:卡内 `import … from 'https://…/+esm'` 这类 CDN ES module 顶层依赖跑不了(沙箱不支持
+import/export);CSP 里 `style-src` 未放行 `cdnjs` 故 Font Awesome 图标空白。
+
 ## 任务模式机制要点(2026-08-28 重构后)
 
 - 后端任务引擎分两层:`server-rs/src/services/task_service/`(任务 CRUD/状态/取消/事件)与 `server-rs/src/services/task_engine/`(批次 4 六模式底座:ModeExecutor/TaskRunContext/事件桥;legacy/solo/multi/plan/team/custom 六个执行器均在此,统一派发点见 `task_engine/mod.rs`);任务状态为枚举 `TaskStatus`/`TaskStepStatus`/`TaskSubtaskStatus`,运行模式为 `TaskRunMode`(`models/types.rs`,serde snake_case 字符串,落盘与 API 线格式不变)。六模式语义见 `docs/功能.md`。
