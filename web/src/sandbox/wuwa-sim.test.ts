@@ -171,6 +171,57 @@ describe('WuWa 悬浮窗脚本形态端到端模拟', () => {
     expect(cssOps.some((o) => o.args?.[0] === 'display')).toBe(true);
     expect(cssOps.some((o) => o.args?.[0] === 'position')).toBe(true);
   });
+
+  it('游离元素与 jq.find 后代选择器按 [data-kd-el] 作用域拼接,且 $(this).attr("data-*") 读真值', async () => {
+    const h = makeHarness('sim-momo-find');
+    const code = [
+      "const panel=$('<div>').appendTo('body');",
+      "panel.html('<button class=\"shop-menu-btn\" data-shop=\"clothes\">衣服</button><input id=\"llm-url\" value=\"https://api.test/v1\" />');",
+      "const btn=panel.find('.shop-menu-btn');",
+      "btn.on('click', function(){",
+      "  warn('shop=' + String($(this).attr('data-shop')) + ',btnVal=' + String($(this).attr('class')));",
+      "});",
+      "const inp=panel.find('#llm-url');",
+      "warn('findInp=' + String(inp.val()));",
+    ].join('\n');
+    const ops = await h.run(code);
+    expect(h.messages.filter((m) => m.type === 'error')).toHaveLength(0);
+    const onOp = ops.find((o) => o.method === 'on');
+    expect(onOp).toBeTruthy();
+    expect(String(onOp?.ref?.value || '')).toContain('.shop-menu-btn');
+    expect(String(onOp?.ref?.value || '')).not.toBe('body');
+
+    const jqId = Number(((onOp?.args ?? []) as unknown[])[1]);
+    h.dispatch({
+      channel: 'kedai-character-script-v1',
+      nonce: 'sim-momo-find',
+      type: 'jq-event',
+      jqId,
+      event: { type: 'click' },
+      target: {
+        kind: 'target',
+        id: 1,
+        data: { shop: 'clothes' },
+        state: { tag: 'button', classes: ['shop-menu-btn'] },
+      },
+      mirror: { selectors: {}, controls: [] },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const warns = h.messages.filter((m) => m.type === 'warn').map((m) => String(m.message));
+    expect(warns).toContain('shop=clothes,btnVal=shop-menu-btn');
+  });
+
+  it('游离元素 coll.off() 正常下发解绑且不影响兄弟元素', async () => {
+    const h = makeHarness('sim-momo-off');
+    const code = [
+      "const p=$('<div>').appendTo('body');",
+      "p.on('click', function(){ warn('p-click'); });",
+      "p.off('click');",
+    ].join('\n');
+    const ops = await h.run(code);
+    expect(h.messages.filter((m) => m.type === 'error')).toHaveLength(0);
+    expect(ops.some((o) => o.method === 'off' && o.ref?.kind === 'kdel')).toBe(true);
+  });
 });
 
 // B1 批补丁(2026-10-29):整页脚本卡在**兼容执行器**里跑时,`.filter(sel)` 等集合方法缺失

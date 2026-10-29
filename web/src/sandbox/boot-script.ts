@@ -429,12 +429,13 @@ const __kdMergeEventTarget=function(t){
 const __kdFindControl=function(sel){
   if(typeof sel!=='string')return null;
   const C=__kdMirror.controls||[];
-  if(sel.charAt(0)==='#'){
-    const id=sel.slice(1);
+  const idM=/(?:^|\\s)#([\\w-]+)$/.exec(sel);
+  if(idM){
+    const id=idM[1];
     for(let i=0;i<C.length;i++){const c=C[i];if(c&&c.id===id)return c;}
-  } else if(sel.indexOf('[name=')===0){
-    const nm=sel.slice(6,sel.length-1).replace(/^["']|["']$/g,'');
-    for(let i=0;i<C.length;i++){const c=C[i];if(c&&c.name===nm)return c;}
+  } else if(sel.indexOf('[name=')>=0){
+    const m=/\[name=["']?([^"'\]]+)["']?\]/.exec(sel);
+    if(m){const nm=m[1];for(let i=0;i<C.length;i++){const c=C[i];if(c&&c.name===nm)return c;}}
   }
   return null;
 };
@@ -445,7 +446,8 @@ const __kdPatch=function(sel,patch){
   const e=__kdMirror.selectors[sel]||(__kdMirror.selectors[sel]={});
   for(const k in patch)e[k]=patch[k];
   // 纯 #id 写操作:条目无 id 时从选择器补上,并进反向索引(attr('id') 回查链)
-  if(!e.id&&/^#[\\w-]+$/.test(sel))e.id=sel.slice(1);
+  const idM=/(?:^|\\s)#([\\w-]+)$/.exec(sel);
+  if(!e.id&&idM)e.id=idM[1];
   __kdIndexState(e);
   const c=__kdFindControl(sel);
   if(c)for(const k in patch)c[k]=patch[k];
@@ -785,7 +787,13 @@ function jqCreated(spec){
     else spec.handlers.push({evt:String(p.evt),jqId:id,selector:p.selector||null});
     return coll;
   };
-  coll.off=function(){return coll;};
+  coll.off=function(evt){
+    const p=evt?String(evt):'';
+    if(spec.mounted)live('off',[p]);
+    if(!p)spec.handlers.length=0;
+    else spec.handlers=spec.handlers.filter(function(h){return !p.split(/\\s+/).some(function(name){return h.evt===name;});});
+    return coll;
+  };
   coll.append=function(child){
     if(child&&child.__kdSpec){__kdAppendSpec(child.__kdSpec,coll);return coll;}
     if(child&&typeof child.outerHTML==='string'){const cs=__kdElemToSpec(child);const h=__kdHookOf(child);if(h)h.mounted=true;__kdAppendSpec(cs,coll);return coll;}
@@ -826,7 +834,13 @@ function jqCreated(spec){
   coll.attr=function(k,v){
     if(arguments.length>=2){spec.attrs[String(k)]=String(v??'');live('attr',[String(k),String(v??'')]);return coll;}
     if(k&&typeof k==='object'){for(const key in k){spec.attrs[key]=String(k[key]);live('attr',[key,String(k[key])]);}return coll;}
-    const cur=spec.attrs[String(k)];return cur===undefined?'':cur;
+    const nStr=String(k);
+    if(nStr.indexOf('data-')===0){
+      const dataKey=nStr.slice(5).replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});
+      if(spec.attrs[nStr]!==undefined)return String(spec.attrs[nStr]);
+      if(spec.attrs[dataKey]!==undefined)return String(spec.attrs[dataKey]);
+    }
+    const cur=spec.attrs[nStr];return cur===undefined?'':cur;
   };
   coll.prop=function(){return arguments.length===1?false:coll;};
   // css 三种形态:两参写、一参对象合并、一参字符串读 spec(与真 jQuery 链式语义一致)
@@ -839,7 +853,12 @@ function jqCreated(spec){
   coll.data=function(name){return String(name)==='ui-draggable'?!!(spec.draggable&&spec.draggable!=='destroy'):'';};
   coll.hasClass=function(){return false;};
   coll.is=function(q){if(q===':visible')return true;if(q===':hidden')return false;return false;};
-  coll.find=function(){return coll;};
+  coll.find=function(subSel){
+    if(typeof subSel!=='string'||!subSel.trim())return jq([]);
+    const q=subSel.trim();
+    if(spec.kdId)return jq('[data-kd-el="'+spec.kdId+'"] '+q);
+    return jq(q);
+  };
   coll.closest=function(){return coll;};
   coll.first=function(){return coll;};
   coll.last=function(){return coll;};
@@ -1031,7 +1050,13 @@ function jq(sel){
   coll.is=function(){return false;};
   coll.index=function(){return -1;};
   coll.closest=function(){return coll;};
-  coll.find=function(sel){return jq(sel);};
+  coll.find=function(subSel){
+    if(typeof subSel!=='string'||!subSel.trim())return jq([]);
+    const q=subSel.trim();
+    if(ref&&ref.kind==='selector')return jq(ref.value+' '+q);
+    if(ref&&ref.kind==='kdel')return jq('[data-kd-el="'+ref.id+'"] '+q);
+    return jq(q);
+  };
   coll.children=function(){return coll;};
   coll.parent=function(){return coll;};
   coll.siblings=function(){return coll;};
@@ -1071,7 +1096,18 @@ function jq(sel){
         if(!st)probe(ref);
         return '';
       }
-      if(name==='class')return st&&Array.isArray(st.classes)?st.classes.join(' '):'';
+      const nStr=String(name);
+      if(nStr==='class')return st&&Array.isArray(st.classes)?st.classes.join(' '):'';
+      if(nStr==='value'||nStr==='val'){
+        const c=__kdFindControl(sel);
+        if(c&&typeof c.val==='string')return c.val;
+        return st&&typeof st.val==='string'?st.val:'';
+      }
+      if(nStr.indexOf('data-')===0){
+        const dataKey=nStr.slice(5).replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});
+        if(localData&&dataKey in localData)return String(localData[dataKey]);
+        if(st&&st.dataset&&typeof st.dataset==='object'&&dataKey in st.dataset)return String(st.dataset[dataKey]);
+      }
       if(!st)probe(ref);
       return '';
     }
@@ -1104,7 +1140,6 @@ function jq(sel){
     if(q===':visible'||q===':hidden'){const cs=st&&st.css&&typeof st.css==='object'?st.css:null;const disp=cs&&typeof cs.display==='string'?cs.display:null;const hidden=disp===null?true:disp==='none';return q===':visible'?!hidden:hidden;}
     return false;};
   coll.outerHeight=function(){const st=readState();if(st&&typeof st.offsetHeight==='number')return st.offsetHeight;if(!st)probe(ref);return 0;};
-  coll.find=function(){return coll;};
   coll.closest=function(){return coll;};
   coll.remove=function(){if(ref)enqueue({ref,method:'remove',args:[]});return coll;};
   coll.empty=function(){if(ref)enqueue({ref,method:'empty',args:[]});return coll;};

@@ -171,6 +171,7 @@ export function elementState(el: HTMLElement): Record<string, unknown> {
     checked: !!inp.checked,
     disabled: !!inp.disabled,
     classes: Array.from(el.classList).slice(0, 64),
+    dataset: el.dataset ? Object.fromEntries(Object.entries(el.dataset)) : undefined,
     // select 状态:作者脚本(getSelectedOrCustomText 型)读 selectedIndex/value/options[i].text
     ...readSelectState(el),
     // 内联样式快照:沙箱 css getter 与 is(':visible'|':hidden') 的数据源
@@ -248,6 +249,7 @@ function gatherItems(els: HTMLElement[]): Array<Record<string, unknown>> {
       id: el.id || undefined,
       name: inp.name || undefined,
       tag: el.tagName.toLowerCase(),
+      dataset: el.dataset ? Object.fromEntries(Object.entries(el.dataset)) : undefined,
     };
   });
 }
@@ -280,6 +282,7 @@ export function gatherControls(container: HTMLElement): Array<Record<string, unk
       val: typeof inp.value === 'string' ? inp.value.slice(0, 2000) : '',
       checked: !!inp.checked,
       disabled: !!inp.disabled,
+      dataset: el.dataset ? Object.fromEntries(Object.entries(el.dataset)) : undefined,
       // select 状态(见 readSelectState):沙箱 getElementById 门面读 value/selectedIndex/options
       ...readSelectState(el, budget),
     });
@@ -613,6 +616,20 @@ export function applyJq(
         for (let i = bindings.length - 1; i >= 0; i -= 1) {
           const b = bindings[i];
           if (names.length > 0 && !names.includes(b.eventName)) continue;
+          const globalEl = globalRef
+            ? globalRef.kind === 'window'
+              ? typeof window !== 'undefined'
+                ? window
+                : null
+              : typeof document !== 'undefined'
+                ? document
+                : null
+            : null;
+          if (globalEl) {
+            if (b.element !== globalEl) continue;
+          } else if (els.length > 0) {
+            if (!els.includes(b.element as HTMLElement)) continue;
+          }
           if (typeof (b.element as HTMLElement).removeEventListener === 'function') {
             (b.element as HTMLElement).removeEventListener(b.eventName, b.listener, b.capture);
           }
