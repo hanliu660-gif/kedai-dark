@@ -1053,6 +1053,50 @@ function installScriptElement(src, parent) {
   return s;
 }
 
+// 按文档顺序串行安装脚本;外部脚本与 ES module 要等它真正执行完再装下一个
+// (module 是异步执行的,抢着装下一个会让作者脚本的相互依赖错序)。
+// 超时兜底:远程脚本被 CSP/网络卡住时不能让 boot 悬挂。
+function installScriptsInOrder(list, parent) {
+  var chain = Promise.resolve();
+  for (var i = 0; i < list.length; i++) {
+    chain = chain.then(function (node) {
+      return function () {
+        return new Promise(function (resolve) {
+          var el = installScriptElement(node, parent);
+          var type = (node.getAttribute('type') || '').toLowerCase();
+          var needsWait = !!node.getAttribute('src') || type === 'module';
+          if (!needsWait) { resolve(); return; }
+          var done = false;
+          var finish = function () { if (!done) { done = true; resolve(); } };
+          el.addEventListener('load', finish);
+          el.addEventListener('error', finish);
+          setTimeout(finish, 3000);
+        });
+      };
+    }(list[i]));
+  }
+  return chain;
+}
+
+// 补发文档就绪事件。
+// 原生 DOMContentLoaded / load 在 iframe 首次加载时就已触发,而作者页面是之后经
+// postMessage 注入进来的 —— 于是作者脚本里最常见的初始化写法
+// `document.addEventListener('DOMContentLoaded', () => { ...读 #raw-data 装配界面... })`
+// 永远不会执行,表现为「界面框架在、内容是空的」(露出日记-0615 的直播间面板实测)。
+// 这里在注入脚本执行完之后补发一次,与「作者页在浏览器里被解析」的时序对齐。
+var readyFired = false;
+function fireDocumentReady() {
+  if (readyFired) return;
+  if (document.readyState === 'loading') return; // 原生事件会到,不必补
+  readyFired = true;
+  try {
+    document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+  } catch (e) { recordError('ready', e); }
+  setTimeout(function () {
+    try { window.dispatchEvent(new Event('load')); } catch (e) { recordError('ready', e); }
+  }, 0);
+}
+
 // ---- boot:接收作者页面 HTML + 存储快照,DOM 重建执行 ----
 var booted = false;
 addEventListener('message', function (event) {
@@ -1123,9 +1167,12 @@ addEventListener('message', function (event) {
   // 执行顺序:Vue 就位 → head 脚本(按文档顺序)→ body 脚本(按文档顺序),
   // 与浏览器解析顺序一致;storage/caches 字面量替身在 installScriptElement 里做。
   loadVueGlobal().then(function () {
-    for (let i = 0; i < deferredHeadScripts.length; i++) installScriptElement(deferredHeadScripts[i], head);
-    for (let i = 0; i < deferredBodyScripts.length; i++) installScriptElement(deferredBodyScripts[i], body);
+    return installScriptsInOrder(deferredHeadScripts, head).then(function () {
+      return installScriptsInOrder(deferredBodyScripts, body);
+    });
+  }).then(function () {
     reportHeight();
+    fireDocumentReady();
   });
   recordBoot(m, doc, deferredHeadScripts.length, deferredBodyScripts.length, null);
   } catch (bootError) {

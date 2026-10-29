@@ -516,6 +516,18 @@ async fn resource_frame_document_is_served() {
         html.contains("window.triggerSlash"),
         "宿主文档应补 triggerSlash(触发生成)"
     );
+    // B1-Q2:作者文档是 iframe load 之后经 postMessage 注入的,原生 DOMContentLoaded
+    // 早已触发,于是作者脚本里最常见的初始化写法
+    // `document.addEventListener('DOMContentLoaded', ...)` 永远不执行——表现为面板框架在、
+    // 内容是空的(露出日记-0615 的直播间实测:弹幕 0 条)。boot 结束必须补发一次。
+    assert!(
+        html.contains("fireDocumentReady"),
+        "宿主文档应在注入脚本后补发 DOMContentLoaded"
+    );
+    assert!(
+        html.contains("installScriptsInOrder"),
+        "宿主文档应按文档顺序串行安装脚本(module 异步执行)"
+    );
 }
 
 // ===== 缓存诊断端点(缓存感知管线) =====

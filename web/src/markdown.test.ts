@@ -74,6 +74,14 @@ describe('stripMvuBlocks', () => {
     expect(stripMvuBlocks('<MAINTEXT>a</MAINTEXT>')).toBe('a');
     expect(stripMvuBlocks('<maintextual>x</maintextual>')).toBe('<maintextual>x</maintextual>');
   });
+
+  // B1-Q2(2026-10-29):整条消息的包装标签 `<secask>` 没有脚本消费,会以字面形式
+  // 顶在界面面板上方(露出日记-0615 真机实测)。与 maintext 同样只去标签、内容保留。
+  it('剥离 <secask> 整条消息包装标签', () => {
+    expect(stripMvuBlocks('<secask>\n正文\n</secask>')).toBe('\n正文\n');
+    expect(stripMvuBlocks('<secAsk>a</secAsk>')).toBe('a');
+    expect(stripMvuBlocks('<secaskish>x</secaskish>')).toBe('<secaskish>x</secaskish>');
+  });
 });
 
 // RPFLOW 提交 3:酒馆式 HTML 渲染路径的文本层工具

@@ -18,6 +18,14 @@ const STATUS_VAR_RE = /<\/?\s*status_current_variable\s*>/gi;
 const MAIN_TEXT_RE = /<\/?\s*maintext\s*>/gi;
 
 /**
+ * 酒馆「前端渲染」卡的**整条消息包装标签**:`<secask>…</secask>` 一类的容器由作者在
+ * 正则脚本里消费(把里面的 `<live_streaming>`/`<action_options_*>` 换成界面),容器标签本身
+ * 没有任何脚本去动它,于是一字面形式露在气泡顶部(露出日记-0615 实测:`<secask>` 顶在界面上方)。
+ * 与 `<maintext>` 同样处理:只去标签、内容保留(内容若已被正则换成界面,这里就是白的)。
+ */
+const CARD_ENVELOPE_RE = /<\/?\s*(?:secask|sec_ask|maintext|options_block)\s*>/gi;
+
+/**
  * 剥离 HTML 注释(含**未闭合的尾部注释**)。酒馆式 HTML 渲染路径在 markdown 化之前调用。
  * 未闭合注释按「至文本结尾」剥除:流式输出下注释常跨帧未闭合,若把 `<!--` 后的半截
  * 文本当正文渲染,注释闭合的下一帧会出现「多一行再消失」的闪字面跳变;
@@ -37,6 +45,10 @@ export function stripProtocolBlocks(text: string): string {
   if (MAIN_TEXT_RE.test(t)) {
     MAIN_TEXT_RE.lastIndex = 0;
     t = t.replace(MAIN_TEXT_RE, '');
+  }
+  if (CARD_ENVELOPE_RE.test(t)) {
+    CARD_ENVELOPE_RE.lastIndex = 0;
+    t = t.replace(CARD_ENVELOPE_RE, '');
   }
   return t;
 }
