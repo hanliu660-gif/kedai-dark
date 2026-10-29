@@ -10,6 +10,7 @@
 // - --sv-on-ink-soft(黑底次级文字)在暗色下必须跟着对调,否则黑底上的文字会消失。
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { DARK_THEME_TOKENS } from '../theme/darkTokens';
 
 const tokensCss = readFileSync(new URL('tokens.css', import.meta.url), 'utf8');
 
@@ -147,6 +148,12 @@ describe('NIGHT-1 反漂移', () => {
     );
     const invented = [...names].filter((n) => !lightNames.has(n));
     expect(invented, `暗色块里有亮色不存在的令牌:${invented.join(', ')}`).toEqual([]);
+    // R3 契约: tokens.css 与 DARK_THEME_TOKENS (darkTokens.ts) 保持逐键逐值双向 100% 同源
+    for (const [key, value] of Object.entries(DARK_THEME_TOKENS)) {
+      expect(decl(darkBody, key)).toBe(value);
+    }
+    const cssTokens = Array.from(darkBody.matchAll(/^[ \t]*(--[a-z0-9-]+)[ \t]*:/gm)).map((m) => m[1]);
+    expect(cssTokens.length).toBe(Object.keys(DARK_THEME_TOKENS).length);
   });
 
   it('五个配对令牌在亮色下逐字指回原语义色(暗色改造对亮色零视觉变化)', () => {

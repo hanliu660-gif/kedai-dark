@@ -70,10 +70,13 @@ const VERBOSE = process.argv.includes('--verbose');
  * 但作者按 940px 页面设计,`max-width:640px` 会把它挤窄 —— shell 那 5 行是给
  * `:has([data-kd-inline-card])` 的气泡放宽(含理由注释),content 那 4 行是壳体自身的
  * `max-width:none` 覆写(含理由注释);宿主既有规则零改动。
+ * R3 变动(主题声明层并轨,同源生成,只降 tokens 247→235):tokens 的暗色块改为由
+ * web/src/theme/darkTokens.ts 机器同源生成,去除了冗余手工分段注释,
+ * 确保 DARK_THEME.tokens 与 :root[data-theme='dark'] 100% 同源无双源漂移。
  */
 const LINE_BASELINE = {
   'style.css': 49,
-  'styles/tokens.css': 247,
+  'styles/tokens.css': 235,
   'styles/base.css': 130,
   'styles/shell.css': 843,
   'styles/panels.css': 971,
