@@ -133,7 +133,8 @@
     "stores": { "generation": "L2", "responsibility": "Pinia 状态编排:唯一的状态变更入口(action)" },
     "composables": { "generation": "L2", "responsibility": "组合式编排逻辑(可复用业务流程)" },
     "components": { "generation": "L3", "responsibility": "UI 组件(展示层;不承载业务规则)" },
-    "sandbox": { "generation": "L3", "responsibility": "角色卡脚本沙箱宿主(iframe 生命周期/协议/净化)" }
+    "sandbox": { "generation": "L3", "responsibility": "角色卡脚本沙箱宿主(iframe 生命周期/协议/净化)" },
+    "theme": { "generation": "L2", "responsibility": "声明式主题注册表与内置主题(令牌/类名/字体/CSS 注入;window.KedaiUI v1;不暴露 DOM 写入口)", "notes": "2026-10-17 UIQ-4 补登记:main.ts(entry)与设置页(L3)消费,不依赖 components/stores;按状态编排层归 L2" }
   },
   "frontendEntryFiles": {
     "App.vue": { "generation": "entry", "responsibility": "根组件与弹窗装配" },
@@ -158,7 +159,6 @@
     "lastPosition.ts": { "generation": "L1", "responsibility": "上次浏览位置 localStorage 存储层(纯存储,零依赖)" },
     "onboarding.ts": { "generation": "L1", "responsibility": "首启引导(新手教程)机制层:默认模式偏好与引导完成标记的存储、启动模式解析、教程步骤表纯函数(注入式 StorageLike,纯 node 可测);SettingsSectionKey 的单一来源(避免 L2 反向依赖 L3 的 SettingsHub)" },
     "renderHtmlPreference.ts": { "generation": "L1", "responsibility": "HTML 渲染开关按角色卡记忆的存储层(纯存储)" },
-    "theme.ts": { "generation": "L1", "responsibility": "夜间模式偏好(system/light/dark)与 html[data-theme] 挂载;纯展示偏好叶子模块,颜色全在 styles/tokens.css 的暗色块,组件(L3)可直接 import" },
     "scriptAuthorization.ts": { "generation": "L1", "responsibility": "脚本授权台账存储层 + 规范化脚本哈希(与后端授权门共享哈希契约)" },
     "scriptTreeIO.ts": { "generation": "L1", "responsibility": "脚本树导入导出纯函数(id 重分配、export_with 剥离)" },
     "plugins.ts": { "generation": "L1", "responsibility": "角色卡内嵌插件前端兜底检测(与后端 detect_card_plugins 同逻辑)" },
@@ -166,6 +166,7 @@
     "test-node-shim.d.ts": { "generation": "L1", "responsibility": "测试专用最小类型声明(node:fs 的 readFileSync;零运行时代码,使样式契约测试免写显式压错注释)" },
     "nativeDialogs.ts": { "generation": "L1", "responsibility": "恢复原生 window.confirm 与 window.alert(移除 Tauri dialog 插件有缺陷的异步 IPC 覆写)" },
 
+    "theme.ts": { "generation": "L2", "responsibility": "夜间模式与主题系统并轨桥接(system/light/dark 模式解析、系统外观监听、存储键静默迁移、注册表桥接)" },
     "asyncModal.ts": { "generation": "L2", "responsibility": "弹窗懒加载包装(失败重试 + uiPrefs.modalLoadError 上报)" },
     "globalErrorHandlers.ts": { "generation": "L2", "responsibility": "全局错误兜底接线(Vue errorHandler / unhandledrejection / window error;上报走注入回调,不直连 store)" },
     "audioController.ts": { "generation": "L2", "responsibility": "音频控制器注册表(宿主能力桥;被 sandbox 音频 RPC 调用)" },

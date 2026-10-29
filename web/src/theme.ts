@@ -1,16 +1,28 @@
-// 夜间模式:主题偏好与 <html data-theme="dark"> 的挂载(NIGHT-1,2026-10-26)
+// 夜间模式:主题偏好、Mode Resolver 映射桥与主题系统并轨（NIGHT-1 / R1 并轨版）
 //
-// 设计约束(改之前先读):
-// - 本模块只决定 <html> 上挂不挂 data-theme="dark";具体颜色全部由 styles/tokens.css
-//   末尾的 `:root[data-theme='dark']` 覆写 --sv-* 令牌决定 —— **不要在这里写任何颜色**。
-// - 首帧防闪另有一个独立的 web/public/theme-boot.js 在 <head> 里同步跑(比内联脚本稳:
-//   Tauri 的 CSP 配置将来若收紧,静态资源仍在 script-src 'self' 之内)。
-//   两处的存储键、默认值、判定条件必须逐字一致,否则启动时会闪一帧浅色。
-// - 刻意不放进 pinia store:主题是纯展示偏好,不需要进持久化契约与保存批次,
-//   做成叶子模块最省事(与 renderHtmlPreference.ts / inputModality.ts 同一套路)。
-// - 归 L1(tools/arch-layers.json 的 frontendEntryFiles 已登记):组件(L3)可直接 import,
-//   不引入 store → 组件的反向依赖。
+// 设计边界与并轨约定（2026-10-30 R1）:
+// - 本模块充当上游声明式主题注册表 (web/src/theme/registry) 的 Mode Resolver（A 方案包装桥）：
+//   - 保留三档模式: 'system' | 'light' | 'dark'
+//   - 在 'system' 下动态监听 matchMedia('(prefers-color-scheme: dark)')，自动映射到 registry 的 'dark' / 'default'
+//   - 上游 registry 内部 API 保持纯净零侵入
+// - 存储键并轨与静默迁移:
+//   - 模式偏好记录于 THEME_STORAGE_KEY ('kedai.theme-mode.v1')
+//   - 当前激活主题同步落盘至上游 'kedai.theme.v1'
+//   - web/public/theme-boot.js 在 <head> 中优先读取并秒级拦截，首屏 100% 防闪白
+// - 颜色与令牌全部由 styles/tokens.css 的 :root[data-theme='dark'] 决定。
+
 import { ref } from 'vue';
+import {
+  themeRegistry,
+  THEME_STORAGE_KEY as REGISTRY_STORAGE_KEY,
+  listThemes,
+  getActiveThemeId,
+  preloadTheme,
+  subscribeThemes,
+  installThemeApi,
+  initTheme,
+  announceUiReady,
+} from './theme/registry';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -36,6 +48,10 @@ function readStored(): ThemeMode {
   try {
     const raw = localStorage.getItem(THEME_STORAGE_KEY);
     if (raw === 'light' || raw === 'dark' || raw === 'system') return raw;
+    // 静默迁移检查：如果仅存在上游 kedai.theme.v1
+    const regRaw = localStorage.getItem(REGISTRY_STORAGE_KEY);
+    if (regRaw === 'dark') return 'dark';
+    if (regRaw === 'default') return 'light';
   } catch {
     /* 隐私模式 / 存储被禁:用默认值 */
   }
@@ -59,16 +75,35 @@ export function resolveDark(mode: ThemeMode): boolean {
 }
 
 /**
- * 把当前偏好落到 <html data-theme>。浅色时摘掉属性,回到 :root 的亮色令牌。
- * 同步刷新 isDark,因此任何保存/切换路径都应以它收口。
+ * 把当前偏好通过 Registry 映射桥生效并落到 <html data-theme>。
+ * 浅色时摘掉属性回到 :root 亮色令牌，深色时挂载 data-theme="dark"。
+ * 同步刷新 isDark，并持久化到双键中。
  */
 export function applyTheme(): void {
   const dark = resolveDark(themeMode.value);
   isDark.value = dark;
-  if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  if (dark) root.setAttribute('data-theme', DARK_ATTR);
-  else root.removeAttribute('data-theme');
+  const targetTheme = dark ? 'dark' : 'default';
+
+  if (typeof document !== 'undefined') {
+    const root = document.documentElement;
+    // 同步调用 registry 应用主题
+    void themeRegistry.apply(targetTheme, { persist: true });
+    if (dark) {
+      root.setAttribute('data-theme', DARK_ATTR);
+    } else {
+      // 保持浅色时无 data-theme 属性，对齐既有基线与测试断言
+      root.removeAttribute('data-theme');
+    }
+  }
+
+  // 同步两份存储键
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(REGISTRY_STORAGE_KEY, targetTheme);
+    }
+  } catch {
+    /* 忽略存储异常 */
+  }
 }
 
 /** 写入偏好并立即生效(持久化失败不影响本次会话)。 */
@@ -83,8 +118,7 @@ export function setThemeMode(next: ThemeMode): void {
 }
 
 /**
- * 在 app.mount 之前调用一次;同时接管「跟随系统」时的系统切换。返回卸载函数(测试用)。
- * 模块导入本身无副作用之外的写操作,jsdom 下可安全 import。
+ * 在 app.mount 之前调用一次；同时接管「跟随系统」时的系统外观切换。返回卸载函数（测试用）。
  */
 export function installTheme(): () => void {
   applyTheme();
@@ -96,3 +130,15 @@ export function installTheme(): () => void {
   mq.addEventListener('change', onChange);
   return () => mq.removeEventListener('change', onChange);
 }
+
+// 导出上游主题注册表相关 API，使上游生态无缝调用
+export {
+  themeRegistry,
+  listThemes,
+  getActiveThemeId,
+  preloadTheme,
+  subscribeThemes,
+  installThemeApi,
+  initTheme,
+  announceUiReady,
+};

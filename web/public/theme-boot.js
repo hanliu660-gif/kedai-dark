@@ -1,5 +1,5 @@
 /*
- * 夜间模式首帧引导(NIGHT-1,2026-10-26)。
+ * 夜间模式首帧引导(NIGHT-1,2026-10-26 / R1 并轨版)。
  *
  * 为什么单独一个静态文件:偏好存在 localStorage 里,而 Vue 要等 JS 包下载并 mount 之后
  * 才会去挂 <html data-theme="dark">;深色偏好的用户在这个间隙会先看到一帧亮色。
@@ -22,11 +22,19 @@
   }
 
   var STORAGE_KEY = 'kedai.theme-mode.v1';
+  var REGISTRY_STORAGE_KEY = 'kedai.theme.v1';
   var DEFAULT_MODE = 'system';
   var mode = DEFAULT_MODE;
   try {
     var raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === 'light' || raw === 'dark' || raw === 'system') mode = raw;
+    if (raw === 'light' || raw === 'dark' || raw === 'system') {
+      mode = raw;
+    } else {
+      // 静默迁移检查：如果只存在上游 kedai.theme.v1
+      var rawReg = window.localStorage.getItem(REGISTRY_STORAGE_KEY);
+      if (rawReg === 'dark') mode = 'dark';
+      else if (rawReg === 'default') mode = 'light';
+    }
   } catch (e) {
     /* 隐私模式 / 存储被禁:按默认值走 */
   }

@@ -5,7 +5,7 @@ import App from './App.vue';
 import { restoreNativeDialogs } from './nativeDialogs';
 import { installGlobalErrorHandlers } from './globalErrorHandlers';
 import { installInputModality } from './inputModality';
-import { installTheme } from './theme';
+import { announceUiReady, initTheme, installTheme, installThemeApi } from './theme';
 import { useUiPrefsStore } from './stores/uiPrefs';
 // 展示字体(拉丁字标/数字用,本地打包离线可用)
 import '@fontsource/archivo-black';
@@ -18,10 +18,10 @@ const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
 
-// 夜间模式(NIGHT-1):挂 <html data-theme>。首帧那次已由 index.html 里的 theme-boot.js
-// 同步做过(防闪),这里负责「运行期以 localStorage 为准重算一次 + 订阅系统偏好变化」。
-// 顺序必须在 mount 之前:否则首屏渲染时 isDark 还是初值 false。
+// 主题系统并轨(R1 / UIQ-3):暴露 window.KedaiUI,并在首帧前同步应用已保存的主题令牌。
+installThemeApi();
 installTheme();
+initTheme();
 
 // 输入模态标记(UIP-12):html[data-input-mode] 供 styles/panels.css 收窄 select 焦点样式;
 // 尽早安装(首帧即有标记能力),无标记时行为与现状逐字一致。
@@ -39,3 +39,6 @@ installGlobalErrorHandlers({
 });
 
 app.mount('#app');
+
+// 挂载完成后再广播「前端插件 API 已就绪」;早于 mount 派发时外部插件可能还没有监听器。
+announceUiReady();
