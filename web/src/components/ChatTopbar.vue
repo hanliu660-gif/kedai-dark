@@ -79,18 +79,37 @@ async function onSessionChange(e: Event): Promise<void> {
 
 function confirmScriptAuthorization(): void {
   if (currentScriptAuthorized.value) {
-    if (confirm(`撤销“${currentCharacterName.value}”当前脚本版本的执行授权？\n\n安全 HTML 仍可显示，但角色卡 JavaScript 将停止执行。`)) {
-      store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
+    try {
+      const ok: unknown = confirm(`撤销“${currentCharacterName.value}”当前脚本版本的执行授权？\n\n安全 HTML 仍可显示，但角色卡 JavaScript 将停止执行。`);
+      if (ok instanceof Promise) {
+        void ok.then((ans: unknown) => {
+          if (ans) store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
+        }).catch((err: unknown) => console.warn('撤销脚本授权确认失败', err));
+        return;
+      }
+      if (ok) store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
+    } catch (e) {
+      console.warn('撤销确认弹窗异常', e);
     }
     return;
   }
-  const accepted = confirm(
-    `允许“${currentCharacterName.value}”执行角色卡 JavaScript？\n\n` +
-    '脚本可能修改消息卡片并读取当前会话变量。Kedai 会隔离宿主 window/document,并遮蔽网络、存储与 API token，' +
-    '但兼容执行器不是浏览器级安全沙箱。仅在信任角色卡来源时开启。\n\n' +
-    '授权仅适用于此角色与当前脚本内容；脚本变化后会自动失效。',
-  );
-  if (accepted) store.authorizeCurrentCharacterScripts();
+  try {
+    const accepted: unknown = confirm(
+      `允许“${currentCharacterName.value}”执行角色卡 JavaScript？\n\n` +
+      '脚本可能修改消息卡片并读取当前会话变量。Kedai 会隔离宿主 window/document,并遮蔽网络、存储与 API token，' +
+      '但兼容执行器不是浏览器级安全沙箱。仅在信任角色卡来源时开启。\n\n' +
+      '授权仅适用于此角色与当前脚本内容；脚本变化后会自动失效。',
+    );
+    if (accepted instanceof Promise) {
+      void accepted.then((ans: unknown) => {
+        if (ans) store.authorizeCurrentCharacterScripts();
+      }).catch((err: unknown) => console.warn('脚本授权确认失败', err));
+      return;
+    }
+    if (accepted) store.authorizeCurrentCharacterScripts();
+  } catch (e) {
+    console.warn('确认弹窗异常', e);
+  }
 }
 
 /** 当前请求的 prompt 缓存命中率:命中率计算抽到 contextStats.ts(computeHitRate,与优化面板共用) */

@@ -2,6 +2,7 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
+import { restoreNativeDialogs } from './nativeDialogs';
 import { installGlobalErrorHandlers } from './globalErrorHandlers';
 import { installInputModality } from './inputModality';
 import { installTheme } from './theme';
@@ -9,6 +10,9 @@ import { useUiPrefsStore } from './stores/uiPrefs';
 // 展示字体(拉丁字标/数字用,本地打包离线可用)
 import '@fontsource/archivo-black';
 import './style.css';
+
+// 对话框原生还原:移除 Tauri 对话框插件注入的异步 IPC 覆写,确保 confirm/alert 保持原生同步阻塞语义并免遭 ACL 拦截
+restoreNativeDialogs();
 
 const app = createApp(App);
 const pinia = createPinia();

@@ -164,6 +164,7 @@
     "plugins.ts": { "generation": "L1", "responsibility": "角色卡内嵌插件前端兜底检测(与后端 detect_card_plugins 同逻辑)" },
     "cardScripts.ts": { "generation": "L1", "responsibility": "角色卡卡级脚本收集与规范化(纯数据函数:递归拉平扩展形态 + cardScriptCanonical 哈希规范;与后端脚本授权门共享哈希契约,故属契约层而非沙箱层)" },
     "test-node-shim.d.ts": { "generation": "L1", "responsibility": "测试专用最小类型声明(node:fs 的 readFileSync;零运行时代码,使样式契约测试免写显式压错注释)" },
+    "nativeDialogs.ts": { "generation": "L1", "responsibility": "恢复原生 window.confirm 与 window.alert(移除 Tauri dialog 插件有缺陷的异步 IPC 覆写)" },
 
     "asyncModal.ts": { "generation": "L2", "responsibility": "弹窗懒加载包装(失败重试 + uiPrefs.modalLoadError 上报)" },
     "globalErrorHandlers.ts": { "generation": "L2", "responsibility": "全局错误兜底接线(Vue errorHandler / unhandledrejection / window error;上报走注入回调,不直连 store)" },

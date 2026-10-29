@@ -11,6 +11,16 @@
  * 这里只用 ES5(window.localStorage / matchMedia / setAttribute),不 import、不依赖任何构建工具。
  */
 (function () {
+  /* 恢复原生 window.confirm 与 window.alert:清除 Tauri dialog 插件预注入的异步覆写 */
+  try {
+    if (typeof window !== 'undefined') {
+      if (Object.prototype.hasOwnProperty.call(window, 'confirm')) delete window.confirm;
+      if (Object.prototype.hasOwnProperty.call(window, 'alert')) delete window.alert;
+    }
+  } catch (e) {
+    /* 忽略只读环境异常 */
+  }
+
   var STORAGE_KEY = 'kedai.theme-mode.v1';
   var DEFAULT_MODE = 'system';
   var mode = DEFAULT_MODE;
