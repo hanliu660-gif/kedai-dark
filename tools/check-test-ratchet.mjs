@@ -84,7 +84,6 @@ const BASELINE = [
   'web/src/composables/useKeepAlive.ts',
   'web/src/main.ts',
   'web/src/mvu/mini-jquery.ts',
-  'web/src/mvu/unwrap.ts',
   'web/src/platform.ts',
   'web/src/sandbox/boot-script.ts',
   'web/src/sandbox/iframe-lifecycle.ts',

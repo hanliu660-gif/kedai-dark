@@ -1,7 +1,7 @@
 {
-  "generated": "2026-10-25",
+  "generated": "2026-10-30",
   "threshold": 1000,
-  "note": "C-2E 基线:超千行非测试源文件只降不升。拆分后跑 --update;确需增长用 --update --force 并在提交正文说明。",
+  "note": "本地 0.4.2+dark 树基线，非上游副本:超千行非测试源文件只降不升。拆分后跑 --update;确需增长用 --update --force 并在提交正文说明。",
   "files": {
     "server-rs/src/agents/engine/executor.rs": 2210,
     "server-rs/src/agents/engine/messages/trim.rs": 1111,
@@ -33,5 +33,5 @@
     "web/src/sandbox/boot-script.ts": 1523,
     "web/src/stores/task.ts": 1014
   },
-  "updated": "2026-10-25"
+  "updated": "2026-10-30"
 }
