@@ -16,3 +16,22 @@ export async function probeWorkspace(path: string): Promise<WorkspaceProfile> {
   const data = await request<unknown>(`/workspace/profile?${q.toString()}`);
   return requireObjectField<WorkspaceProfile>(data, 'profile', '工作区画像');
 }
+
+export interface TaskDeliveryFile {
+  path: string;
+  owner: string;
+  exists: boolean;
+}
+
+export interface TaskDeliverySummary {
+  checked: boolean;
+  workspace_available: boolean;
+  required: TaskDeliveryFile[];
+  missing: string[];
+  changed: string[];
+  changed_count: number;
+  content_issues?: string[];
+  runtime_issues?: string[];
+  truncated?: string[];
+  hygiene_issues?: string[];
+}

@@ -15,3 +15,11 @@ declare module 'node:path' {
 
 /** 只声明测试里用到的字段(cwd);功能源码不用 process,故仍不装 @types/node。 */
 declare const process: { cwd(): string };
+
+declare module 'node:crypto' {
+  export interface Hash {
+    update(data: string, encoding?: string): Hash;
+    digest(encoding?: string): string;
+  }
+  export function createHash(algorithm: string): Hash;
+}

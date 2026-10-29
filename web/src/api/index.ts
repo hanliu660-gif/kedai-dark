@@ -24,6 +24,7 @@ export * from './chat';
 export * from './audio';
 export * from './tasks';
 export * from './executors';
+export * from './workspace';
 export * from './diagnostics';
 export * from './memory';
 export * from './repoIndex';

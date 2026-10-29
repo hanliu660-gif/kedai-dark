@@ -67,6 +67,11 @@ const VERBOSE = process.argv.includes('--verbose');
  *   属功能正常增长,按协议上调到 506,580 + 10% ≈ 557,300。
  *   同批记录:首屏实测 285,213 / 预算 288,000(余 2,787,已知偏紧项——本批未超、未动,
  *   下次功能增长由当批按同一协议上调)。
+ * index.css 19,700 → 24,939(2026-10-30,R3.2 目录对齐与组件拆分,对齐上游 b38af66):
+ *   任务台 sticky 标题/状态矩阵/进度轨/批准 hero/时间线/两栏空态/侧栏折叠设置等样式
+ *   (均在 .vue scoped 内,但主 chunk 组件的 scoped CSS 会被 Vite 抽进 index.css);
+ *   拆分 components/task/ 与 components/sidebar/ 后实测 21,889 gz(上游实测 22,672 gz),
+ *   按上游既有预算基线对齐至 24,939。首屏 315,745 / 317,030、全部资产 545,498 / 557,300 均在预算内。
  * index.css 18,500 → 19,700(2026-10-02,UIP-6~8 观感批后重测):该批做动效令牌收口
  *   (tokens.css 扩档 + 12 处裸时长挂令牌),index.css 实测 17,753 → 17,906 gz;
  *   而 18,500 对现值只剩 594 B 余量,任何正常样式改动都会顶线。按协议上调到
@@ -112,7 +117,7 @@ const CHUNK_BUDGETS_GZ = {
   'vendor.js': 78000,
   'content-rendering.js': 49500,
   'vue-vendor.js': 37500,
-  'index.css': 19700,
+  'index.css': 24939,
 };
 
 /**

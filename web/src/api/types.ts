@@ -1,5 +1,4 @@
 // API 类型定义(与后端契约一致;各域 API 模块共用)
-
 export interface CharacterRecord {
   id: string;
   name: string;
@@ -1259,6 +1258,7 @@ export interface TaskDetail {
    * 由后端**实时**探测(不落库),故目录内容变化后刷新即得新结果。
    */
   workspace_profile?: WorkspaceProfile | null;
+  delivery?: import('./workspace').TaskDeliverySummary | null;
 }
 
 /**

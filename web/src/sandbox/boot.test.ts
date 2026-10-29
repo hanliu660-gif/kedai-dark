@@ -8,6 +8,7 @@ import { JQUERY_WINDOW_SCRIPT } from './boot/jquery-window';
 import { JQUERY_METHODS_SCRIPT } from './boot/jquery-methods';
 import { MVU_TAVERN_SCRIPT } from './boot/mvu-tavern';
 import { getSharedBridgeScript } from './boot/shared-bridge';
+import type { MvuVariables } from '../mvu/variables';
 
 describe('沙箱 boot 模块化组件与组装测试', () => {
   it('message-bus 导出基础通信与事件总线代码', () => {
@@ -74,7 +75,7 @@ describe('沙箱 boot 模块化组件与组装测试', () => {
         { name: 'seg2', code: 'var b=2;' },
       ],
       'nonce-4',
-      { stat_data: {} },
+      { stat_data: {} } as MvuVariables,
     );
     const multiHash = crypto.createHash('sha256').update(multiCode, 'utf8').digest('hex').slice(0, 16);
     expect(multiCode.length).toBe(88017);

@@ -54,6 +54,7 @@ export const useAppStore = defineStore('app', () => {
     isCharacterScriptAuthorized: character.isCharacterScriptAuthorized,
     updateCharacterPrompt: character.updateCharacterPrompt,
     fetchCharacterDetail: character.fetchCharacterDetail,
+    setSearchQuery: character.setSearchQuery,
     // 会话与消息
     loadSessions: chat.loadSessions,
     newSession: chat.newSession,
@@ -134,6 +135,7 @@ export const useAppStore = defineStore('app', () => {
     setRenderHtml: uiPrefs.setRenderHtml,
     toggleRenderHtml: uiPrefs.toggleRenderHtml,
     removeRenderHtmlOverride: uiPrefs.removeRenderHtmlOverride,
+    openSidebar: uiPrefs.openSidebar,
     // 设置二级项定位(新手教程「带我去设置」:打开综合设置并落到指定分区/独立面板)
     openSettingsAt: uiPrefs.openSettingsAt,
     openSettingsPanel: uiPrefs.openSettingsPanel,
