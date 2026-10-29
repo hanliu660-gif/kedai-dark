@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, ref } from 'vue';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { useResourceFrames } from './useResourceFrames';
-import { buildRemoteResourceHtml } from '../render';
+import { buildRemoteResourceHtml, clearScriptErrorNotices, isCardOwnedByFrame } from '../render';
 import { allowResourceDomain, allowedResourceDomains } from '../resourceDomains';
 import { resetApiTokenForTest } from '../api/client';
 import type { CharacterRecord } from '../api/types';
@@ -252,5 +252,36 @@ describe('FE-5 C 生成调用节流与错误可见性', () => {
     expect(String(byId.get('n1')?.error)).toContain('不支持的调用');
     expect(byId.get('n2')?.ok).toBe(false);
     expect(String(byId.get('n2')?.error)).toContain('消息列表为空');
+  });
+});
+
+// B1 批(2026-10-29):整页脚本卡的 HTML 交给隔离文档后,沙箱「兼容执行器」那次镜像执行
+// 必然失败(拿不到真实 DOM),它挂出来的「[脚本] …」红字属假故障 —— 卡在框架里其实能跑。
+// 这两条是「假故障不显示 / 留下残留也清掉」的判定与清理口径。
+describe('整页卡接管后的脚本失败提示口径', () => {
+  function box(html: string): HTMLElement {
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    return el;
+  }
+
+  it('容器里有整页卡 iframe 时判定为已接管', () => {
+    const scoped = box('<div data-kd-scope="s1"><iframe data-kd-inline-frame="1"></iframe></div>');
+    expect(isCardOwnedByFrame(scoped)).toBe(true);
+    const plain = box('<div data-kd-scope="s2"><p class="sv-script-error">[脚本] x</p></div>');
+    expect(isCardOwnedByFrame(plain)).toBe(false);
+  });
+
+  it('清理只移除失败提示,不碰正文', () => {
+    const scoped = box('<p class="sv-script-error">[脚本] a</p><p>正文</p><p class="sv-script-error">[脚本] b</p>');
+    expect(clearScriptErrorNotices(scoped)).toBe(2);
+    expect(scoped.querySelectorAll('.sv-script-error').length).toBe(0);
+    expect(scoped.textContent).toContain('正文');
+  });
+
+  it('没有提示时清理为 0 且可重复调用', () => {
+    const scoped = box('<p>正文</p>');
+    expect(clearScriptErrorNotices(scoped)).toBe(0);
+    expect(clearScriptErrorNotices(scoped)).toBe(0);
   });
 });

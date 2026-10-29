@@ -2,6 +2,7 @@
 import { getAudioController } from '../audioController';
 import type { AudioChannelSettings, AudioChannelType } from '../api/types';
 import type { MvuVariables } from '../mvu/variables';
+import { SCRIPT_ERROR_CLASS, isCardOwnedByFrame } from '../render';
 import {
   CHANNEL,
   INLINE_EVENT_NAMES,
@@ -291,11 +292,19 @@ export async function executeSandboxedCharacterScript(
         // 后面的 cleanup/reject,否则 Promise 永不 settle。UI 只显示首行,完整栈进控制台。
         try {
           console.error('[kedai-script]', error.message);
-          const el = context.container.querySelector<HTMLElement>('.status-card') ?? context.container;
-          const msg = environment.document.createElement('p');
-          msg.style.cssText = 'color:#f87171;font-size:0.75rem;margin:4px 0 0;opacity:0.8';
-          msg.textContent = `[脚本] ${error.message.split('\n')[0]}`;
-          el.appendChild(msg);
+          // 整页脚本卡(带 `<html>` 的卡)改由隔离文档宿主接管后,这里跑的是「兼容执行器」
+          // 的镜像尝试:它必然拿不到真实 DOM(所以才会 `addEventListener is not a function`
+          // 之类失败),而卡在框架里其实已经正常渲染。这类失败不再挂到气泡上,
+          // 否则用户会在能用的界面上一直看到红字(B1 批实测反馈)。
+          const ownedByFrame = isCardOwnedByFrame(context.container);
+          if (!ownedByFrame) {
+            const el = context.container.querySelector<HTMLElement>('.status-card') ?? context.container;
+            const msg = environment.document.createElement('p');
+            msg.className = SCRIPT_ERROR_CLASS;
+            msg.style.cssText = 'color:#f87171;font-size:0.75rem;margin:4px 0 0;opacity:0.8';
+            msg.textContent = `[脚本] ${error.message.split('\n')[0]}`;
+            el.appendChild(msg);
+          }
         } catch {
           /* 忽略:不影响错误传播 */
         }

@@ -529,6 +529,25 @@ export function inlineCardNonce(seed: string): string {
   return stableFrameNonce(`inline\u0001${seed}`);
 }
 
+/** 沙箱兼容执行器失败提示的样式类(便于整页卡接管后统一清理) */
+export const SCRIPT_ERROR_CLASS = 'sv-script-error';
+
+/**
+ * 该容器里的卡是否已由隔离文档接管(整页脚本卡走 B1 通道)。
+ * 是:沙箱那次「镜像 DOM」执行必然失败,它的提示属假故障,不该显示;
+ * 否:沙箱仍是唯一执行环境,失败提示对用户有意义。
+ */
+export function isCardOwnedByFrame(container: ParentNode): boolean {
+  return container.querySelector('[data-kd-inline-frame]') !== null;
+}
+
+/** 清掉容器内残留的脚本失败提示,返回清掉的节点数 */
+export function clearScriptErrorNotices(root: ParentNode): number {
+  const nodes = Array.from(root.querySelectorAll(`.${SCRIPT_ERROR_CLASS}`));
+  for (const node of nodes) node.remove();
+  return nodes.length;
+}
+
 /**
  * 应用脚本后返回渲染结果:完整 html + 待执行脚本块。
  * 未命中任何脚本返回 null(由调用方走 markdown 渲染)。

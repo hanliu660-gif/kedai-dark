@@ -22,6 +22,7 @@ import type { CharacterRecord } from '../api/types';
 import { applyResourceSync, loadResourceSnapshot, type ResourceSyncMessage } from '../resourceStore';
 import { allowResourceDomain, isResourceDomainAllowed, resourceDomainOf } from '../resourceDomains';
 import { inlineCardPayload } from '../inlineCardRegistry';
+import { clearScriptErrorNotices } from '../render';
 
 /** 卡片说明区默认文案(与 render.ts::buildRemoteResourceHtml 的初值同源,单处维护) */
 const DEFAULT_RESOURCE_NOTE =
@@ -245,6 +246,9 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
       entry.booted = true;
       entry.attempts = 0;
       entry.repairs = 0;
+      // 卡片界面已由隔离文档接管:气泡里若还留着沙箱兼容执行器挂的「[脚本] …」失败提示,
+      // 它描述的那次尝试已经不再成立(卡在框架里正常渲染),清掉免得用户看到假故障。
+      clearStaleScriptErrorNotice(frame);
     } catch (e) {
       entry.attempts += 1;
       if (entry.attempts <= 3) {
@@ -259,6 +263,17 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
   }
 
   /** 加载失败的可见反馈:说明区追加「重试」(iframe 内仍是宿主模板文档,重试即重新 boot,无需重建框架) */
+  /**
+   * 清掉同一条消息里「沙箱兼容执行器」残留的脚本失败提示。
+   * 整页脚本卡的 HTML 交给隔离文档后,沙箱那次镜像执行必然失败(拿不到真实 DOM),
+   * 而卡本身已经在框架里跑起来了——那条红字属假故障,用户会以为卡没修好。
+   */
+  function clearStaleScriptErrorNotice(frame: HTMLIFrameElement): void {
+    const scope = frame.closest('[data-kd-scope]') ?? frame.parentElement;
+    if (!scope) return;
+    clearScriptErrorNotices(scope);
+  }
+
   function showResourceError(entry: ResourceEntry, message: string): void {
     const card = entry.frame.closest('[data-kd-resource="1"]');
     const note = card?.querySelector<HTMLElement>('.sv-resource-card-note');
