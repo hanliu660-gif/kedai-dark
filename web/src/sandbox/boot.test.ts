@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { sandboxScript } from './boot-script';
 import { MESSAGE_BUS_SCRIPT } from './boot/message-bus';
@@ -47,7 +48,8 @@ describe('沙箱 boot 模块化组件与组装测试', () => {
     expect(script).toContain('__kdSharedStart');
   });
 
-  it('sandboxScript 完整组装且生成可执行代码', () => {
+  it('sandboxScript 完整组装且生成可执行代码(锁定长度与 SHA-256 摘要锚点)', () => {
+    // 1. 单段基准:验证包含性
     const code = sandboxScript('const a = 123;', 'nonce-test', {
       stat_data: {},
       display_data: {},
@@ -55,5 +57,27 @@ describe('沙箱 boot 模块化组件与组装测试', () => {
     expect(code).toContain('use strict');
     expect(code).toContain('const a = 123;');
     expect(code).toContain('nonce-test');
+
+    // 2. 长度与 SHA-256 前 16 位锚点(防段落搬家、静默删改或换行漂移)
+    const codeX = sandboxScript('/*x*/', 'nonce-test', {
+      stat_data: {},
+      display_data: {},
+    });
+    const hashX = crypto.createHash('sha256').update(codeX, 'utf8').digest('hex').slice(0, 16);
+    expect(codeX.length).toBe(86762);
+    expect(hashX).toBe('59ed841e447f2da0');
+
+    // 3. 多段基准长度与 SHA-256 前 16 位锚点
+    const multiCode = sandboxScript(
+      [
+        { name: 'seg1', code: 'var a=1;' },
+        { name: 'seg2', code: 'var b=2;' },
+      ],
+      'nonce-4',
+      { stat_data: {} },
+    );
+    const multiHash = crypto.createHash('sha256').update(multiCode, 'utf8').digest('hex').slice(0, 16);
+    expect(multiCode.length).toBe(88017);
+    expect(multiHash).toBe('92a8b6ea0f9d6740');
   });
 });
