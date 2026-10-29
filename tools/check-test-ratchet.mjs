@@ -85,7 +85,6 @@ const BASELINE = [
   'web/src/main.ts',
   'web/src/mvu/mini-jquery.ts',
   'web/src/platform.ts',
-  'web/src/sandbox/boot-script.ts',
   'web/src/sandbox/iframe-lifecycle.ts',
   'web/src/stores/executor.ts',
   'web/src/utils/flowCandidates.ts',

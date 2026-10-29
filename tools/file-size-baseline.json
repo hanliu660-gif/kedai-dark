@@ -30,7 +30,6 @@
     "server-rs/src/tools/screenshot.rs": 1153,
     "web/src/api/types.ts": 1434,
     "web/src/components/TaskBoard.vue": 1327,
-    "web/src/sandbox/boot-script.ts": 1523,
     "web/src/stores/task.ts": 1014
   },
   "updated": "2026-10-30"
