@@ -7,6 +7,7 @@
 //   - start/drag/stop 回调经 jq-event 回发沙箱,payload 带 event.ui.position。
 // 监听器全部经 registerEventListener 登记,随沙箱 cleanup 统一摘除。
 import { CHANNEL, type DraggableWire } from './protocol';
+import { eventPayload } from './event-payload';
 
 /** 宿主侧事件上下文(dom-rpc 每次 applyJq 调用时组装) */
 export interface DomEventContext {
@@ -62,6 +63,7 @@ function postEvent(
   type: string,
   ui?: { position: { left: number; top: number } },
   delegateTargetId = 0,
+  payload: Record<string, unknown> = {},
 ): void {
   if (!ctx.targetWindow || !Number.isFinite(jqId) || jqId <= 0) return;
   const delegate = delegateTargetId > 0 ? globalDelegateTargets.get(delegateTargetId) : undefined;
@@ -79,7 +81,10 @@ function postEvent(
       nonce: ctx.nonce,
       type: 'jq-event',
       jqId,
-      event: ui ? { type, ui } : { type },
+      // 事件体必须带坐标与按键:窗口级 mousemove/mouseup 收尾拖拽要用 clientX/clientY
+      // 算起点与位移;只给 {type} 时作者脚本 Math.hypot(undefined-…) 得 NaN,拖拽与
+      // 点击判定同时静默失效(实跑:悬浮球 rect 恒 48,120、点球不开面板、零报错)。
+      event: { ...payload, ...(ui ? { type, ui } : { type }) },
       target,
       mirror: { controls: ctx.controlsProvider() },
     },
@@ -240,10 +245,10 @@ export function bindGlobalEvents(
         const found = raw && typeof raw.closest === 'function' ? raw.closest(selector) : null;
         if (!found || !(found instanceof HTMLElement)) return;
         hitId = bindDelegateTarget(found);
-        postEvent(ctx, jqId, eventName, undefined, hitId);
+        postEvent(ctx, jqId, eventName, undefined, hitId, eventPayload(event, eventName));
         return;
       }
-      postEvent(ctx, jqId, eventName);
+      postEvent(ctx, jqId, eventName, undefined, 0, eventPayload(event, eventName));
     };
     target.addEventListener(eventName, listener);
     ctx.registerEventListener(target, eventName, listener);

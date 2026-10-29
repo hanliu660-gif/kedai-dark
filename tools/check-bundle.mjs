@@ -47,6 +47,13 @@ const ASSETS = join(DIST, 'assets');
 const VERBOSE = process.argv.includes('--verbose');
 
 /**
+ *
+ * 2026-10-29 CARD-SCRIPT 批(`index.js` 单 chunk):卡级脚本沙箱补垫片——游离元素桥、
+ * 宿主 window/document 门面、jQuery 集合方法(appendTo/appendTo 族/add/has/stop…)、
+ * lodash 常用函数面、jq-event 事件体带指针坐标与 target/currentTarget。
+ * 这些都是主对话 chunk 里的生成代码(沙箱 boot 脚本是模板字面量,只能进主 chunk),
+ * 属功能正常增长:实测 gzip 132,355,按本文件既有协议上调至实测 + 10% = 145,590
+ * (原 131,300)。首屏实测 296,030 / 预算 317,030、全部资产 533,857 / 557,300 均未动。
  * 预算基线(2026-09-26 自定义流程 A+B 批后重测,「实测 + 10%」;此前为
  *   2026-09-20 二维批次 3 画布落地后的实测值)。
  * 首屏 288,000 → 317,030(2026-10-07,CU-1 安全前提批后重测):该批把「停止/恢复操作电脑」
@@ -100,7 +107,7 @@ const ALL_ASSETS_BUDGET_GZ = 557300;
  * 哈希会随内容变化,故**必须按去哈希名索引**,不能写死文件名。
  */
 const CHUNK_BUDGETS_GZ = {
-  'index.js': 131300,
+  'index.js': 145590,
   'flow-vendor.js': 79000,
   'vendor.js': 78000,
   'content-rendering.js': 49500,

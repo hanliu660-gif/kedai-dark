@@ -2,7 +2,7 @@
 // 覆盖:覆层根优先映射($('head')/$('body') → 覆层根)、注入节点 data-kd-injected、
 // 覆层根直系子节点 pointer-events:auto。
 import { describe, expect, it } from 'vitest';
-import { applyJq, applyRpc, overlayRootOf } from './dom-rpc';
+import { applyJq, applyRpc, buildStateMirror, overlayRootOf } from './dom-rpc';
 import type { JqOperation } from './protocol';
 
 class StubEl {
@@ -88,6 +88,15 @@ class StubEl {
   }
 }
 
+/** 建一个桩元素(自带最小 ownerDocument,供 applyJq/镜像采集用) */
+function makeEl(): StubEl {
+  const doc: { createElement: (t: string) => StubEl } = { createElement: () => new StubEl(doc) };
+  return new StubEl(doc);
+}
+
+/** 元素桩 → HTMLElement:桩是测试专用的最小实现,断言只为本文件调用面服务 */
+const stubAsH = (c: StubEl): HTMLElement => c as unknown as HTMLElement;
+
 /** 容器桩:querySelector 只认覆层根,querySelectorAll 返回配置的匹配元素 */
 function makeContainer(overlayRoot: StubEl | null, matches: StubEl[] = []): StubEl {
   const doc = { createElement: (_t: string): StubEl => new StubEl(doc) };
@@ -100,7 +109,7 @@ function makeContainer(overlayRoot: StubEl | null, matches: StubEl[] = []): Stub
 
 function apply(container: StubEl, ref: JqOperation['ref'], method: string, args: unknown[] = []): unknown {
   return applyJq(
-    container as unknown as HTMLElement,
+    stubAsH(container),
     ref,
     method,
     args,
@@ -311,5 +320,31 @@ describe('applyJq 事件绑定(on/off,实跑问题 7 R3)', () => {
     // chat-messages 首参是楼层序号;旧实现把它当 CSS 选择器 → safeSelector 抛错 → 沙箱拆除
     expect(applyRpc(context, 'chat-messages', [0])).toBeNull();
     expect(applyRpc(context, 'lorebook-entries', ['主世界书'])).toBeNull();
+  });
+});
+
+describe('buildStateMirror 回传宿主几何(rects)', () => {
+  // 悬浮球抓取偏移走 a.getBoundingClientRect();沙箱里的节点是宿主 DOM 的克隆、永不挂载,
+  // 原生 rect 恒 0,0 ⇒ 拖拽把偏移算成「按下点绝对坐标」(实测 cursor +120/+80,球只走 72)。
+  it('带 data-kd-el 的游离元素回传宿主真值 rect', () => {
+    const container = makeContainer(null);
+    const ball = makeEl();
+    ball.setAttribute('data-kd-el', 'kd3');
+    ball.getBoundingClientRect = () => ({ left: 112, top: 120, width: 360, height: 520 });
+    container.querySelectorAll = () => [ball];
+    const mirror = buildStateMirror(stubAsH(container), []);
+    expect(mirror.rects.kd3).toEqual({ left: 112, top: 120, width: 360, height: 520 });
+  });
+
+  it('取不到 rect 的元素不进表(沙箱门面回落,不抛错)', () => {
+    const container = makeContainer(null);
+    const broken = makeEl();
+    broken.setAttribute('data-kd-el', 'kd9');
+    broken.getBoundingClientRect = () => {
+      throw new Error('detached');
+    };
+    container.querySelectorAll = () => [broken];
+    const mirror = buildStateMirror(stubAsH(container), []);
+    expect(mirror.rects).toEqual({});
   });
 });

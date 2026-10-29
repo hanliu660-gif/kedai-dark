@@ -15,6 +15,12 @@ interface JqOperation {
     | { kind: 'selector'; value: string }
     | { kind: 'target'; id: number }
     | { kind: 'selector-index'; value: string; index: number }
+    /**
+     * 已落 DOM 的游离元素($('<div>').appendTo(body) 之后):沙箱按 kdId 认领,
+     * 宿主用 data-kd-el 属性反查真实元素。没有这条,创建出来的节点一旦挂进容器就
+     * 失去句柄——作者脚本后续 .hide()/.fadeIn()/.css() 全部静默失效(悬浮球面板开关)
+     */
+    | { kind: 'kdel'; id: string }
     // $(document)/$(window):作者脚本以窗口为事件源(如 $(window).on('unload', …)),
     // 宿主侧仅用于事件绑定/解绑,查询类操作一律空结果(避免误改全局 DOM)
     | { kind: 'document' }
@@ -50,6 +56,11 @@ interface CreatedElementSpec {
   css?: Record<string, string>;
   /** .draggable(opts) 记录(宿主落 DOM 时绑 pointer 拖拽);'destroy' 表示解绑 */
   draggable?: DraggableWire | string;
+  /**
+   * 沙箱侧句柄标识:宿主落 DOM 时写到 data-kd-el 属性上,
+   * 之后沙箱用 {kind:'kdel',id} 引用再次命中该元素(见 JqOperation.ref)
+   */
+  kdId?: string;
 }
 
 interface SandboxRequest {

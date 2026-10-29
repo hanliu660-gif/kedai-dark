@@ -15,7 +15,7 @@ import {
   type SandboxCleanup,
   type SandboxExecutionContext,
 } from './characterScriptSandbox';
-import { emptyVariables } from './mvu/variables';
+import { emptyVariables, type MvuVariables } from './mvu/variables';
 import { getCharacterWorldEntries, saveCharacterWorldEntries } from './api/worldbooks';
 import { getPromptInject, savePromptInject } from './api/settings';
 import type { WorldBookEntry } from './api/types';
@@ -46,6 +46,12 @@ export interface CardScriptHostOptions {
    * 时置 true 重建一次,避免「首屏空、之后不补跑」。
    */
   force?: boolean;
+  /**
+   * 启动时的 MVU 变量快照(可选)。卡内脚本普遍一上来就 `Mvu.getMvuData({type:'message',message_id:'latest'})`
+   * 读状态(悬浮球-0613 的衣柜/商店数据全走这条),只给空树会让脚本读到空对象后自行降级。
+   * 之后的增量更新仍走 chat store 的 broadcastMvuUpdate(宿主→沙箱 mvu-event)。
+   */
+  mvuVariables?: MvuVariables;
 }
 
 // ---- 世界书条目形态映射:kedai WorldBookEntry → 酒馆助手条目 ----
@@ -227,7 +233,10 @@ export function makeCardScriptRpcExtensions(
 // 沙箱模板以经典脚本执行(内联 <script>,CSP 仅 'unsafe-inline'):含顶层
 // import/export 的脚本会整体语法错误、沙箱空转到超时。酒馆助手生态里这类脚本
 // (如 MVU Zod schema)依赖外部 URL 模块,CSP 同样不会放行,跳过是最诚实的行为。
-const ESM_SYNTAX = /^\s*(import\s+[\w{*'"]|export\s+(?:const|let|var|function|class|default|\{))/m;
+// 注意别漏空格变体:`import{registerMvuSchema as r}from'…'`(MVU-zod验证-0613 的写法)
+// 在旧正则下不匹配 → 漏进沙箱后整段 SyntaxError;动态 import(...) 则合法,不算 ESM。
+const ESM_SYNTAX =
+  /^[ \t]*(?:import(?=[ \t]*['"*{])|import[ \t]+[A-Za-z_$]|import\.meta|export[ \t]*(?:default\b|const\b|let\b|var\b|function\b|class\b|async\b|\{|\*))/m;
 export function isEsmScript(content: string): boolean {
   return ESM_SYNTAX.test(content);
 }
@@ -330,7 +339,7 @@ async function ensureInner(opts: CardScriptHostOptions): Promise<void> {
   try {
     const cleanup = await executeSandboxedCharacterScript(segments, {
       container: opts.container,
-      variables: emptyVariables(),
+      variables: opts.mvuVariables ?? emptyVariables(),
       characterId: opts.characterId,
       lorebookName: opts.lorebookName,
       rpcExtensions,

@@ -205,4 +205,19 @@ describe('bindGlobalEvents($(window)/$(document) 事件绑定)', () => {
     win.dispatch('unload', {});
     expect(messages.some((m) => m.jqId === 7 && m.type === 'jq-event')).toBe(true);
   });
+
+  it('窗口级事件体必须带指针坐标(拖拽收尾靠 clientX/clientY)', () => {
+    // 实跑:悬浮球把 mousemove/mouseup 挂在宿主 window 上收尾拖拽,回调里用
+    // Math.hypot(clientX - start.x, clientY - start.y) 判「拖」还是「点」。
+    // 只回 {type} 时作者脚本得 NaN:拖拽不动、点击也不开面板,且零报错。
+    const { ctx, win, messages } = makeCtx();
+    bindGlobalEvents({ kind: 'window' }, ['mousemove', 'mouseup'], 11, ctx);
+    win.dispatch('mousemove', { clientX: 320, clientY: 210, pageX: 320, pageY: 210, screenX: 300, screenY: 200 });
+    win.dispatch('mouseup', { clientX: 322, clientY: 213, button: 0 });
+    const move = messages.find((m) => (m.event as Record<string, unknown>)?.type === 'mousemove');
+    const up = messages.find((m) => (m.event as Record<string, unknown>)?.type === 'mouseup');
+    expect(move?.jqId).toBe(11);
+    expect(move?.event).toMatchObject({ clientX: 320, clientY: 210, pageX: 320, pageY: 210, screenX: 300, screenY: 200 });
+    expect(up?.event).toMatchObject({ clientX: 322, clientY: 213, button: 0 });
+  });
 });

@@ -989,6 +989,49 @@ describe('sandboxScript(多段单 realm:逐 <script> 注入共享 window)', () =
     expect(messages.some((m) => m.type === 'error')).toBe(false);
   });
 
+  it('同名顶层声明不再撞车:每段包进独立作用域,跨段共享走 window', async () => {
+    const nonce = 'nonce-seg-scope';
+    // 真实卡(露出日记-0615)里 12 个脚本顶层各自 let/const 同名(悬浮球与额外请求都声明了 O/n/t…),
+    // 经典脚本共享全局词法环境时会直接 `Identifier 'O' has already been declared` 整段作废。
+    const script = sandboxScript(
+      [
+        { name: '悬浮球', code: "let dup=1; const O=!1; window.__fromOne=dup;" },
+        { name: '额外请求', code: "let dup=2; const O=!0; window.__fromTwo=dup;" },
+        { name: '汇总', code: "warn('sum='+(window.__fromOne+window.__fromTwo));" },
+      ],
+      nonce,
+      { stat_data: {}, display_data: {} },
+    );
+    const { messages } = makeSegmentSandbox(nonce, script);
+    await new Promise((r) => setTimeout(r, 30));
+    const warns = messages.filter((m) => m.type === 'warn').map((m) => String(m.message));
+    expect(warns.some((w) => w.includes('sum=3'))).toBe(true);
+    expect(warns.some((w) => w.includes('has already been declared'))).toBe(false);
+    expect(messages.some((m) => m.type === 'done')).toBe(true);
+    expect(messages.some((m) => m.type === 'error')).toBe(false);
+  });
+
+  it('段内可用顶层 await(酒馆脚本 await waitGlobalInitialized("Mvu") 形态)', async () => {
+    const nonce = 'nonce-seg-await';
+    const script = sandboxScript(
+      [
+        {
+          name: 'MVU 基础脚本',
+          code: "const mvu=await Promise.resolve({ready:true}); warn('awaited='+mvu.ready);",
+        },
+      ],
+      nonce,
+      { stat_data: {}, display_data: {} },
+    );
+    const { messages } = makeSegmentSandbox(nonce, script);
+    await new Promise((r) => setTimeout(r, 30));
+    const warns = messages.filter((m) => m.type === 'warn').map((m) => String(m.message));
+    expect(warns.some((w) => w.includes('awaited=true'))).toBe(true);
+    expect(warns.some((w) => w.includes('await is only valid'))).toBe(false);
+    expect(messages.some((m) => m.type === 'done')).toBe(true);
+    expect(messages.some((m) => m.type === 'error')).toBe(false);
+  });
+
   it('段运行期 throw 不阻断后续段,错误上报带段名', async () => {
     const nonce = 'nonce-seg-throw';
     const script = sandboxScript(

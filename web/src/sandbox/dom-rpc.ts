@@ -2,6 +2,11 @@
 import sanitizeHtml from 'sanitize-html';
 import { SCRIPT_HTML_WHITELIST, sanitizeScriptHtmlWithStyles } from './sanitize';
 import { applyDraggable, bindGlobalEvents, type DomEventContext } from './draggable';
+import { eventPayload } from './event-payload';
+
+// 历史导出面:事件载荷实现挪到 event-payload.ts(draggable 的窗口级回发也要用),
+// 这里再导出,保持既有 `import { eventPayload } from './dom-rpc'` 调用方不变。
+export { eventPayload };
 import {
   CHANNEL,
   type CreatedElementSpec,
@@ -135,6 +140,13 @@ function resolveRefElements(container: HTMLElement, ref: JqOperation['ref'], tar
     const el = idx >= 0 && idx < all.length ? all[idx] : undefined;
     return el ? [el] : [];
   }
+  // 已落 DOM 的游离元素(沙箱侧 kdId → 宿主 data-kd-el)
+  if (ref.kind === 'kdel') {
+    const hit = Array.from(container.querySelectorAll('[data-kd-el]')).filter(
+      (el) => (el as HTMLElement).getAttribute('data-kd-el') === ref.id,
+    ) as HTMLElement[];
+    return hit;
+  }
   // document/window 仅用于事件绑定路径;查询类方法一律空结果(避免误改全局 DOM)
   return [];
 }
@@ -169,6 +181,9 @@ export function elementState(el: HTMLElement): Record<string, unknown> {
     clientWidth: el.clientWidth,
     offsetHeight: el.offsetHeight,
     offsetWidth: el.offsetWidth,
+    // 宿主 rect:沙箱是另一份文档,作者脚本的定位计算必须拿到这里的真值
+    // (缺了则 getBoundingClientRect 回落 0,0,悬浮球拖拽把抓取偏移算成绝对坐标)
+    rect: readRect(el),
   };
 }
 
@@ -288,10 +303,46 @@ export function gatherIdMap(container: HTMLElement, into: Record<string, unknown
 }
 
 /** 批处理回包镜像:批内涉及的选择器状态(操作已应用后的最新值)+ 全量表单控件 */
+/** 元素在宿主文档里的几何快照(null 表示取不到,沙箱门面自行回落) */
+function readRect(el: HTMLElement): { left: number; top: number; width: number; height: number } | null {
+  try {
+    if (typeof el?.getBoundingClientRect !== 'function') return null;
+    const r = el.getBoundingClientRect();
+    if (!r || !Number.isFinite(r.left) || !Number.isFinite(r.top)) return null;
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  } catch {
+    return null;
+  }
+}
+
+/** 游离元素(kdId)几何表:沙箱里的克隆永不挂载,原生 rect 恒 0 ⇒ 必须回传宿主真值。
+ *  上限 80 个(悬浮窗/悬浮球这类节点少而关键;超限走沙箱回落,不阻塞回包)。 */
+function collectRects(container: HTMLElement): Record<string, { left: number; top: number; width: number; height: number }> {
+  const out: Record<string, { left: number; top: number; width: number; height: number }> = {};
+  try {
+    if (typeof container?.querySelectorAll !== 'function') return out;
+    const els = Array.from(container.querySelectorAll('[data-kd-el]')).slice(0, 80);
+    for (const el of els) {
+      const id = el.getAttribute('data-kd-el');
+      if (!id) continue;
+      const rect = readRect(el as HTMLElement);
+      if (rect) out[id] = rect;
+    }
+  } catch {
+    /* 取不到就空表 */
+  }
+  return out;
+}
+
 export function buildStateMirror(
   container: HTMLElement,
   ops: JqOperation[],
-): { selectors: Record<string, unknown>; controls: Array<Record<string, unknown>> } {
+): {
+  selectors: Record<string, unknown>;
+  controls: Array<Record<string, unknown>>;
+  /** data-kd-el → 宿主 rect(沙箱门面 getBoundingClientRect 的真值来源) */
+  rects: Record<string, { left: number; top: number; width: number; height: number }>;
+} {
   const selectors: Record<string, unknown> = {};
   for (const op of ops) {
     if (op?.ref?.kind === 'selector') {
@@ -314,7 +365,7 @@ export function buildStateMirror(
   }
   // 顺带并入 id 轻量表:沙箱 attr('id') 复合类选择器回查的索引底(结构变化后保持新鲜)
   gatherIdMap(container, selectors);
-  return { selectors, controls: gatherControls(container) };
+  return { selectors, controls: gatherControls(container), rects: collectRects(container) };
 }
 
 /** 游离元素落 DOM(appendCreated):清洗 HTML、绑定沙箱侧延迟注册的事件、递归子元素 */
@@ -338,6 +389,8 @@ function buildCreatedElement(
   const tmp = doc.createElement('div');
   tmp.innerHTML = sanitizeForContainer(container, String(spec.html ?? ''));
   const el = (tmp.firstElementChild as HTMLElement | null) ?? doc.createElement('div');
+  // 沙箱句柄:挂进容器后沙箱用 {kind:'kdel'} 还能找回它(hide/fadeIn/css 后续操作)
+  if (typeof spec.kdId === 'string' && spec.kdId) el.setAttribute('data-kd-el', spec.kdId);
   if (spec.addClass) el.classList.add(...String(spec.addClass).split(/\s+/).filter(Boolean));
   // attr/css 记录的属性与内联样式落 DOM(悬浮球 id/position:fixed/z-index 由此生效)
   if (spec.attrs && typeof spec.attrs === 'object') {
@@ -357,7 +410,7 @@ function buildCreatedElement(
     const targetId = nextTargetId();
     targets.set(targetId, el);
     for (const eventName of eventNames) {
-      const listener = (): void => {
+      const listener = (event: Event): void => {
         const data = Object.fromEntries(Object.entries(el.dataset));
         targetWindow.postMessage(
           {
@@ -365,7 +418,7 @@ function buildCreatedElement(
             nonce,
             type: 'jq-event',
             jqId,
-            event: { type: eventName },
+            event: eventPayload(event, eventName),
             target: { kind: 'target', id: targetId, data, state: elementState(el) },
             mirror: { controls: gatherControls(container) },
           },
@@ -606,7 +659,7 @@ export function applyJq(
                 nonce,
                 type: 'jq-event',
                 jqId,
-                event: { type: eventName },
+                event: eventPayload(event, eventName),
                 // 事件时刻的目标状态(getter 真实化:勾选/取值/滚动度量读到事件当时的真值)
                 target: { kind: 'target', id: targetId, data, state: elementState(hit) },
                 // 全量表单控件状态:协议脚本在回调里读其它控件($('#agree') 等)
@@ -632,6 +685,7 @@ export function stripEventNamespace(name: string): string {
   const i = name.indexOf('.');
   return i < 0 ? name : name.slice(0, i);
 }
+
 
 /** 事件绑定登记(沙箱级):off() 真解绑与委托支持所需 */
 export interface JqBinding {

@@ -287,6 +287,9 @@ async function syncCardScriptSandbox(force = false): Promise<void> {
     container: scrollArea.value,
     lorebookName: typeof book?.name === 'string' && book.name.trim() ? book.name : null,
     readMessages: () => messages.value,
+    // 卡内脚本一上来就 Mvu.getMvuData() 读状态(悬浮球-0613 的衣柜/商店全走这条),
+    // 空树会让它读到空对象后自行降级;之后的增量更新由 chat store 的 broadcastMvuUpdate 推送。
+    mvuVariables: mvuVariables.value,
     force,
   });
 }

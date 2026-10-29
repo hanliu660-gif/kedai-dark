@@ -55,9 +55,15 @@ const __kdInlineEval=function(__c,__e){var event=__e;return eval(__c);};
 window.__kdEvalInline=__kdInlineEval;globalThis.__kdEvalInline=__kdInlineEval;
 ${escapedCode}
 ;await flush();__kdSharedStart();send('done')}catch(error){send('error',{message:error instanceof Error?(error.stack||error.message):String(error)})}})();`
-    // 多段(卡级合并单 realm):逐段独立 <script> 注入(appendChild 同步执行,语义对齐
-    // SillyTavern 逐 <script> 加载:共享 window 与全局词法环境,单段语法错误只废该段)。
-    // 错误三路径(window error / unhandledrejection / harness finish)统一带段名前缀。
+    // 多段(卡级合并单 realm):逐段独立 <script> 注入(appendChild 同步执行)。
+    // 每段正文包进 async 箭头 IIFE —— 语义对齐 SillyTavern 的 <script type="module">:
+    // ①独立词法作用域(段与段之间的顶层 let/const 不再互相 'already been declared',
+    //   露出日记-0615 的 12.js/14.js 顶层同名变量曾是整卡脚本全灭的直接原因);
+    // ②允许顶层 await(02–11 号脚本 await waitGlobalInitialized('Mvu') 此前是
+    //   'await is only valid in async functions' 整段作废);
+    // ③跨段通信只走 window(与 module 一致),window.X 赋值照旧可见。
+    // 段名单独注入一个 <script>:正文即使解析失败,error 钩子也能报对段名。
+    // 内联事件桥:IIFE 内注册 __kdEvalInline,direct eval 作用域链含本段函数/常量声明。
     : `window.__kdScriptName='';
 const __kdSegPrefix=function(){return window.__kdScriptName?'[卡脚本 '+window.__kdScriptName+'] ':'';};
 addEventListener('error',function(e){
@@ -71,9 +77,17 @@ addEventListener('unhandledrejection',function(e){
 const __kdSegments=JSON.parse(${JSON.stringify(segmentsJson)});
 for(let __i=0;__i<__kdSegments.length;__i++){
   const __seg=__kdSegments[__i];
+  const __segName=String(__seg.name||'');
+  const __tag=document.createElement('script');
+  __tag.textContent='window.__kdScriptName='+JSON.stringify(__segName)+';';
+  document.head.appendChild(__tag);
   const __s=document.createElement('script');
-  // 段开头标记当前段名,错误钩子据此加前缀;textContent 注入不触发 HTML 解析(无 </script> 闭合风险)
-  __s.textContent='window.__kdScriptName='+JSON.stringify(String(__seg.name||''))+';\\n'+__seg.code;
+  // 段主体:async IIFE(独立作用域 + 顶层 await)。catch 里带段名上送 warn,
+  // 段间互不阻断;textContent 注入不触发 HTML 解析(无 </script> 闭合风险)。
+  __s.textContent='(async()=>{try{\\n'
+    +'const __kdInlineEval=function(__c,__e){var event=__e;return eval(__c);};window.__kdEvalInline=__kdInlineEval;\\n'
+    +__seg.code
+    +'\\n}catch(__e){send(\\'warn\\',{message:'+JSON.stringify('[卡脚本 '+__segName+'] 执行失败: ')+'+(__e&&(__e.stack||__e.message)||String(__e))});}})();';
   document.head.appendChild(__s);
 }
 window.__kdScriptName='';
@@ -107,7 +121,13 @@ addEventListener('message',(event)=>{
     __kdMergeEventTarget(m.target);
     // 事件回调异常仅告警不拆沙箱:作者脚本的单次点击报错(如跨域访问 window.parent.document)
     // 不应导致整个状态栏被 cleanup 拆除(此前此处上送 error 会触发宿主 finish→界面死亡)
-    const fn=jqHandlers.get(m.jqId);if(fn)Promise.resolve().then(()=>fn.call(__kdWrapTarget(m.target),m.event||{})).then(flush).catch(e=>send('warn',{message:'事件回调出错: '+(e&&e.message?e.message:e)}));
+    const fn=jqHandlers.get(m.jqId);if(fn)Promise.resolve().then(()=>{
+      // 事件体补 target/currentTarget:作者回调普遍写 e.target.closest(...) / e.target.dataset,
+      // 只带坐标的事件体会在这一步抛 TypeError(此后被 warn 吞掉,表现为「点了没反应」)。
+      const __tt=__kdWrapTarget(m.target);
+      const __ev=Object.assign({target:__tt,currentTarget:__tt},m.event||{});
+      return fn.call(__tt,__ev);
+    }).then(flush).catch(e=>send('warn',{message:'事件回调出错: '+(e&&e.message?e.message:e)}));
   } else if(m.type==='inline-event'){
     // inline 事件降级桥:宿主把元素 data-kd-on* 属性里的作者代码串转回沙箱求值。
     // 优先走 __kdEvalInline(消息级单段由 IIFE 内注册,直接 eval——作用域链含作者脚本的
@@ -181,6 +201,23 @@ const __kdWrapTarget=(t)=>{
       if(n==='value')return typeof st.val==='string'?st.val:null;
       if(n.indexOf('data-')===0){const key=n.slice(5).replace(/-([a-z])/g,function(_,c){return c.toUpperCase();});return key in data?String(data[key]):null;}
       return null;},
+    // 原生监听回调里 e.target.closest('button') 是卡脚本的常见写法(悬浮球靠它区分
+    // 「按在球上还是在球内按钮上」)。事件体只带坐标时 e.target 为 undefined,作者回调
+    // 立刻抛 Cannot read properties of undefined (reading closest)。这里给最小匹配器:
+    // 支持 tag / .class / #id 及其逗号组合,命中返回目标门面自身,否则 null。
+    tagName:typeof st.tag==='string'?st.tag.toUpperCase():'',
+    matches:function(sel){
+      const list=String(sel||'').split(',').map(function(x){return x.trim();}).filter(Boolean);
+      const tag=typeof st.tag==='string'?st.tag.toLowerCase():'';
+      const id=typeof st.id==='string'?st.id:'';
+      for(const one of list){
+        if(one.charAt(0)==='.'){if(classes.indexOf(one.slice(1))>=0)return true;continue;}
+        if(one.charAt(0)==='#'){if(id===one.slice(1))return true;continue;}
+        if(tag&&one.toLowerCase()===tag)return true;
+      }
+      return false;
+    },
+    closest:function(sel){return this.matches(sel)?this:null;},
   });
 };
 // ---- 变量路径工具(防原型污染,与宿主 mvu/variables 一致) ----
@@ -190,7 +227,41 @@ const pathSet=(obj,path,value)=>{if(path===''){if(typeof value==='object'&&value
 // ---- lodash 子集(stat_data 叶子为 [新值,原因],_.get 自动取 [0]) ----
 // 镜像:此处 _.get 的解包段(Array.isArray(v)&&v.length>=1 → v[0])与
 // mvu/unwrap.ts 的 unwrapStatLeaf 语义同步,改动必须双侧同改。
-const _=Object.freeze({get:(obj,path,def)=>{let v=pathGet(obj,path);if(Array.isArray(v)&&v.length>=1)v=v[0];return v===undefined||v===null?def:v;},set:(obj,path,value)=>{pathSet(obj,path,value);return obj;}});
+const _=Object.freeze({
+  get:(obj,path,def)=>{let v=pathGet(obj,path);if(Array.isArray(v)&&v.length>=1)v=v[0];return v===undefined||v===null?def:v;},
+  set:(obj,path,value)=>{pathSet(obj,path,value);return obj;},
+  has:(obj,path)=>{const v=pathGet(obj,path);return v!==undefined;},
+  unset:(obj,path)=>{const keys=Array.isArray(path)?path.map(String):String(path).split('.');if(!keys.length)return true;let o=obj;for(let i=0;i<keys.length-1;i++){if(!o||typeof o!=='object')return true;o=o[keys[i]];}if(o&&typeof o==='object')delete o[keys[keys.length-1]];return true;},
+  // 类型判断(卡脚本最常用的 11 个):露出日记-0615 的 LLM 模块与状态栏全靠它们分支
+  isArray:(v)=>Array.isArray(v),
+  isPlainObject:(v)=>{if(!v||typeof v!=='object'||Array.isArray(v))return false;const p=Object.getPrototypeOf(v);return p===Object.prototype||p===null;},
+  isObject:(v)=>v!==null&&typeof v==='object',
+  isString:(v)=>typeof v==='string',
+  isNumber:(v)=>typeof v==='number'&&Number.isFinite(v),
+  isBoolean:(v)=>typeof v==='boolean',
+  isFunction:(v)=>typeof v==='function',
+  isNil:(v)=>v===null||v===undefined,
+  isNull:(v)=>v===null,
+  isUndefined:(v)=>v===undefined,
+  isEmpty:(v)=>{
+    if(v===null||v===undefined)return true;
+    if(typeof v==='string'||Array.isArray(v))return v.length===0;
+    if(v instanceof Map||v instanceof Set)return v.size===0;
+    if(typeof v==='object')return Object.keys(v).length===0;
+    return true;
+  },
+  isEqual:(a,b)=>{try{return JSON.stringify(a)===JSON.stringify(b);}catch(_e){return a===b;}},
+  clamp:(n,lo,hi)=>Math.min(Math.max(n,lo),hi),
+  uniq:(arr)=>Array.isArray(arr)?Array.from(new Set(arr)):[],
+  keys:(o)=>(o&&typeof o==='object'?Object.keys(o):[]),
+  values:(o)=>(o&&typeof o==='object'?Object.values(o):[]),
+  assign:(t,...srcs)=>{const out=t&&typeof t==='object'?t:{};for(const s of srcs)if(s&&typeof s==='object')for(const k in s)out[k]=s[k];return out;},
+  cloneDeep:(v)=>{try{return v===undefined?undefined:JSON.parse(JSON.stringify(v));}catch(_e){return v;}},
+  sum:(arr)=>Array.isArray(arr)?arr.reduce((a,b)=>a+(Number(b)||0),0):0,
+  max:(arr)=>Array.isArray(arr)&&arr.length?Math.max(...arr.map(Number)):undefined,
+  min:(arr)=>Array.isArray(arr)&&arr.length?Math.min(...arr.map(Number)):undefined,
+});
+
 // ---- 兼容 API ----
 const waitGlobalInitialized=()=>Promise.resolve();
 const errorCatched=(fn)=>(...args)=>{try{return fn.apply(this,args);}catch(e){warn('脚本回调出错: '+(e&&e.message?e.message:e));}};
@@ -295,6 +366,7 @@ const __kdMergeMirror=function(m){
     if(S[k]&&Array.isArray(S[k].items))S[k].items.forEach(__kdIndexState);
   }
   if(Array.isArray(m.controls))__kdMergeControls(m.controls);
+  if(m.rects&&typeof m.rects==='object'){for(const k in m.rects)__kdRects[k]=m.rects[k];}
 };
 // 复合类选择器回查:'.tab-page.active' / 'div.a.b' → 第一个 classes 全含的元素 id
 const __kdByClassLookup=function(sel){
@@ -363,7 +435,15 @@ const flush=async()=>{
     while(ops.length){const batch=ops;ops=[];await sendBatch(batch);}
     while(jqReadyQueue.length){
       const q=jqReadyQueue.splice(0);
-      for(const fn of q)await Promise.resolve(fn());
+      // 逐个隔离:某个作者脚本的 $(()=>{…}) 初始化回调抛错不能连坐整批(实跑:悬浮球一条
+      // TypeError 把卡里 12 个脚本一起判成「不兼容或执行失败」,沙箱连 done 都发不出去)。
+      for(const fn of q){
+        try{await Promise.resolve(fn());}
+        catch(e){
+          const __who=window.__kdScriptName?('[卡脚本 '+window.__kdScriptName+'] '):'';
+          warn(__who+'初始化回调失败: '+(e&&(e.stack||e.message)||String(e)));
+        }
+      }
       while(ops.length){const batch=ops;ops=[];await sendBatch(batch);}
     }
   })().finally(()=>{flushPromise=null;});
@@ -420,6 +500,7 @@ const __kdElemFacade=function(entry){
     querySelector:function(){return null;},
     querySelectorAll:function(){return [];},
     getBoundingClientRect:function(){return {top:0,left:0,right:__kdGeo.width,bottom:__kdGeo.height,width:__kdGeo.width,height:__kdGeo.height,x:0,y:0};},
+    // 有宿主 rect 快照就用真值(元素定位脚本按它算),否则退回落差(沙箱文档本身占满视口)
     closest:function(){return null;},
     remove:function(){},
     focus:function(){},
@@ -473,32 +554,243 @@ try{
   }});
 }catch(e){warn('document 查询门面安装失败(作者脚本裸 getElementById 将拿不到卡内元素): '+(e&&e.message?e.message:e));}
 // $('<div …>') 创建游离元素:on 绑定与子元素先记在 spec 里,append 进真实容器时由宿主一并落 DOM
+// ---- 游离元素桥:原生 createElement 造出来的节点宿主看不见 ----
+// 作者脚本常见写法:document.createElement('button') 造节点、挂原生 addEventListener、
+// 再 appendChild 进 jQuery 容器(露出日记-0615 的悬浮球「墨」球 + 拖拽全走这条)。
+// 沙箱文档是空的不透明来源,所以:①createElement 时给元素挂钩子(监听登记 + style 门面);
+// ②落 DOM 时序列化成 CreatedElementSpec(带 kdId,宿主落 DOM 时写 data-kd-el);
+// ③落 DOM 之后再绑的监听/改的样式,按 kdId 转成 kdel 上的 on/css op 补发。
+// ---- 宿主 window 门面:作者脚本把 mousemove/mouseup 挂在 window 上收尾拖拽
+// (露出日记-0615 悬浮球原文 J=()=>a.ownerDocument?.defaultView??window;
+//  n=J(); n.addEventListener('mousemove',me); n.addEventListener('mouseup',he)),
+// 沙箱自己的 window 永远收不到宿主事件 ⇒ 这类面板「按下有反应、抬起没反应」。
+// 门面把 window 级监听转成宿主 window 绑定(ref kind:'window'),事件经 jq-event 回到沙箱。
+const __kdHostWinEvents={mousedown:1,mouseup:1,mousemove:1,click:1,dblclick:1,contextmenu:1,pointerdown:1,pointerup:1,pointermove:1,pointercancel:1,touchstart:1,touchend:1,touchmove:1,keydown:1,keyup:1,keypress:1,resize:1,scroll:1,blur:1,focus:1,dragover:1,drop:1,wheel:1,paste:1};
+const __kdBindHostWindow=function(name,fn){
+  const evt=String(name||'').trim();
+  if(!evt||typeof fn!=='function'||!__kdHostWinEvents[evt])return false;
+  const id=++jqIdSeq;
+  jqHandlers.set(id,fn);
+  enqueue({ref:{kind:'window'},method:'on',args:[evt,id,null]});
+  return true;
+};
+const __kdHostDocumentFacade={
+  defaultView:null,
+  addEventListener:function(name,fn){
+    if(typeof fn!=='function')return;
+    const id=++jqIdSeq;
+    jqHandlers.set(id,fn);
+    enqueue({ref:{kind:'document'},method:'on',args:[String(name||''),id,null]});
+  },
+  removeEventListener:function(name){enqueue({ref:{kind:'document'},method:'off',args:[String(name||'')]});},
+  createElement:function(tag){try{return document.createElement(tag);}catch(_e){return null;}},
+  get body(){return null;},
+  get documentElement(){return null;},
+};
+const __kdHostWindowFacade={
+  addEventListener:function(name,fn){__kdBindHostWindow(name,fn);},
+  removeEventListener:function(name){if(__kdHostWinEvents[String(name||'')])enqueue({ref:{kind:'window'},method:'off',args:[String(name)]});},
+  dispatchEvent:function(){return true;},
+  getComputedStyle:function(el){return (el&&el.style)||{};},
+  scrollTo:function(){},
+  setTimeout:function(fn,ms){return setTimeout(fn,ms);},
+  setInterval:function(fn,ms){return setInterval(fn,ms);},
+  clearTimeout:function(id){return clearTimeout(id);},
+  clearInterval:function(id){return clearInterval(id);},
+};
+__kdHostDocumentFacade.defaultView=__kdHostWindowFacade;
+__kdHostWindowFacade.document=__kdHostDocumentFacade;
+// 作者脚本也可能直接 window.addEventListener(绕过 ownerDocument 链路):同样补绑宿主。
+// 沙箱自己的 window 收不到宿主事件,补绑不会造成双触发。
+try{
+  const __kdWinAdd=window.addEventListener.bind(window);
+  const __kdWinRemove=window.removeEventListener.bind(window);
+  Object.defineProperty(window,'addEventListener',{configurable:true,writable:true,value:function(name,fn,opt){
+    const r=__kdWinAdd(name,fn,opt);__kdBindHostWindow(name,fn);return r;
+  }});
+  Object.defineProperty(window,'removeEventListener',{configurable:true,writable:true,value:function(name,fn,opt){
+    const r=__kdWinRemove(name,fn,opt);
+    if(__kdHostWinEvents[String(name||'')])enqueue({ref:{kind:'window'},method:'off',args:[String(name)]});
+    return r;
+  }});
+}catch(_e){warn('window 事件门面安装失败(窗口级拖拽收尾可能失效): '+(_e&&_e.message?_e.message:_e));}
+let __kdElSeq=0;
+const __kdNativeHooks=typeof WeakMap==='function'?new WeakMap():null;
+const __kdHookOf=function(el){
+  if(!el||typeof el!=='object'||!__kdNativeHooks)return null;
+  return __kdNativeHooks.get(el)||null;
+};
+// 钩子上的样式累积:未挂载时只记(outerHTML 序列化会带上),挂载后按 kdId 补发
+const __kdSyncHookStyle=function(h){
+  if(!h)return;
+  if(h.spec&&h.spec.css)for(const k in h.style)h.spec.css[k]=String(h.style[k]);
+  if(h.mounted&&h.spec&&h.spec.kdId){
+    for(const k in h.style)enqueue({ref:{kind:'kdel',id:h.spec.kdId},method:'css',args:[k,String(h.style[k])]});
+  }
+};
+// 几何真值:kdel 元素在宿主里的 rect(每批 mirror.rects 回传)。沙箱里的节点是宿主 DOM
+// 的克隆、永不挂载,原生 getBoundingClientRect 恒为 0,0 ⇒ 悬浮球拖拽用
+// a.getBoundingClientRect() 求抓取偏移会退化成「按下点绝对坐标」,按下瞬间球左上角
+// 被贴到光标上(实测 cursor 走 +120/+80,球只走 dx=72)。
+const __kdRects={};
+const __kdRectOf=function(kd){
+  const r=kd?__kdRects[kd]:null;
+  const left=Number(r&&r.left)||0, top=Number(r&&r.top)||0;
+  const width=Number(r&&r.width)||0, height=Number(r&&r.height)||0;
+  return {top:top,left:left,width:width,height:height,right:left+width,bottom:top+height,x:left,y:top};
+};
+const __kdElemToSpec=function(el){
+  let html='';
+  try{html=typeof el.outerHTML==='string'?el.outerHTML:'';}catch(_e){html='';}
+  const spec={kind:'created',html:html,handlers:[],children:[],kdId:'kd'+String(++__kdElSeq)};
+  const h=__kdHookOf(el);
+  if(h){
+    // 已挂载元素的样式在 outerHTML 里;这里保留累积表,后续改动继续补发。
+    // 但宿主落 DOM 前会做 style 声明级清洗,显式带 css 更稳(display/position 这类关键样式不丢)。
+    for(const x of h.handlers)spec.handlers.push({evt:x.evt,jqId:x.jqId,selector:null});
+    if(Object.keys(h.style).length)spec.css=Object.assign({},h.style);
+    h.spec=spec;
+  }
+  return spec;
+};
+// spec 落到目标上:目标可为 created 集合(嵌套进 children)、选择器串、或 ref 句柄
+const __kdAppendSpec=function(spec,target){
+  if(target&&target.__kdSpec){
+    const p=target.__kdSpec;
+    if(p.mounted&&p.kdId)enqueue({ref:{kind:'kdel',id:p.kdId},method:'appendCreated',args:[spec]});
+    else p.children.push(spec);
+    spec.mounted=true;
+    return;
+  }
+  if(target&&typeof target.__kdRefGet==='function'){
+    const r=target.__kdRefGet();
+    if(r){enqueue({ref:r,method:'appendCreated',args:[spec]});spec.mounted=true;return;}
+  }
+  if(typeof target==='string'){enqueue({ref:{kind:'selector',value:target},method:'appendCreated',args:[spec]});spec.mounted=true;return;}
+  if(target&&target.kind){enqueue({ref:target,method:'appendCreated',args:[spec]});spec.mounted=true;}
+};
+try{
+  const __kdNativeCreate=document.createElement.bind(document);
+  Object.defineProperty(document,'createElement',{configurable:true,writable:true,value:function(tag,opts){
+    const el=__kdNativeCreate(tag,opts);
+    try{
+      const hooks={handlers:[],spec:null,mounted:false,style:{}};
+      Object.defineProperty(el,'__kdNativePatched',{value:true,configurable:true});
+      // ownerDocument 指宿主文档门面:作者脚本用 ownerDocument.defaultView 找窗口绑收尾
+      // 监听(拖拽必备),原生 ownerDocument 会落到沙箱自己的 window,宿主事件永远不来。
+      try{Object.defineProperty(el,'ownerDocument',{configurable:true,get:function(){return __kdHostDocumentFacade;}});}catch(_e){}
+      const origAdd=typeof el.addEventListener==='function'?el.addEventListener.bind(el):null;
+      Object.defineProperty(el,'addEventListener',{configurable:true,writable:true,value:function(evt,fn,capture){
+        if(typeof fn!=='function'){if(origAdd)return origAdd(evt,fn,capture);return;}
+        const id=++jqIdSeq;jqHandlers.set(id,fn);
+        const name=String(evt);
+        // 已挂载:直接在宿主真实节点上绑(事件以 jq-event 回发);未挂载:登记进 spec
+        if(hooks.mounted&&hooks.spec&&hooks.spec.kdId)enqueue({ref:{kind:'kdel',id:hooks.spec.kdId},method:'on',args:[name,id,null]});
+        else hooks.handlers.push({evt:name,jqId:id});
+      }});
+      const nativeStyle=el.style;
+      const styleProxy=new Proxy({},{get:function(_t,k){
+        if(k==='setProperty')return function(p,v){hooks.style[String(p)]=String(v);try{if(nativeStyle)nativeStyle.setProperty(p,String(v));}catch(_e){}__kdSyncHookStyle(hooks);};
+        if(k==='removeProperty')return function(p){delete hooks.style[String(p)];try{if(nativeStyle)nativeStyle.removeProperty(p);}catch(_e){}__kdSyncHookStyle(hooks);};
+        if(k==='getPropertyValue')return function(p){return hooks.style[String(p)]||'';};
+        if(k==='cssText')return '';
+        if(k==='item')return function(){return '';};
+        if(k==='length')return 0;
+        return hooks.style[k]!==undefined?hooks.style[k]:'';
+      },set:function(_t,k,v){
+        hooks.style[String(k)]=String(v);
+        try{if(nativeStyle)nativeStyle[String(k)]=String(v);}catch(_e){}
+        __kdSyncHookStyle(hooks);
+        return true;
+      }});
+      Object.defineProperty(el,'style',{configurable:true,get:function(){return styleProxy;},set:function(v){
+        if(v&&typeof v==='object'){for(const k in v){hooks.style[k]=String(v[k]);try{if(nativeStyle)nativeStyle[k]=String(v[k]);}catch(_e){}}
+          __kdSyncHookStyle(hooks);}
+      }});
+      if(__kdNativeHooks)__kdNativeHooks.set(el,hooks);
+      // 几何门面:原生 createElement 造出来的节点同样只在宿主里真实存在
+      try{
+        Object.defineProperty(el,'getBoundingClientRect',{configurable:true,writable:true,value:function(){
+          const h=(__kdNativeHooks&&__kdNativeHooks.get(this))||hooks;
+          return __kdRectOf(h&&h.spec?h.spec.kdId:'');
+        }});
+        Object.defineProperty(el,'offsetWidth',{configurable:true,get:function(){return __kdRectOf(hooks.spec?hooks.spec.kdId:'').width;}});
+        Object.defineProperty(el,'offsetHeight',{configurable:true,get:function(){return __kdRectOf(hooks.spec?hooks.spec.kdId:'').height;}});
+      }catch(_e){}
+    }catch(_e){/* 元素不可改(极少见):退回原生语义,作者脚本自行处理 */}
+    return el;
+  }});
+}catch(e){warn('document.createElement 门面安装失败(作者脚本原生建节点可能不显示): '+(e&&e.message?e.message:e));}
 function jqCreated(spec){
   if(!spec.attrs)spec.attrs={};
   if(!spec.css)spec.css={};
+  // 句柄:挂进容器后宿主会写 data-kd-el,沙箱凭 kdId 继续操作同一节点
+  // (悬浮球面板 s 在 appendTo 之后才 fadeIn/fadeOut/改 left/top)
+  if(!spec.kdId)spec.kdId='kd'+String(++__kdElSeq);
+  const kdRef={kind:'kdel',id:spec.kdId};
   const coll={};
   Object.defineProperty(coll,'__kdSpec',{get:function(){return spec;}});
+  Object.defineProperty(coll,'__kdRefGet',{get:function(){return function(){return spec.mounted?kdRef:null;};}});
+  // 挂载后的操作:spec 已由宿主建成真节点,后续读写要走 kdel 引用才有效
+  const live=function(method,args){if(spec.mounted)enqueue({ref:kdRef,method:method,args:args});};
   Object.defineProperty(coll,'length',{get:function(){return 1;}});
-  coll.on=function(evt,fn){const p=__kdParseOn.apply(null,arguments);if(!p)return coll;const id=++jqIdSeq;jqHandlers.set(id,p.fn);spec.handlers.push({evt:String(p.evt),jqId:id,selector:p.selector||null});return coll;};
+  coll.on=function(evt,fn){
+    const p=__kdParseOn.apply(null,arguments);
+    if(!p)return coll;
+    const id=++jqIdSeq;jqHandlers.set(id,p.fn);
+    if(spec.mounted)enqueue({ref:kdRef,method:'on',args:[String(p.evt),id,p.selector||null]});
+    else spec.handlers.push({evt:String(p.evt),jqId:id,selector:p.selector||null});
+    return coll;
+  };
   coll.off=function(){return coll;};
-  coll.append=function(child){if(child&&child.__kdSpec)spec.children.push(child.__kdSpec);return coll;};
-  coll.addClass=function(c){spec.addClass=(spec.addClass?spec.addClass+' ':'')+String(c??'');return coll;};
-  coll.removeClass=function(){return coll;};
-  coll.toggleClass=function(){return coll;};
-  coll.text=function(v){if(arguments.length===0)return '';spec.text=String(v??'');return coll;};
-  coll.html=function(v){if(arguments.length===0)return spec.innerHtml||'';spec.innerHtml=String(v??'');return coll;};
+  coll.append=function(child){
+    if(child&&child.__kdSpec){__kdAppendSpec(child.__kdSpec,coll);return coll;}
+    if(child&&typeof child.outerHTML==='string'){const cs=__kdElemToSpec(child);const h=__kdHookOf(child);if(h)h.mounted=true;__kdAppendSpec(cs,coll);return coll;}
+    if(typeof child==='string'&&child)spec.innerHtml=(spec.innerHtml||'')+String(child);
+    return coll;
+  };
+  coll.prepend=function(child){
+    if(child&&child.__kdSpec){__kdAppendSpec(child.__kdSpec,coll);return coll;}
+    if(typeof child==='string'&&child)spec.innerHtml=String(child)+(spec.innerHtml||'');
+    return coll;
+  };
+  // ---- 挂载类 API:jQuery 里 5 个方法,沙箱统一映射成「把 spec 落到目标上」 ----
+  // 悬浮球 14 处 appendTo 全走这条($('<div>').appendTo(body) / .appendTo(已创建的父集合))
+  const mountTo=function(target){__kdAppendSpec(spec,target);return coll;};
+  coll.appendTo=mountTo;
+  coll.prependTo=mountTo;
+  coll.insertBefore=mountTo;
+  coll.insertAfter=mountTo;
+  coll.replaceAll=mountTo;
+  // after/before:兄弟位置无独立通道,退化为追加(可见性优先,不抛错)
+  coll.after=mountTo;
+  coll.before=mountTo;
+  coll.add=function(){return coll;};
+  coll.has=function(){return coll;};
+  coll.next=function(){return jq([]);};
+  coll.clone=function(){return jq(spec.html||'<div></div>');};
+  coll.serialize=function(){return '';};
+  coll.stop=function(){
+    // 动画队列不存在:stop 只需让后续 fadeIn/fadeOut 立刻生效
+    return coll;
+  };
+  coll.addClass=function(c){spec.addClass=(spec.addClass?spec.addClass+' ':'')+String(c??'');live('addClass',[c]);return coll;};
+  coll.removeClass=function(c){live('removeClass',[c]);return coll;};
+  coll.toggleClass=function(c,force){live('toggleClass',[c,force]);return coll;};
+  coll.text=function(v){if(arguments.length===0)return spec.text||'';spec.text=String(v??'');live('text',[String(v??'')]);return coll;};
+  coll.html=function(v){if(arguments.length===0)return spec.innerHtml||'';spec.innerHtml=String(v??'');live('html',[String(v??'')]);return coll;};
   // attr 三种形态:两参写、一参对象合并、一参字符串 getter(游离元素无镜像,返回 '')
   coll.attr=function(k,v){
-    if(arguments.length>=2){spec.attrs[String(k)]=String(v??'');return coll;}
-    if(k&&typeof k==='object'){for(const key in k)spec.attrs[key]=String(k[key]);return coll;}
-    return '';
+    if(arguments.length>=2){spec.attrs[String(k)]=String(v??'');live('attr',[String(k),String(v??'')]);return coll;}
+    if(k&&typeof k==='object'){for(const key in k){spec.attrs[key]=String(k[key]);live('attr',[key,String(k[key])]);}return coll;}
+    const cur=spec.attrs[String(k)];return cur===undefined?'':cur;
   };
   coll.prop=function(){return arguments.length===1?false:coll;};
   // css 三种形态:两参写、一参对象合并、一参字符串读 spec(与真 jQuery 链式语义一致)
   coll.css=function(k,v){
-    if(arguments.length>=2){spec.css[String(k)]=String(v??'');return coll;}
-    if(k&&typeof k==='object'){for(const key in k)spec.css[key]=String(k[key]);return coll;}
-    return spec.css[String(k)]??'';
+    if(arguments.length>=2){spec.css[String(k)]=String(v??'');live('css',[String(k),String(v??'')]);return coll;}
+    if(k&&typeof k==='object'){for(const key in k){spec.css[key]=String(k[key]);live('css',[key,String(k[key])]);}return coll;}
+    const cur=spec.css[String(k)];return cur===undefined?'':cur;
   };
   coll.val=function(){return arguments.length===0?'':coll;};
   coll.data=function(name){return String(name)==='ui-draggable'?!!(spec.draggable&&spec.draggable!=='destroy'):'';};
@@ -510,19 +802,25 @@ function jqCreated(spec){
   coll.last=function(){return coll;};
   coll.eq=function(){return coll;};
   coll.each=function(cb){if(typeof cb==='function')cb.call(spec,0,spec);return coll;};
-  coll.click=function(fn){if(typeof fn==='function')return coll.on('click',fn);return coll;};
-  coll.trigger=function(){return coll;};
-  coll.remove=function(){return coll;};
-  coll.empty=function(){spec.children.length=0;spec.innerHtml='';return coll;};
-  coll.show=function(){return coll;};
-  coll.hide=function(){return coll;};
-  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();return coll;};
-  coll.fadeIn=function(){return coll;};
-  coll.fadeOut=function(){return coll;};
-  coll.slideDown=function(){return coll;};
-  coll.slideUp=function(){return coll;};
-  coll.animate=function(){return coll;};
-  coll.focus=function(){return coll;};
+  coll.click=function(fn){if(typeof fn==='function')return coll.on('click',fn);live('trigger',['click']);return coll;};
+  coll.trigger=function(evt){live('trigger',[String(evt)]);return coll;};
+  coll.remove=function(){live('remove',[]);return coll;};
+  coll.empty=function(){spec.children.length=0;spec.innerHtml='';live('empty',[]);return coll;};
+  coll.show=function(){spec.css.display='';live('css',['display','']);return coll;};
+  coll.hide=function(){spec.css.display='none';live('css',['display','none']);return coll;};
+  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();return spec.css.display==='none'?coll.show():coll.hide();};
+  // 动画方法(悬浮球面板 fadeIn(120)/fadeOut):无动画引擎,直映射 display,语义等价
+  coll.fadeIn=function(){spec.css.display='';live('css',['display','']);return coll;};
+  coll.fadeOut=function(){spec.css.display='none';live('css',['display','none']);return coll;};
+  coll.slideDown=function(){spec.css.display='';live('css',['display','']);return coll;};
+  coll.slideUp=function(){spec.css.display='none';live('css',['display','none']);return coll;};
+  coll.animate=function(props,ms,cb){
+    if(props&&typeof props==='object'){for(const k in props){if(k==='scrollTop'||k==='scrollLeft')live('css',[k,props[k]]);}}
+    if(typeof ms==='function')Promise.resolve().then(function(){ms();});
+    else if(typeof cb==='function')Promise.resolve().then(function(){cb();});
+    return coll;
+  };
+  coll.focus=function(){live('focus',[]);return coll;};
   coll.outerHeight=function(){return 0;};
   // 游离元素记录 draggable 选项('destroy' 记录为字符串),宿主 appendCreated 落 DOM 时绑指针拖拽
   coll.draggable=function(opts){
@@ -535,6 +833,94 @@ function jqCreated(spec){
     spec.draggable=wire;
     return coll;
   };
+  // ---- 数字索引:jQuery 里 coll[0] 是真 DOM 节点 ----
+  // 作者脚本拿它调原生 API:r[0].appendChild(a)(悬浮球把真实 button 塞进容器)、
+  // s[0].style.left=... 拖拽定位。沙箱没有真节点,返回门面:读走 spec,
+  // 写按 kdId 下发宿主真实元素(见 protocol.ts 的 kdel 引用)。
+  const nodeFacade=function(){
+    const styleProxy=new Proxy({},{get:function(_t,k){
+      if(k==='setProperty')return function(p,v){spec.css[String(p)]=String(v);live('css',[String(p),String(v)]);};
+      if(k==='removeProperty')return function(p){delete spec.css[String(p)];live('css',[String(p),'']);};
+      if(k==='getPropertyValue')return function(p){return spec.css[String(p)]||'';};
+      if(k==='cssText')return '';
+      const cur=spec.css[k];return cur===undefined?'':cur;
+    },set:function(_t,k,v){spec.css[String(k)]=String(v);live('css',[String(k),String(v)]);return true;}});
+    const fac={};
+    const attrOf=function(k){const v=spec.attrs[String(k)];return v===undefined?null:String(v);};
+    fac.appendChild=function(child){
+      if(!child)return child;
+      if(child.__kdSpec){__kdAppendSpec(child.__kdSpec,coll);return child;}
+      if(typeof child.outerHTML==='string'){
+        const cs=__kdElemToSpec(child);
+        const h=__kdHookOf(child);
+        if(h)h.mounted=true;
+        __kdAppendSpec(cs,coll);
+        // 原生元素落 DOM 后,它的样式改写还要继续生效(拖拽改 left/top)
+        if(h&&cs.kdId)
+          for(const k in h.style)enqueue({ref:{kind:'kdel',id:cs.kdId},method:'css',args:[k,String(h.style[k])]});
+        return child;
+      }
+      return child;
+    };
+    fac.append=function(child){return fac.appendChild(child);};
+    fac.removeChild=function(child){live('remove',[]);return child;};
+    fac.insertBefore=function(child){return fac.appendChild(child);};
+    fac.setAttribute=function(k,v){spec.attrs[String(k)]=String(v);live('attr',[String(k),String(v)]);};
+    fac.getAttribute=function(k){return attrOf(k);};
+    fac.hasAttribute=function(k){return attrOf(k)!==null;};
+    fac.removeAttribute=function(k){delete spec.attrs[String(k)];};
+    fac.classList={
+      add:function(){spec.addClass=(spec.addClass?spec.addClass+' ':'')+Array.prototype.slice.call(arguments).join(' ');live('addClass',[Array.prototype.slice.call(arguments).join(' ')]);},
+      remove:function(){live('removeClass',[Array.prototype.slice.call(arguments).join(' ')]);},
+      contains:function(){return false;},
+      toggle:function(){},
+    };
+    fac.dataset={};
+    // 宿主文档门面:作者脚本用 el.ownerDocument.defaultView 取窗口绑事件(拖拽收尾)、
+    // 用 el.ownerDocument.createElement 继续建节点,原生值会落到沙箱自己的空文档。
+    Object.defineProperty(fac,'ownerDocument',{configurable:true,get:function(){return __kdHostDocumentFacade;}});
+    // 原生事件监听:作者脚本对 coll[0] 直接 addEventListener(悬浮球-0613 的拖拽全走这条,
+    // 实跑报 Ee.addEventListener is not a function,把 12 个卡脚本一起拖垮)。
+    // 未挂载 → 登记进 spec.handlers(落 DOM 时由宿主绑定);已挂载 → 按 kdId 发 on op。
+    fac.addEventListener=function(evt,fn){
+      if(typeof fn!=='function')return;
+      const id=++jqIdSeq;
+      jqHandlers.set(id,fn);
+      const name=String(evt);
+      if(spec.mounted&&spec.kdId)enqueue({ref:{kind:'kdel',id:spec.kdId},method:'on',args:[name,id,null]});
+      else spec.handlers.push({evt:name,jqId:id});
+    };
+    fac.removeEventListener=function(evt,fn){
+      for(let i=spec.handlers.length-1;i>=0;i--){if(spec.handlers[i].evt===String(evt)&&(!fn||jqHandlers.get(spec.handlers[i].jqId)===fn))spec.handlers.splice(i,1);}
+      if(spec.mounted&&spec.kdId)enqueue({ref:{kind:'kdel',id:spec.kdId},method:'off',args:[String(evt)]});
+    };
+    fac.dispatchEvent=function(){return true;};
+    fac.setPointerCapture=function(){};
+    fac.releasePointerCapture=function(){};
+    fac.matches=function(){return false;};
+    fac.closest=function(){return null;};
+    fac.querySelector=function(){return null;};
+    fac.querySelectorAll=function(){return [];};
+    fac.click=function(){live('trigger',['click']);};
+    fac.focus=function(){live('focus',[]);};
+    fac.remove=function(){live('remove',[]);};
+    fac.getBoundingClientRect=function(){return {top:__kdGeo.top,left:__kdGeo.left,right:__kdGeo.left+__kdGeo.width,bottom:__kdGeo.top+__kdGeo.height,width:__kdGeo.width,height:__kdGeo.height,x:__kdGeo.left,y:__kdGeo.top};};
+    // 已挂载就报宿主真值(拖拽抓取偏移/定位脚本按它算),未挂载才退回落差
+    const __rect=function(){return __kdRectOf(spec.kdId);};
+    fac.getBoundingClientRect=function(){return __rect();};
+    fac.offsetWidth=0;fac.offsetHeight=0;fac.offsetLeft=0;fac.offsetTop=0;
+    Object.defineProperty(fac,'offsetWidth',{configurable:true,get:function(){return __rect().width;}});
+    Object.defineProperty(fac,'offsetHeight',{configurable:true,get:function(){return __rect().height;}});
+    fac.offsetLeft=0;fac.offsetTop=0;
+    fac.clientWidth=0;fac.clientHeight=0;fac.scrollWidth=0;fac.scrollHeight=0;fac.scrollTop=0;
+    Object.defineProperty(fac,'style',{configurable:true,get:function(){return styleProxy;}});
+    Object.defineProperty(fac,'id',{configurable:true,get:function(){return spec.attrs.id||'';},set:function(v){spec.attrs.id=String(v??'');live('attr',['id',String(v??'')]);}});
+    Object.defineProperty(fac,'textContent',{configurable:true,get:function(){return spec.text||'';},set:function(v){spec.text=String(v??'');live('text',[String(v??'')]);}});
+    Object.defineProperty(fac,'innerHTML',{configurable:true,get:function(){return spec.innerHtml||'';},set:function(v){spec.innerHtml=String(v??'');live('html',[String(v??'')]);}});
+    Object.defineProperty(fac,'outerHTML',{configurable:true,get:function(){return spec.html||'';}});
+    return fac;
+  };
+  for(let __ci=0;__ci<4;__ci++)(function(idx){Object.defineProperty(coll,idx,{configurable:true,get:function(){return idx===0?nodeFacade():undefined;}});})(__ci);
   return coll;
 }
 function jq(sel){
@@ -549,6 +935,8 @@ function jq(sel){
     :typeof window!=='undefined'&&sel===window?{kind:'window'}
     :sel&&sel.kind==='target'?{kind:'target',id:sel.id}
     :sel&&sel.kind==='selector-index'?{kind:'selector-index',value:sel.value,index:sel.index}
+    // 已落 DOM 的游离元素句柄(created 集合挂载后返回)
+    :sel&&sel.kind==='kdel'?{kind:'kdel',id:sel.id}
     :null;
   const isSnap=!!(sel&&sel.kind==='snapshot');
   const localData=sel&&(sel.kind==='target'||isSnap)&&sel.data?sel.data:{};
@@ -556,6 +944,8 @@ function jq(sel){
   const refKey=__kdRefKey(ref);
   const readState=function(){return localState||(refKey?__kdMirror.selectors[refKey]||null:null);};
   const coll={};
+  // 供 $('<div>').appendTo($(target)) 这类「目标也是集合」的挂载路径取引用
+  Object.defineProperty(coll,'__kdRefGet',{get:function(){return function(){return ref;};}});
   coll.text=function(v){if(arguments.length===0){const st=readState();if(!st)probe(ref);return st&&typeof st.text==='string'?st.text:'';}if(ref)enqueue({ref,method:'text',args:[v]});__kdPatch(sel,{text:String(v??'')});return coll;};
   coll.html=function(v){if(arguments.length===0){const st=readState();if(!st)probe(ref);return st&&typeof st.html==='string'?st.html:'';}if(ref)enqueue({ref,method:'html',args:[v]});__kdPatch(sel,{html:String(v??'')});return coll;};
   // css 四种形态:0 参返回 '';1 参字符串 getter(从镜像读真值,无镜像 probe 后返回 '');
@@ -648,6 +1038,21 @@ function jq(sel){
   coll.trigger=function(evt){if(ref)enqueue({ref,method:'trigger',args:[evt]});return coll;};
   // append 支持 $('<div>') 游离元素(spec 经 appendCreated 由宿主落 DOM 并绑定延迟事件)
   coll.append=function(html){if(html&&html.__kdSpec){if(ref)enqueue({ref,method:'appendCreated',args:[html.__kdSpec]});return coll;}if(ref)enqueue({ref,method:'append',args:[String(html??'')]});return coll;};
+  // 与游离元素集合对齐的链式 API(作者脚本会混用两类集合;缺方法会 TypeError 整段失效)
+  coll.prepend=function(html){return coll.append(html);};
+  coll.appendTo=function(){return coll;};
+  coll.prependTo=function(){return coll;};
+  coll.insertBefore=function(){return coll;};
+  coll.insertAfter=function(){return coll;};
+  coll.before=function(html){return coll.append(html);};
+  coll.after=function(html){return coll.append(html);};
+  coll.replaceAll=function(){return coll;};
+  coll.add=function(){return coll;};
+  coll.has=function(){return coll;};
+  coll.next=function(){return coll;};
+  coll.clone=function(){return coll;};
+  coll.serialize=function(){return '';};
+  coll.stop=function(){return coll;};
   coll.focus=function(){if(ref)enqueue({ref,method:'focus',args:[]});return coll;};
   coll.is=function(q){const c=__kdFindControl(sel);const st=readState();if(!c&&!st)probe(ref);if(q===':checked')return c?!!c.checked:st?!!st.checked:false;if(q===':disabled')return c?!!c.disabled:st?!!st.disabled:false;
     // :visible/:hidden 从镜像 css.display 判定(wuwa 面板 $panel.is(':hidden') 决定展开);
@@ -691,6 +1096,36 @@ function jq(sel){
       if(st.id)r.id=st.id;
       if(typeof st.text==='string')r.textContent=st.text;
     } else probe(r);
+    // 原生节点门面:作者脚本拿 coll[0] 当 DOM 用(s[0].style.left 定位、
+    // r[0].appendChild(真实节点) 挂子元素),这里把读写映射回 kdel/selector-index 引用
+    try{
+      Object.defineProperty(r,'style',{configurable:true,get:function(){
+        return new Proxy({},{get:function(_t,k){
+          if(k==='setProperty')return function(p,v){enqueue({ref:r,method:'css',args:[String(p),String(v)]});};
+          if(k==='getPropertyValue')return function(p){const cs=st&&st.css?st.css[String(p)]:undefined;return cs===undefined?'':cs;};
+          if(k==='cssText')return '';
+          const cs=st&&st.css?st.css[k]:undefined;
+          return cs===undefined?'':cs;
+        },set:function(_t,k,v){enqueue({ref:r,method:'css',args:[String(k),String(v)]});return true;}});
+      }});
+    }catch(_e){}
+    try{
+      Object.defineProperty(r,'appendChild',{configurable:true,get:function(){
+        return function(child){
+          if(!child)return child;
+          if(child.__kdSpec){enqueue({ref:r,method:'appendCreated',args:[child.__kdSpec]});return child;}
+          if(typeof child.outerHTML==='string'){
+            const cs=__kdElemToSpec(child);
+            const h=__kdHookOf(child);
+            if(h)h.mounted=true;
+            enqueue({ref:r,method:'appendCreated',args:[cs]});
+            if(h)for(const k in h.style)enqueue({ref:{kind:'kdel',id:cs.kdId},method:'css',args:[k,String(h.style[k])]});
+            return child;
+          }
+          return child;
+        };
+      }});
+    }catch(_e){}
     return r;
   }});})(__i);
   // draggable:字符串 'destroy' 解绑;对象把 start/drag/stop 换成 jqId,其余可序列化字段原样
@@ -778,6 +1213,66 @@ globalThis.waitGlobalInitialized=waitGlobalInitialized;globalThis.errorCatched=e
 // getScriptId():酒馆里返回当前脚本 id,卡用它做正则绑定/设置面板的键;kedai 无脚本 id
 // 概念,给稳定占位值即可(同一会话内一致,卡片按等值判等)。
 globalThis.getScriptId=function(){return 'kedai-script';};
+// ---- 脚本按钮 + MVU 写变量(酒馆助手 API;悬浮球-0613 的引导段全依赖这两条) ----
+// 酒馆里 getButtonEvent(name) = scriptId + '_' + hash(name),按钮栏点击即以该事件名广播
+// (酒馆助手 src/store/iframe_runtimes/script.ts:6 getButtonId)。kedai 没有脚本按钮栏,
+// 这里保持同样的键格式:appendInexistentScriptButtons 登记按钮,宿主点按钮时按同名事件广播,
+// 脚本侧 eventOn(getButtonEvent(名字), …) 才可能收到。
+const __kdStringHash=function(str){let h=0;for(let i=0;i<String(str).length;i++){h=(h<<5)-h+String(str).charCodeAt(i);h|=0;}return String(h);};
+const __kdScriptButtons=[];
+globalThis.getButtonEvent=function(name){return String(globalThis.getScriptId())+'_'+__kdStringHash(String(name));};
+globalThis.getScriptButtons=function(){return __kdScriptButtons.map(function(b){return {name:b.name,visible:!!b.visible};});};
+globalThis.appendInexistentScriptButtons=function(param1,param2){
+  const list=Array.isArray(param1)?param1:(Array.isArray(param2)?param2:[]);
+  for(const b of list){
+    if(!b||typeof b.name!=='string')continue;
+    if(!__kdScriptButtons.some(function(x){return x.name===b.name;}))__kdScriptButtons.push({name:b.name,visible:b.visible!==false});
+  }
+  return globalThis.getScriptButtons();
+};
+globalThis.replaceScriptButtons=function(list){__kdScriptButtons.length=0;return globalThis.appendInexistentScriptButtons(list||[]);};
+// updateVariablesWith(mutator, option):MVU 的标准写变量入口——拿全量变量副本跑回调,
+// 回调里常用 _.set 改 stat_data,返回值即新变量树。落地走 replaceVariables(消息级/全局级)。
+globalThis.updateVariablesWith=function(mutator,opts){
+  const isGlobal=!!(opts&&opts.type==='global');
+  const draft=isGlobal
+    ?structuredClone(__kdGlobals)
+    :{stat_data:structuredClone(__kdStatView()),display_data:structuredClone(variables.display_data)};
+  let out=draft;
+  try{
+    const ret=typeof mutator==='function'?mutator(draft):mutator;
+    if(ret&&typeof ret==='object')out=ret;
+  }catch(e){
+    warn('updateVariablesWith 回调出错: '+(e&&e.message?e.message:e));
+    return draft;
+  }
+  if(isGlobal){replaceVariables(out,{type:'global'});return out;}
+  if(out&&out.stat_data)replaceVariables({stat_data:out.stat_data,display_data:out.display_data||out.stat_data});
+  else replaceVariables(out);
+  try{eventEmit(Mvu.events.VARIABLE_UPDATE_ENDED,getAllVariables());}catch(_e){}
+  return out;
+};
+// 楼层写操作:kedai 沙箱没有写聊天的通道(宿主不转发),给同步占位避免整段卡脚本炸掉;
+// 首次调用告警一次,便于在控制台区分「卡逻辑没跑」与「跑了但写不进去」。
+let __kdChatWriteWarned=false;
+const __kdChatWriteStub=function(name){return function(){
+  if(!__kdChatWriteWarned){__kdChatWriteWarned=true;warn(name+' 在 kedai 沙箱里不可写(仅占位,不落库)');}
+  return Promise.resolve([]);
+};};
+globalThis.createChatMessages=__kdChatWriteStub('createChatMessages');
+globalThis.triggerSlash=__kdChatWriteStub('triggerSlash');
+globalThis.getCurrentMessageId=function(){return -1;};
+globalThis.getLastMessageId=function(){return -1;};
+// 裸全局 getChatMessages:酒馆里是全局函数(状态栏/额外请求脚本直接裸调),沙箱原先只挂了
+// TavernHelper.getChatMessages ⇒ 卡脚本报 getChatMessages is not defined(事件回调里抛)。
+globalThis.getChatMessages=function(id,opts){
+  return typeof TavernHelper==='object'&&TavernHelper&&typeof TavernHelper.getChatMessages==='function'
+    ? TavernHelper.getChatMessages(id,opts)
+    : Promise.resolve([]);
+};
+// 酒馆内置宏替换:沙箱没有酒馆的宏引擎,原样返回(作者脚本普遍把它包在 try/catch 里,
+// 给个 identity 至少不产生 ReferenceError 噪音,宏文本由卡自己兜底)。
+globalThis.substitudeMacros=function(text){return typeof text==='string'?text:String(text??'');};
 // SillyTavern:卡级脚本常读 extensionSettings 做插件协作开关。酒馆里是宿主对象;
 // 这里给最小可写对象,避免 ReferenceError 连锁(写入只落在沙箱内存,不产生副作用)。
 globalThis.SillyTavern=globalThis.SillyTavern||{extensionSettings:{},chat:[],characters:[],name1:'user'};
