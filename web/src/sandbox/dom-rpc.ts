@@ -3,6 +3,7 @@ import sanitizeHtml from 'sanitize-html';
 import { SCRIPT_HTML_WHITELIST, sanitizeScriptHtmlWithStyles } from './sanitize';
 import { applyDraggable, bindGlobalEvents, type DomEventContext } from './draggable';
 import { eventPayload } from './event-payload';
+import { postSandboxEvent } from './host-events';
 
 // 历史导出面:事件载荷实现挪到 event-payload.ts(draggable 的窗口级回发也要用),
 // 这里再导出,保持既有 `import { eventPayload } from './dom-rpc'` 调用方不变。
@@ -25,13 +26,16 @@ export function overlayRootOf(container: HTMLElement): HTMLElement {
 }
 
 /** 注入节点标记:cleanup 按此摘除本次沙箱注入的 DOM。
- *  父为覆层根时补 pointer-events:auto(根自身 none,不拦截聊天交互,子节点仍需可点)。 */
+ *  父为覆层根且**作者未显式指定** pointer-events 时补 auto(根自身 none,不拦截聊天交互,
+ *  子节点仍需可点)。作者显式写 none 时绝不覆盖——酒馆生态的悬浮窗脚本惯例是外层容器
+ *  `position:fixed;inset:0;pointer-events:none`、只让球与面板可点;把这一层改成 auto,
+ *  一张铺满屏幕的 z-index 9999 层就会吃掉整页点击(2026-10-29 实跑:悬浮球出现后其它按钮全点不动)。 */
 function markInjected(el: HTMLElement): void {
   if (typeof el.setAttribute === 'function') el.setAttribute('data-kd-injected', '1');
   const parent = el.parentElement;
   const underOverlay =
     !!parent && typeof parent.getAttribute === 'function' && parent.getAttribute('data-kd-overlay-root') !== null;
-  if (underOverlay && el.style) el.style.pointerEvents = 'auto';
+  if (underOverlay && el.style && !el.style.pointerEvents) el.style.pointerEvents = 'auto';
 }
 
 function safeSelector(value: unknown): string {
@@ -412,18 +416,16 @@ function buildCreatedElement(
     for (const eventName of eventNames) {
       const listener = (event: Event): void => {
         const data = Object.fromEntries(Object.entries(el.dataset));
-        targetWindow.postMessage(
-          {
-            channel: CHANNEL,
-            nonce,
-            type: 'jq-event',
-            jqId,
-            event: eventPayload(event, eventName),
-            target: { kind: 'target', id: targetId, data, state: elementState(el) },
-            mirror: { controls: gatherControls(container) },
-          },
-          '*',
-        );
+        // 高频事件(拖动/滚动)在宿主侧合帧,避免逐像素往返把主线程排满
+        postSandboxEvent(targetWindow, {
+          channel: CHANNEL,
+          nonce,
+          type: 'jq-event',
+          jqId,
+          event: eventPayload(event, eventName),
+          target: { kind: 'target', id: targetId, data, state: elementState(el) },
+          mirror: { controls: gatherControls(container) },
+        });
       };
       el.addEventListener(eventName, listener);
       registerEventListener(el, eventName, listener);
@@ -653,20 +655,18 @@ export function applyJq(
             const targetId = nextTargetId();
             targets.set(targetId, hit);
             const data = Object.fromEntries(Object.entries(hit.dataset));
-            targetWindow.postMessage(
-              {
-                channel: CHANNEL,
-                nonce,
-                type: 'jq-event',
-                jqId,
-                event: eventPayload(event, eventName),
-                // 事件时刻的目标状态(getter 真实化:勾选/取值/滚动度量读到事件当时的真值)
-                target: { kind: 'target', id: targetId, data, state: elementState(hit) },
-                // 全量表单控件状态:协议脚本在回调里读其它控件($('#agree') 等)
-                mirror: { controls: gatherControls(container) },
-              },
-              '*',
-            );
+            // 高频事件(拖动/滚动)在宿主侧合帧:逐像素往返 + 每包全量镜像会排满主线程
+            postSandboxEvent(targetWindow, {
+              channel: CHANNEL,
+              nonce,
+              type: 'jq-event',
+              jqId,
+              event: eventPayload(event, eventName),
+              // 事件时刻的目标状态(getter 真实化:勾选/取值/滚动度量读到事件当时的真值)
+              target: { kind: 'target', id: targetId, data, state: elementState(hit) },
+              // 全量表单控件状态:协议脚本在回调里读其它控件($('#agree') 等)
+              mirror: { controls: gatherControls(container) },
+            });
           };
           el.addEventListener(eventName, listener);
           registerEventListener(el, eventName, listener);

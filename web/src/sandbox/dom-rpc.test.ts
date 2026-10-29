@@ -12,7 +12,11 @@ class StubEl {
   style = {
     cssText: '',
     pointerEvents: '',
-    setProperty: (_k: string, _v: string): void => {},
+    // 真实 DOM:setProperty('pointer-events', …) 后读 style.pointerEvents 得该值。
+    // 桩只需覆盖 pointer-events(注入标记用),其余属性忽略。
+    setProperty: (k: string, v: string): void => {
+      if (k === 'pointer-events') this.style.pointerEvents = v;
+    },
     getPropertyValue: (): string => '',
     item: (): string => '',
     length: 0,
@@ -165,8 +169,32 @@ describe('注入节点标记(data-kd-injected)', () => {
     expect(created.style.pointerEvents).toBe('auto');
   });
 
-  it('append 的 insertAdjacentHTML 路径对新增子节点打标', () => {
+  it('作者显式指定 pointer-events 时不被覆盖(酒馆悬浮窗铺满屏层必须保持 none)', () => {
+    // 2026-10-29 实跑:悬浮球脚本外层 r 写 {position:'fixed',inset:0,'z-index':9999,'pointer-events':'none'},
+    // 宿主此前无条件改成 auto ⇒ 整页点击被这层吃掉,球以外的按钮全点不动。
     const root = makeOverlayRoot();
+    const container = makeContainer(root);
+    apply(container, sel('body'), 'appendCreated', [
+      {
+        kind: 'created',
+        html: '<div></div>',
+        handlers: [],
+        children: [],
+        attrs: { id: 'fx-layer' },
+        css: { position: 'fixed', pointerEvents: 'none' },
+      },
+    ]);
+    expect(root.children).toHaveLength(1);
+    const created = root.children[0];
+    expect(created.style.pointerEvents).toBe('none');
+    // 未显式指定的兄弟节点仍补 auto(作者没表态时保持可点)
+    apply(container, sel('body'), 'appendCreated', [
+      { kind: 'created', html: '<div></div>', handlers: [], children: [], attrs: { id: 'fx-ball' }, css: {} },
+    ]);
+    expect(root.children[1].style.pointerEvents).toBe('auto');
+  });
+
+  it('append 的 insertAdjacentHTML 路径对新增子节点打标', () => {    const root = makeOverlayRoot();
     const container = makeContainer(root);
     apply(container, sel('body'), 'append', ['<style>.a{color:red}</style>']);
     expect(root.children).toHaveLength(1);

@@ -68,7 +68,7 @@ interface SandboxRequest {
   nonce: string;
   // shared-publish:沙箱 diff 上报 window 新增/变更的纯数据全局(跨 realm 共享桥,见 shared-globals.ts);
   // 反向「宿主→沙箱」对应 type:'shared-update'(globals 全量快照,字面量 postMessage,与 mvu-event 同风格)
-  type: 'ready' | 'rpc' | 'batch' | 'done' | 'error' | 'warn' | 'jq-event' | 'audio' | 'local-storage' | 'shared-publish';
+  type: 'ready' | 'rpc' | 'batch' | 'done' | 'error' | 'warn' | 'jq-event' | 'audio' | 'local-storage' | 'shared-publish' | 'script-buttons';
   id?: number;
   op?: string;
   args?: unknown[];
@@ -78,6 +78,19 @@ interface SandboxRequest {
   jqId?: number;
   key?: string;
   globals?: unknown;
+  buttons?: SandboxScriptButton[];
+}
+
+/**
+ * 卡级脚本按钮(酒馆的「脚本按钮」区):
+ * 作者脚本 `appendInexistentScriptButtons([{name}])` 登记,宿主按钮栏渲染;
+ * 点击时宿主向沙箱投递 `type:'script-button-click'`,沙箱以 `getButtonEvent(name)` 事件名广播,
+ * 作者脚本 `eventOn(getButtonEvent(名字), …)` 才收得到 —— 悬浮窗这类「关闭后靠按钮再打开」
+ * 的卡全靠这条链路,缺它等于关掉就再也回不来。
+ */
+export interface SandboxScriptButton {
+  name: string;
+  visible?: boolean;
 }
 
 /** inline 事件降级桥支持的事件名(data-kd-on<name> 属性 → 真实监听) */
@@ -128,6 +141,16 @@ export interface SandboxExecutionContext {
    * 返回 handled=true 时 value 直接回包;handled=false 回退内置同步分发。
    */
   rpcExtensions?: (op: string, args: unknown[]) => Promise<{ handled: boolean; value?: unknown }>;
+  /**
+   * 卡级脚本按钮变化回调(可选):沙箱 `appendInexistentScriptButtons`/`replaceScriptButtons`
+   * 登记后上送一份全量列表,宿主据此渲染按钮栏(见 ChatWindow.vue 的 sv-script-bar)。
+   */
+  onScriptButtons?: (buttons: SandboxScriptButton[]) => void;
+  /**
+   * 宿主→沙箱投递入口(执行器写入,调用方不要预设):目前用于 script-button-click。
+   * 由 iframe-lifecycle 在 iframe 就绪后填充,cardScriptHost 通过它把按钮点击送回沙箱。
+   */
+  sendToSandbox?: (request: Record<string, unknown>) => void;
 }
 
 export interface SandboxEnvironment {

@@ -119,15 +119,30 @@ addEventListener('message',(event)=>{
   } else if(m.type==='jq-event'){
     __kdMergeMirror(m.mirror);
     __kdMergeEventTarget(m.target);
-    // 事件回调异常仅告警不拆沙箱:作者脚本的单次点击报错(如跨域访问 window.parent.document)
-    // 不应导致整个状态栏被 cleanup 拆除(此前此处上送 error 会触发宿主 finish→界面死亡)
-    const fn=jqHandlers.get(m.jqId);if(fn)Promise.resolve().then(()=>{
+    // 同步派发(不用 rAF:隐藏沙箱里 rAF 永不回调,会把事件永久积压 —— 见文件内说明)。
+    // 事件回调异常仅告警不拆沙箱:作者脚本单次点击报错(如跨域访问 window.parent.document)
+    // 不应导致整个状态栏被 cleanup 拆除(此前此处上送 error 会触发宿主 finish→界面死亡)。
+    const fn=jqHandlers.get(m.jqId);
+    if(fn){
       // 事件体补 target/currentTarget:作者回调普遍写 e.target.closest(...) / e.target.dataset,
       // 只带坐标的事件体会在这一步抛 TypeError(此后被 warn 吞掉,表现为「点了没反应」)。
       const __tt=__kdWrapTarget(m.target);
       const __ev=Object.assign({target:__tt,currentTarget:__tt},m.event||{});
-      return fn.call(__tt,__ev);
-    }).then(flush).catch(e=>send('warn',{message:'事件回调出错: '+(e&&e.message?e.message:e)}));
+      try{
+        Promise.resolve(fn.call(__tt,__ev)).then(flush).catch(function(e){
+          send('warn',{message:'事件回调出错: '+(e&&e.message?e.message:e)});
+        });
+      }catch(e){
+        send('warn',{message:'事件回调出错: '+(e&&e.message?e.message:e)});
+      }
+    }
+  } else if(m.type==='script-button-click'){
+    // 宿主按钮栏点击 → 按酒馆语义以 getButtonEvent(name) 事件名广播给作者脚本
+    try{
+      Promise.resolve(eventEmit(globalThis.getButtonEvent(String(m.name||'')),{})).catch(function(){});
+    }catch(e){
+      send('warn',{message:'脚本按钮广播失败: '+(e&&e.message?e.message:e)});
+    }
   } else if(m.type==='inline-event'){
     // inline 事件降级桥:宿主把元素 data-kd-on* 属性里的作者代码串转回沙箱求值。
     // 优先走 __kdEvalInline(消息级单段由 IIFE 内注册,直接 eval——作用域链含作者脚本的
@@ -334,6 +349,13 @@ const jqReadyQueue=[];
 let jqIdSeq=0;
 let ops=[];
 let flushPromise=null;
+// ---- 事件合帧(宿主推来的 jq-event 先入队,一帧只派发一轮) ----
+// 拖动/滚动时作者脚本每个鼠标事件都改样式 ⇒ 每事件一次 RPC 往返 + 宿主全量状态镜像,
+// 注意:这里**同步派发**,不做任何 rAF/定时器式合帧。
+// 沙箱 iframe 是 display:none 且 0×0 的不可见文档,其 realm 里的 requestAnimationFrame
+// **永不回调**(2026-10-29 实测:1.5s 只跑 1 帧,Promise 化后 1000ms 超时);一旦用 rAF 排程,
+// 队列会永久卡死、所有点击/拖动静默失效(无 exception、无 console.error)。
+// 高频事件的合帧放在**宿主侧**做(可见页面 rAF 正常,见 sandbox/host-events.ts)。
 const __kdMirror={selectors:JSON.parse(${JSON.stringify(initialMirror)}),controls:JSON.parse(${JSON.stringify(initialControls)})};
 // id 反向索引:attr('id') 读复合类选择器('.tab-page.active')时回查。
 // jQuery 语义 = 集合首元素的 id;镜像只按「原样选择器串」采集,复合选择器可能从未入镜像,
@@ -721,6 +743,27 @@ try{
     return el;
   }});
 }catch(e){warn('document.createElement 门面安装失败(作者脚本原生建节点可能不显示): '+(e&&e.message?e.message:e));}
+// jQuery 动画方法的效果回调语义:fadeIn(120,cb) / fadeOut(cb) / hide({duration},cb) 里的
+// 函数参数必须在动作后异步执行一次。悬浮球「关闭」正是 fadeOut(120,function(){ 把球
+// display 显示回来 })——垫片早期把回调整个丢掉,表现就是「点关闭后球永久消失只能刷新」
+// (2026-10-29 实跑复现)。没有动画引擎,这里按 duration 直接 setTimeout 触发回调。
+const __kdAnimArgs=function(args){
+  let ms=0, cb=null;
+  for(let i=0;i<args.length;i++){
+    const a=args[i];
+    if(typeof a==='function')cb=a;
+    else if(typeof a==='number')ms=a;
+    else if(typeof a==='string'){const n=parseInt(a,10);if(isFinite(n))ms=n;}
+    else if(a&&typeof a==='object'&&typeof a.duration==='number')ms=a.duration;
+  }
+  return {ms:ms, cb:cb};
+};
+const __kdAnimRun=function(coll,args){
+  const p=__kdAnimArgs(args);
+  if(!p.cb)return;
+  const delay=p.ms>0?Math.min(p.ms,1000):0;
+  setTimeout(function(){try{p.cb.call(coll);}catch(__e){send('warn',{message:'动画回调出错: '+((__e&&(__e.message||__e))||'unknown')});}},delay);
+};
 function jqCreated(spec){
   if(!spec.attrs)spec.attrs={};
   if(!spec.css)spec.css={};
@@ -806,14 +849,15 @@ function jqCreated(spec){
   coll.trigger=function(evt){live('trigger',[String(evt)]);return coll;};
   coll.remove=function(){live('remove',[]);return coll;};
   coll.empty=function(){spec.children.length=0;spec.innerHtml='';live('empty',[]);return coll;};
-  coll.show=function(){spec.css.display='';live('css',['display','']);return coll;};
-  coll.hide=function(){spec.css.display='none';live('css',['display','none']);return coll;};
-  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();return spec.css.display==='none'?coll.show():coll.hide();};
-  // 动画方法(悬浮球面板 fadeIn(120)/fadeOut):无动画引擎,直映射 display,语义等价
-  coll.fadeIn=function(){spec.css.display='';live('css',['display','']);return coll;};
-  coll.fadeOut=function(){spec.css.display='none';live('css',['display','none']);return coll;};
-  coll.slideDown=function(){spec.css.display='';live('css',['display','']);return coll;};
-  coll.slideUp=function(){spec.css.display='none';live('css',['display','none']);return coll;};
+  coll.show=function(){spec.css.display='';live('css',['display','']);__kdAnimRun(coll,arguments);return coll;};
+  coll.hide=function(){spec.css.display='none';live('css',['display','none']);__kdAnimRun(coll,arguments);return coll;};
+  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();const r=spec.css.display==='none'?coll.show():coll.hide();__kdAnimRun(coll,arguments);return r;};
+  // 动画方法(悬浮球面板 fadeIn(120)/fadeOut(120,cb)):无动画引擎,直映射 display;
+  // 但**回调必须执行**——卡靠 fadeOut 回调把球重新显示出来(见 __kdAnimRun 注释)
+  coll.fadeIn=function(){spec.css.display='';live('css',['display','']);__kdAnimRun(coll,arguments);return coll;};
+  coll.fadeOut=function(){spec.css.display='none';live('css',['display','none']);__kdAnimRun(coll,arguments);return coll;};
+  coll.slideDown=function(){spec.css.display='';live('css',['display','']);__kdAnimRun(coll,arguments);return coll;};
+  coll.slideUp=function(){spec.css.display='none';live('css',['display','none']);__kdAnimRun(coll,arguments);return coll;};
   coll.animate=function(props,ms,cb){
     if(props&&typeof props==='object'){for(const k in props){if(k==='scrollTop'||k==='scrollLeft')live('css',[k,props[k]]);}}
     if(typeof ms==='function')Promise.resolve().then(function(){ms();});
@@ -997,17 +1041,17 @@ function jq(sel){
   coll.val=function(v){if(arguments.length===0){const c=__kdFindControl(sel);if(c&&typeof c.val==='string')return c.val;const st=readState();if(st&&typeof st.val==='string')return st.val;if(!st)probe(ref);return '';}if(ref)enqueue({ref,method:'val',args:[v]});__kdPatch(sel,{val:String(v??'')});return coll;};
   coll.on=function(evt,fn){const p=__kdParseOn.apply(null,arguments);if(ref&&p){const id=++jqIdSeq;jqHandlers.set(id,p.fn);enqueue({ref,method:'on',args:[p.evt,id,p.selector]});}return coll;};
   coll.off=function(evt){if(ref)enqueue({ref,method:'off',args:[evt]});return coll;};
-  coll.hide=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});__kdPatch(sel,{css:Object.assign({},(readState()||{}).css||{},{display:'none'})});return coll;};
-  coll.show=function(){if(ref)enqueue({ref,method:'css',args:['display','']});__kdPatch(sel,{css:Object.assign({},(readState()||{}).css||{},{display:''})});return coll;};
+  coll.hide=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});__kdPatch(sel,{css:Object.assign({},(readState()||{}).css||{},{display:'none'})});__kdAnimRun(coll,arguments);return coll;};
+  coll.show=function(){if(ref)enqueue({ref,method:'css',args:['display','']});__kdPatch(sel,{css:Object.assign({},(readState()||{}).css||{},{display:''})});__kdAnimRun(coll,arguments);return coll;};
   // toggle:boolean 参走 show/hide,无参按 css display 现状翻转(镜像读当前值)
-  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();const cur=coll.css('display');return cur==='none'?coll.show():coll.hide();};
+  coll.toggle=function(show){if(typeof show==='boolean')return show?coll.show():coll.hide();const cur=coll.css('display');const r=cur==='none'?coll.show():coll.hide();__kdAnimRun(coll,arguments);return r;};
   // animate:仅 scrollTop/scrollLeft 有等价操作(直接置位,无动画);其余属性 no-op 返回 coll
   coll.animate=function(props,ms,cb){if(props&&typeof props==='object'){for(const k in props){if(k==='scrollTop'||k==='scrollLeft'){if(ref)enqueue({ref,method:'css',args:[k,props[k]]});}}}if(typeof ms==='function')Promise.resolve().then(function(){ms();});else if(typeof cb==='function')Promise.resolve().then(function(){cb();});return coll;};
   // 开场界面脚本依赖的动画/属性方法:映射为等价操作(无动画,同步语义与 jQuery 一致)
-  coll.slideDown=function(){if(ref)enqueue({ref,method:'css',args:['display','']});return coll;};
-  coll.slideUp=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});return coll;};
-  coll.fadeIn=function(){if(ref)enqueue({ref,method:'css',args:['display','']});return coll;};
-  coll.fadeOut=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});return coll;};
+  coll.slideDown=function(){if(ref)enqueue({ref,method:'css',args:['display','']});__kdAnimRun(coll,arguments);return coll;};
+  coll.slideUp=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});__kdAnimRun(coll,arguments);return coll;};
+  coll.fadeIn=function(){if(ref)enqueue({ref,method:'css',args:['display','']});__kdAnimRun(coll,arguments);return coll;};
+  coll.fadeOut=function(){if(ref)enqueue({ref,method:'css',args:['display','none']});__kdAnimRun(coll,arguments);return coll;};
   coll.prop=function(name,value){if(arguments.length===1){const c=__kdFindControl(sel);const st=readState();if(!c&&!st)probe(ref);if(name==='checked')return c?!!c.checked:st?!!st.checked:false;if(name==='disabled')return c?!!c.disabled:st?!!st.disabled:false;if(name==='value')return c&&typeof c.val==='string'?c.val:st&&typeof st.val==='string'?st.val:'';return false;}if(ref)enqueue({ref,method:'prop',args:[name,value]});if(name==='checked')__kdPatch(sel,{checked:!!value});else if(name==='disabled')__kdPatch(sel,{disabled:!!value});else if(name==='value')__kdPatch(sel,{val:String(value??'')});return coll;};
   coll.attr=function(name,value){
     if(arguments.length===1){
@@ -1215,11 +1259,14 @@ globalThis.waitGlobalInitialized=waitGlobalInitialized;globalThis.errorCatched=e
 globalThis.getScriptId=function(){return 'kedai-script';};
 // ---- 脚本按钮 + MVU 写变量(酒馆助手 API;悬浮球-0613 的引导段全依赖这两条) ----
 // 酒馆里 getButtonEvent(name) = scriptId + '_' + hash(name),按钮栏点击即以该事件名广播
-// (酒馆助手 src/store/iframe_runtimes/script.ts:6 getButtonId)。kedai 没有脚本按钮栏,
-// 这里保持同样的键格式:appendInexistentScriptButtons 登记按钮,宿主点按钮时按同名事件广播,
-// 脚本侧 eventOn(getButtonEvent(名字), …) 才可能收到。
+// (酒馆助手 src/store/iframe_runtimes/script.ts:6 getButtonId)。kedai 用同键格式:
+// appendInexistentScriptButtons 登记 → 宿主按钮栏渲染(script-buttons 上送) →
+// 宿主点击回投 script-button-click → 这里以同名事件广播,脚本侧 eventOn(getButtonEvent(名字)) 才收得到。
 const __kdStringHash=function(str){let h=0;for(let i=0;i<String(str).length;i++){h=(h<<5)-h+String(str).charCodeAt(i);h|=0;}return String(h);};
 const __kdScriptButtons=[];
+const __kdPublishScriptButtons=function(){
+  try{send('script-buttons',{buttons:globalThis.getScriptButtons()});}catch(_e){}
+};
 globalThis.getButtonEvent=function(name){return String(globalThis.getScriptId())+'_'+__kdStringHash(String(name));};
 globalThis.getScriptButtons=function(){return __kdScriptButtons.map(function(b){return {name:b.name,visible:!!b.visible};});};
 globalThis.appendInexistentScriptButtons=function(param1,param2){
@@ -1228,6 +1275,7 @@ globalThis.appendInexistentScriptButtons=function(param1,param2){
     if(!b||typeof b.name!=='string')continue;
     if(!__kdScriptButtons.some(function(x){return x.name===b.name;}))__kdScriptButtons.push({name:b.name,visible:b.visible!==false});
   }
+  __kdPublishScriptButtons();
   return globalThis.getScriptButtons();
 };
 globalThis.replaceScriptButtons=function(list){__kdScriptButtons.length=0;return globalThis.appendInexistentScriptButtons(list||[]);};

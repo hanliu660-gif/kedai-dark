@@ -8,6 +8,7 @@
 // 监听器全部经 registerEventListener 登记,随沙箱 cleanup 统一摘除。
 import { CHANNEL, type DraggableWire } from './protocol';
 import { eventPayload } from './event-payload';
+import { postSandboxEvent } from './host-events';
 
 /** 宿主侧事件上下文(dom-rpc 每次 applyJq 调用时组装) */
 export interface DomEventContext {
@@ -75,21 +76,19 @@ function postEvent(
         state: elementStateFor(ctx, delegate),
       }
     : { kind: 'target', id: 0, data: {}, state: {} };
-  ctx.targetWindow.postMessage(
-    {
-      channel: CHANNEL,
-      nonce: ctx.nonce,
-      type: 'jq-event',
-      jqId,
-      // 事件体必须带坐标与按键:窗口级 mousemove/mouseup 收尾拖拽要用 clientX/clientY
-      // 算起点与位移;只给 {type} 时作者脚本 Math.hypot(undefined-…) 得 NaN,拖拽与
-      // 点击判定同时静默失效(实跑:悬浮球 rect 恒 48,120、点球不开面板、零报错)。
-      event: { ...payload, ...(ui ? { type, ui } : { type }) },
-      target,
-      mirror: { controls: ctx.controlsProvider() },
-    },
-    '*',
-  );
+  // 高频事件(mousemove/touchmove/scroll)在宿主侧合帧,其余即时投递
+  postSandboxEvent(ctx.targetWindow, {
+    channel: CHANNEL,
+    nonce: ctx.nonce,
+    type: 'jq-event',
+    jqId,
+    // 事件体必须带坐标与按键:窗口级 mousemove/mouseup 收尾拖拽要用 clientX/clientY
+    // 算起点与位移;只给 {type} 时作者脚本 Math.hypot(undefined-…) 得 NaN,拖拽与
+    // 点击判定同时静默失效(实跑:悬浮球 rect 恒 48,120、点球不开面板、零报错)。
+    event: { ...payload, ...(ui ? { type, ui } : { type }) },
+    target,
+    mirror: { controls: ctx.controlsProvider() },
+  });
 }
 
 /** 委托目标的元素状态快照(elementStateProvider 由 dom-rpc 注入,缺失时退回最小字段) */

@@ -14,6 +14,7 @@ import {
   executeSandboxedCharacterScript,
   type SandboxCleanup,
   type SandboxExecutionContext,
+  type SandboxScriptButton,
 } from './characterScriptSandbox';
 import { emptyVariables, type MvuVariables } from './mvu/variables';
 import { getCharacterWorldEntries, saveCharacterWorldEntries } from './api/worldbooks';
@@ -52,6 +53,12 @@ export interface CardScriptHostOptions {
    * 之后的增量更新仍走 chat store 的 broadcastMvuUpdate(宿主→沙箱 mvu-event)。
    */
   mvuVariables?: MvuVariables;
+  /**
+   * 卡脚本按钮变化回调(可选):脚本 `appendInexistentScriptButtons` 登记按钮后上送全量列表,
+   * 宿主据此渲染按钮栏(酒馆「脚本按钮」区)。悬浮窗类卡「关闭后靠按钮重开」全依赖这条链路,
+   * 没有它关掉悬浮窗就只能刷新页面。点击经 `clickCardScriptButton(name)` 回投沙箱。
+   */
+  onScriptButtons?: (buttons: SandboxScriptButton[]) => void;
 }
 
 // ---- 世界书条目形态映射:kedai WorldBookEntry → 酒馆助手条目 ----
@@ -247,6 +254,8 @@ interface ActiveCardSandboxes {
   cleanups: SandboxCleanup[];
   /** 本次沙箱的容器:cleanup 时移除覆层根与 data-kd-scope 锚点 */
   container?: HTMLElement;
+  /** 沙箱执行上下文:iframe-lifecycle 会写入 sendToSandbox(宿主→沙箱投递入口) */
+  context?: SandboxExecutionContext;
 }
 
 let active: ActiveCardSandboxes | null = null;
@@ -331,19 +340,23 @@ async function ensureInner(opts: CardScriptHostOptions): Promise<void> {
   ensureOverlayRoot(opts.container, scopeId);
   const rpcExtensions = makeCardScriptRpcExtensions(opts);
   const cleanups: SandboxCleanup[] = [];
-  active = { key, cleanups, container: opts.container };
+  // 上下文先建好再交给执行器:iframe 就绪后执行器会往同一个对象上写 sendToSandbox,
+  // 因此按钮点击能直接经 active.context 回投(见 clickCardScriptButton)
+  const context: SandboxExecutionContext = {
+    container: opts.container,
+    variables: opts.mvuVariables ?? emptyVariables(),
+    characterId: opts.characterId,
+    lorebookName: opts.lorebookName,
+    rpcExtensions,
+    onScriptButtons: opts.onScriptButtons,
+  };
+  active = { key, cleanups, container: opts.container, context };
   // 全部可运行脚本合并进单个沙箱 realm(逐 <script> 注入,共享 window):
   // 同卡多脚本(MVU Edition 剧情数据库 → 界面脚本)靠 window 全局互相通信,
   // 逐脚本各一个 realm 会让后者读不到前者挂的共享数据
   const segments = runnable.map((s) => ({ name: s.name || s.id, code: s.content }));
   try {
-    const cleanup = await executeSandboxedCharacterScript(segments, {
-      container: opts.container,
-      variables: opts.mvuVariables ?? emptyVariables(),
-      characterId: opts.characterId,
-      lorebookName: opts.lorebookName,
-      rpcExtensions,
-    });
+    const cleanup = await executeSandboxedCharacterScript(segments, context);
     cleanups.push(cleanup);
   } catch (error) {
     // 整体失败(容器已卸载/启动超时):错误提示已由沙箱挂到容器
@@ -364,4 +377,17 @@ export function ensureCardScriptSandbox(opts: CardScriptHostOptions): Promise<vo
   const task = queue.then(() => ensureInner(opts));
   queue = task.catch(() => {});
   return task;
+}
+
+/**
+ * 点击宿主按钮栏里的卡脚本按钮:按酒馆脚本按钮语义回投沙箱,
+ * 沙箱以 `getButtonEvent(name)` 事件名广播,作者脚本 `eventOn(...)` 才收得到。
+ * 沙箱未运行(切卡中/未授权)时静默忽略——按钮栏此时通常也不存在。
+ */
+export function clickCardScriptButton(name: string): void {
+  const context = active?.context;
+  const send = context?.sendToSandbox;
+  if (!send) return;
+  if (typeof name !== 'string' || !name) return;
+  send({ type: 'script-button-click', name });
 }

@@ -3,6 +3,8 @@
 // handle/cancel 过滤、destroy 摘除、jq-event 回包与监听器登记。
 import { describe, expect, it } from 'vitest';
 import { applyDraggable, bindGlobalEvents, destroyDraggable, type DomEventContext } from './draggable';
+// 高频事件(pointermove / drag 回调)在宿主侧合帧,测试里手动跑一帧再断言
+import { flushPendingSandboxEvents, resetPendingSandboxEvents } from './host-events';
 
 /** 最小事件目标桩:记录监听器并可派发 */
 class StubTarget {
@@ -152,6 +154,8 @@ describe('applyDraggable(宿主侧拖拽)', () => {
     pointerDown(el, 120, 120);
     doc.dispatch('pointermove', { clientX: 160, clientY: 140 });
     doc.dispatch('pointerup', {});
+    // pointermove/drag 属于合帧事件:手动投递后才有回包
+    flushPendingSandboxEvents();
     const byId = (id: number) => messages.find((m) => m.jqId === id) as {
       type?: string;
       event?: { type?: string; ui?: { position?: { left: number; top: number } } };
@@ -214,6 +218,7 @@ describe('bindGlobalEvents($(window)/$(document) 事件绑定)', () => {
     bindGlobalEvents({ kind: 'window' }, ['mousemove', 'mouseup'], 11, ctx);
     win.dispatch('mousemove', { clientX: 320, clientY: 210, pageX: 320, pageY: 210, screenX: 300, screenY: 200 });
     win.dispatch('mouseup', { clientX: 322, clientY: 213, button: 0 });
+    flushPendingSandboxEvents();
     const move = messages.find((m) => (m.event as Record<string, unknown>)?.type === 'mousemove');
     const up = messages.find((m) => (m.event as Record<string, unknown>)?.type === 'mouseup');
     expect(move?.jqId).toBe(11);

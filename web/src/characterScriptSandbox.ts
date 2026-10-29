@@ -4,6 +4,7 @@ export {
   type SandboxCleanup,
   type SandboxEnvironment,
   type SandboxExecutionContext,
+  type SandboxScriptButton,
 } from './sandbox/protocol';
 export { sandboxScript } from './sandbox/boot-script';
 export { readCardGlobals, readScriptLocalStorage } from './sandbox/dom-rpc';

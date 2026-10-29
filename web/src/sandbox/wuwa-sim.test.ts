@@ -131,6 +131,27 @@ describe('WuWa 悬浮窗脚本形态端到端模拟', () => {
     expect(winOn.length).toBe(2);
   });
 
+  // 回归:jQuery 动画方法的回调必须执行。卡里的「关闭」是
+  //   s.stop(true,true).fadeOut(120, function(){ 把球重新显示出来 })
+  // 垫片早期把回调整个丢掉 => 点关闭后球永久消失、只能刷新(2026-10-29 实跑复现)。
+  it('fadeOut/fadeIn/hide/show/slideUp 的效果回调都会执行(关面板后球要能回来)', async () => {
+    const h = makeHarness('sim-anim-cb');
+    const code = [
+      "$('<div>').appendTo('body').stop(true, true).fadeOut(10, function(){ warn('cb-fadeOut'); });",
+      "$('<div>').appendTo('body').fadeIn(10, function(){ warn('cb-fadeIn'); });",
+      "$('<div>').appendTo('body').hide(10, function(){ warn('cb-hide'); });",
+      "$('<div>').appendTo('body').show(10, function(){ warn('cb-show'); });",
+      "$('<div>').appendTo('body').slideUp(function(){ warn('cb-slideUp'); });",
+    ].join('\n');
+    await h.run(code);
+    await new Promise((r) => setTimeout(r, 60));
+    const cbs = h.messages
+      .filter((m) => m.type === 'warn')
+      .map((m) => String(m.message))
+      .filter((w) => w.startsWith('cb-'));
+    expect(cbs.sort()).toEqual(['cb-fadeIn', 'cb-fadeOut', 'cb-hide', 'cb-show', 'cb-slideUp']);
+  });
+
   it('css 对象形式与字符串 getter 并存,is(:hidden)/toggle 不抛错', async () => {
     const h = makeHarness('sim-css');
     const code = [
@@ -329,5 +350,79 @@ describe('游离元素 appendTo 挂载(悬浮球形态)', () => {
     expect(warns.some((w) => w === 'nil=true,false clamp=5')).toBe(true);
     expect(warns.some((w) => w === 'chat=function')).toBe(true);
     expect(h.messages.filter((m) => m.type === 'error')).toHaveLength(0);
+  });
+});
+
+// 卡脚本按钮(酒馆「脚本按钮」区):悬浮窗类卡「关闭只收面板 + 球 display:none」,
+// 重开全靠 appendInexistentScriptButtons + eventOn(getButtonEvent(name))。
+// 只把按钮记在沙箱内存里等于关掉就再也回不来(2026-10-29 实跑),这里锁定整条链路:
+// 登记 → 上送 script-buttons → 宿主点击回投 script-button-click → 作者回调被触发。
+describe('卡脚本按钮(悬浮窗开关链路)', () => {
+  it('登记后上送 script-buttons;宿主回投点击后 eventOn(getButtonEvent(name)) 收到', async () => {
+    const h = makeHarness('sim-buttons');
+    const code = [
+      "appendInexistentScriptButtons([{name:'悬浮窗开关',visible:true}]);",
+      "eventOn(getButtonEvent('悬浮窗开关'), function(){ $('#reopen').css('display',''); });",
+    ].join('\n');
+    await h.run(code);
+    const sent = h.messages.filter((m) => m.type === 'script-buttons');
+    expect(sent.length).toBeGreaterThan(0);
+    const buttons = sent[sent.length - 1].buttons as Array<{ name: string; visible?: boolean }>;
+    expect(buttons.map((b) => b.name)).toContain('悬浮窗开关');
+    expect(buttons[0].visible).toBe(true);
+
+    const before = h.messages.filter((m) => m.type === 'batch').length;
+    h.dispatch({
+      channel: 'kedai-character-script-v1',
+      nonce: 'sim-buttons',
+      type: 'script-button-click',
+      name: '悬浮窗开关',
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    // 作者回调真的执行了:它会发出 css 写入(display '')
+    const newOps = h.messages
+      .filter((m) => m.type === 'batch')
+      .slice(before)
+      .flatMap((m) => (m.ops ?? []) as Array<{ method?: string; ref?: { value?: string }; args?: unknown[] }>);
+    expect(newOps.some((o) => o.method === 'css' && o.ref?.value === '#reopen')).toBe(true);
+    expect(h.messages.filter((m) => m.type === 'error')).toHaveLength(0);
+  });
+
+  // 回归:沙箱 iframe 是 display:none 的不可见文档,其 realm 内 requestAnimationFrame
+  // 永不回调(2026-10-29 实测:1.5s 只跑 1 帧)。所以**沙箱侧绝不能把事件派发挂到 rAF 上**
+  // ——曾经这么干过一次,导致所有 jq-event 永久积压、点球/点 tab/点关闭全静默无反应。
+  // 合帧只能在宿主侧(host-events.ts)做。本用例断言:三条事件全部按序同步派发。
+  it('事件派发不依赖 rAF:连发三条 mousemove 全部按序到达(合帧只在宿主侧做)', async () => {
+    const h = makeHarness('sim-sync-events');
+    const code = [
+      "$(window).on('mousemove', function(e){ warn('move ' + e.clientX); });",
+    ].join('\n');
+    await h.run(code);
+    const onOp = h.messages
+      .filter((m) => m.type === 'batch')
+      .flatMap((m) => (m.ops ?? []) as Array<{ method?: string; args?: unknown[] }>)
+      .find((o) => o.method === 'on');
+    expect(onOp).toBeTruthy();
+    const jqId = Number(((onOp?.args ?? []) as unknown[])[1]);
+    const warnsBefore = h.messages.filter((m) => m.type === 'warn').length;
+    for (const clientX of [10, 20, 30]) {
+      h.dispatch({
+        channel: 'kedai-character-script-v1',
+        nonce: 'sim-sync-events',
+        type: 'jq-event',
+        jqId,
+        event: { type: 'mousemove', clientX, clientY: 5 },
+        target: { kind: 'target', id: 0, data: {}, state: { tag: 'div', classes: [] } },
+        mirror: { selectors: {}, controls: [] },
+      });
+    }
+    // 只等一个宏任务(不是一帧):rAF 在这个隐藏文档里永远不会来
+    await new Promise((r) => setTimeout(r, 0));
+    const moveWarns = h.messages
+      .filter((m) => m.type === 'warn')
+      .slice(warnsBefore)
+      .map((m) => String(m.message))
+      .filter((w) => w.startsWith('move '));
+    expect(moveWarns).toEqual(['move 10', 'move 20', 'move 30']);
   });
 });

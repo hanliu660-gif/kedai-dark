@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ScriptRunner } from './scriptRunner';
+// scroll/wheel 属于宿主侧合帧事件:断言前手动跑一帧
+import { flushPendingSandboxEvents } from './sandbox/host-events';
 import {
   executeSandboxedCharacterScript,
   sandboxAttributes,
@@ -388,6 +390,7 @@ describe('executeSandboxedCharacterScript(inline 事件桥宿主半)', () => {
     // 分别触发:事件类型各自真实,jqId 保持 7,目标状态带滚动度量
     listeners.scroll?.();
     listeners.wheel?.();
+    flushPendingSandboxEvents();
     const events = harness.postMessage.mock.calls
       .map((call) => call[0] as { type?: string; jqId?: number; event?: { type?: string }; target?: { state?: Record<string, unknown> } })
       .filter((m) => m.type === 'jq-event');

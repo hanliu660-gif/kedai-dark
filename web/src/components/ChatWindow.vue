@@ -8,7 +8,7 @@ import { installMvuGlobals } from '../mvu/host';
 import { ScriptRunner, type SandboxRpcExtensions } from '../scriptRunner';
 import { executeCurrentMessageScripts as scheduleCurrentMessageScripts } from '../chatMessageScriptScheduler';
 import { enabledCardScriptsOf } from '../cardScripts';
-import { cleanupCardScriptSandbox, ensureCardScriptSandbox, makeCardScriptRpcExtensions } from '../cardScriptHost';
+import { cleanupCardScriptSandbox, ensureCardScriptSandbox, makeCardScriptRpcExtensions, clickCardScriptButton } from '../cardScriptHost';
 import { useVirtualMessages } from '../composables/useVirtualMessages';
 import { useResourceFrames } from '../composables/useResourceFrames';
 import { scriptBlocksCache, buildScriptBlocksKey } from '../renderCache';
@@ -47,6 +47,10 @@ const panelHost = ref<InstanceType<typeof RenderPanelHost> | null>(null);
 const scrollArea = computed<HTMLElement | null>(() => panelHost.value?.el ?? null);
 /** 脚本执行器(内部含 [InitVar] 解析缓存;角色切换/条目变化自动失效) */
 const scriptRunner = new ScriptRunner();
+/** 卡脚本按钮(酒馆「脚本按钮」区):由沙箱 appendInexistentScriptButtons 登记后上送 */
+const scriptButtons = ref<{ name: string; visible?: boolean }[]>([]);
+/** 只渲染 visible !== false 的按钮(酒馆 appendInexistentScriptButtons 的 visible 语义) */
+const visibleScriptButtons = computed(() => scriptButtons.value.filter((b) => b.visible !== false));
 
 /** 当前角色正则脚本 + 全局正则库(显示层生效;合并顺序:全局在前、卡级在后,
  *  见 utils/regexMerge.ts。全局库变化会同时改 currentScriptHash 使渲染缓存失效) */
@@ -266,6 +270,7 @@ async function syncCardScriptSandbox(force = false): Promise<void> {
   const hash = currentScriptHash.value;
   if (!id || !authorized || !hash) {
     cleanupCardScriptSandbox();
+    scriptButtons.value = [];
     return;
   }
   // 列表项无 data_raw(体积大):卡级脚本与主世界书名必须读详情缓存
@@ -275,6 +280,7 @@ async function syncCardScriptSandbox(force = false): Promise<void> {
   const scripts = enabledCardScriptsOf(detail);
   if (scripts.length === 0 || !scrollArea.value) {
     cleanupCardScriptSandbox();
+    scriptButtons.value = [];
     return;
   }
   const book = (detail?.data_raw as Record<string, unknown> | undefined)?.character_book as
@@ -290,6 +296,10 @@ async function syncCardScriptSandbox(force = false): Promise<void> {
     // 卡内脚本一上来就 Mvu.getMvuData() 读状态(悬浮球-0613 的衣柜/商店全走这条),
     // 空树会让它读到空对象后自行降级;之后的增量更新由 chat store 的 broadcastMvuUpdate 推送。
     mvuVariables: mvuVariables.value,
+    // 卡脚本按钮(酒馆「脚本按钮」区):悬浮窗关掉后靠这里再打开
+    onScriptButtons: (list) => {
+      scriptButtons.value = list;
+    },
     force,
   });
 }
@@ -481,6 +491,20 @@ function bindRowRef(id: number, target: unknown): void {
       >✕</button>
     </div>
 
+    <!-- 卡脚本按钮栏(酒馆「脚本按钮」区):悬浮窗类卡关掉界面后靠这里再打开。
+         普通流式排布,不用绝对定位——曾在沙箱里误给铺满屏的覆层补 pointer-events:auto
+         吃掉整页点击,这里不再叠一层浮层。 -->
+    <div v-if="visibleScriptButtons.length" class="sv-script-bar" role="toolbar" aria-label="角色卡脚本按钮">
+      <span class="sv-script-bar-label">卡脚本</span>
+      <button
+        v-for="b in visibleScriptButtons"
+        :key="b.name"
+        type="button"
+        class="sv-btn sv-btn-sm"
+        @click="clickCardScriptButton(b.name)"
+      >{{ b.name }}</button>
+    </div>
+
     <!-- 底部输入区 -->
     <ChatInput />
 
@@ -495,6 +519,20 @@ function bindRowRef(id: number, target: unknown): void {
 .sv-chat-error {
   flex-wrap: wrap;
   margin: 0 var(--space-3) var(--space-2);
+}
+/* 卡脚本按钮栏:流式一行,左标签 + 按钮;不吸底、不浮层(见模板注释) */
+.sv-script-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0 var(--space-3) var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--sv-line);
+}
+.sv-script-bar-label {
+  font-size: var(--text-xs);
+  color: var(--sv-ink-faint);
 }
 .sv-chat-error-text {
   display: flex;

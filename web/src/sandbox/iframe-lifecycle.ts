@@ -403,6 +403,17 @@ export async function executeSandboxedCharacterScript(
           };
           if (utf8Bytes(boot) > MAX_MESSAGE_BYTES) throw new Error('角色卡脚本启动消息过大');
           if (iframe.contentWindow) liveSandboxes.set(nonce, iframe.contentWindow);
+          // 宿主→沙箱投递入口:脚本按钮点击等宿主侧动作经此回投沙箱(见 script-button-click)
+          const targetWin = iframe.contentWindow;
+          if (targetWin) {
+            context.sendToSandbox = (request) => {
+              try {
+                targetWin.postMessage({ channel: CHANNEL, nonce, ...request }, '*');
+              } catch {
+                /* 沙箱已卸载:忽略 */
+              }
+            };
+          }
           // 静态 HTML 的降级 inline 事件(data-kd-on*)在脚本运行前先绑好,
           // 作者脚本 boot 期间的同步点击也能正确路由
           bindInlineHandlers();
@@ -412,6 +423,11 @@ export async function executeSandboxedCharacterScript(
           iframe.contentWindow?.postMessage(boot, '*');
         } else if (utf8Bytes(message) > MAX_MESSAGE_BYTES) {
           throw new Error('角色卡脚本消息过大');
+        } else if (message.type === 'script-buttons') {
+          // 卡脚本按钮登记(appendInexistentScriptButtons):交给宿主渲染按钮栏,
+          // 点击时再经 sendToSandbox 回投 script-button-click(酒馆脚本按钮语义)
+          const list = Array.isArray(message.buttons) ? message.buttons : [];
+          context.onScriptButtons?.(list);
         } else if (message.type === 'local-storage') {
           // 沙箱 localStorage 持久化桥:set/remove/clear 落宿主 localStorage(ST 源级语义)
           applyScriptLocalStorageOp(String(message.op ?? ''), message.key, message.value);
