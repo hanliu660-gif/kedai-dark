@@ -513,6 +513,24 @@ mod tests {
         assert_eq!(parse_inject_tag("GENERATE:BEFORE]"), InjectTag::None);
     }
 
+    /// YAML 块标量(`>-` 折叠 / `|` 字面):社区整页卡(露出日记-0615)的衣物描述
+    /// 全部用折叠标量,不认它会把描述行当新键值对(键名变 `>-`)。
+    #[test]
+    fn collect_init_vars_block_scalar() {
+        let content = "主角:\n  衣柜:\n    上装:\n      白色宽大T恤: >-\n        纯棉,厚0.8mm,低弹.设计基准:胸围差13/腰围68.\n        圆领,口深8cm。(暴露值:5)\n      备注: |\n        第一行\n        第二行\n";
+        let v = collect_init_vars(&[entry("[InitVar]", content)]);
+        assert_eq!(
+            v.get_value("主角.衣柜.上装.白色宽大T恤"),
+            Some(&json!(
+                "纯棉,厚0.8mm,低弹.设计基准:胸围差13/腰围68. 圆领,口深8cm。(暴露值:5)"
+            ))
+        );
+        assert_eq!(
+            v.get_value("主角.衣柜.上装.备注"),
+            Some(&json!("第一行\n第二行"))
+        );
+    }
+
     /// collect_init_vars 兼容 [InitialVariables] 标签
     #[test]
     fn collect_init_vars_accepts_initial_variables_tag() {

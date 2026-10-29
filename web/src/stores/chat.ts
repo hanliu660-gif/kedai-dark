@@ -11,7 +11,8 @@ import { parseUpdateVariable } from '../mvu/parser';
 import { broadcastCardEvent, broadcastMvuUpdate } from '../characterScriptSandbox';
 // SSE 事件纯函数化 + mvu 状态纯函数(经 '../api' 类型依赖)
 import { idleAgent, reduceSseEvent } from '../sseReducer';
-import { applyMvuCommands, replayMvuVariables } from '../mvu/mvuStore';
+import { applyMvuCommands, replayMvuVariables, withInitVarSeed } from '../mvu/mvuStore';
+import { wrapStatTree } from '../mvu/unwrap';
 import type { MvuVars } from '../mvu/mvuStore';
 import type { AgentActivity, UiMessage } from '../sseReducer';
 import { createChatStreamService } from '../chatStreamService';
@@ -160,7 +161,7 @@ export const useChatStore = defineStore('app.chat', () => {
       // 随后发送/重发(按 A 的锚点 truncate)会污染甚至误删 B 的历史。
       if (currentSessionId.value !== sessionId) return;
       messages.value = msgs.map((m) => ({ ...m, streaming: false }));
-      mvuVariables.value = replayMvuVariables(msgs);
+      mvuVariables.value = withInitVarSeed(replayMvuVariables(msgs), initVarEntries.value);
       updateContextTokens(msgs);
       void loadTokenTotals(sessionId);
       // 恢复该会话的 Agent 记录(实跑问题 4:此前 agent 纯内存,切会话/重启即丢;
@@ -230,8 +231,14 @@ export const useChatStore = defineStore('app.chat', () => {
   async function applyMvuUpdate(m: { id: number; content: string; extra?: Record<string, unknown> }): Promise<void> {
     const parsed = parseUpdateVariable(m.content);
     if (parsed.commands.length === 0 && !parsed.initvar) return;
-    // initvar 仅在变量树为空时播种(开场初始化),随后按序应用 _.set/JSONPatch 命令
-    mvuVariables.value = applyMvuCommands(mvuVariables.value, parsed.commands, parsed.initvar);
+    // initvar 仅在变量树为空时播种(开场初始化),随后按序应用 _.set/JSONPatch 命令。
+    // 先补世界书 [InitVar] 播种:整页前端卡的首轮常常既无 <initvar> 也无声明的初始值,
+    // 初始变量只存在世界书条目里(露出日记-0615 即如此)。
+    mvuVariables.value = applyMvuCommands(
+      withInitVarSeed(mvuVariables.value, initVarEntries.value),
+      parsed.commands,
+      parsed.initvar,
+    );
     // 兼容原版 MagVarUpdate:变量更新后触发 mag_variable_updated 事件
     emitMvuEvent('mag_variable_updated', {
       stat_data: mvuVariables.value.stat_data,
@@ -389,7 +396,7 @@ export const useChatStore = defineStore('app.chat', () => {
         }
       }
       await api.saveAssistantVars(sid, snap?.stat_data ?? {});
-      mvuVariables.value = replayMvuVariables(kept);
+      mvuVariables.value = withInitVarSeed(replayMvuVariables(kept), initVarEntries.value);
       broadcastMvuUpdate(mvuVariables.value);
     } catch (e) {
       console.warn('回滚变量树失败(仅影响变量状态,不影响重发)', e);
@@ -452,7 +459,7 @@ export const useChatStore = defineStore('app.chat', () => {
         }
       }
       await api.saveAssistantVars(sid, snap?.stat_data ?? {});
-      mvuVariables.value = replayMvuVariables(kept);
+      mvuVariables.value = withInitVarSeed(replayMvuVariables(kept), initVarEntries.value);
       broadcastMvuUpdate(mvuVariables.value);
     } catch (e) {
       console.warn('回滚变量树失败(仅影响变量状态,不影响重生成)', e);
@@ -662,9 +669,14 @@ export const useChatStore = defineStore('app.chat', () => {
       console.warn(`角色卡脚本写回的变量过大(${Math.round(size / 1024)}KB),已忽略`);
       return;
     }
+    // 作者脚本看到/写回的是酒馆同款**裸值树**(帧内已整树解包,见 mvu/unwrap.ts),
+    // 存储侧仍要 MagVarUpdate 的 [值, 原因] 成对约定 ⇒ 写回边界原路包回,
+    // 原因沿用旧树同路径(不抹掉 AI 的更新理由)。包不回的话下一次读取会把裸值当叶子对。
+    const wrappedStat = wrapStatTree(stat, mvuVariables.value.stat_data) as Record<string, unknown>;
+    const wrappedDisp = wrapStatTree(disp, mvuVariables.value.display_data) as Record<string, unknown>;
     mvuVariables.value = {
-      stat_data: stat as Record<string, unknown>,
-      display_data: disp as Record<string, unknown>,
+      stat_data: wrappedStat,
+      display_data: wrappedDisp,
     };
     emitMvuEvent('mag_variable_updated', {
       stat_data: mvuVariables.value.stat_data,

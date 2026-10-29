@@ -197,7 +197,27 @@ export function collectFromInitVarContent(content: string): Record<string, unkno
   return out;
 }
 
-/** 解析 YAML 风格缩进键值对(只支持字符串/数字/布尔/null,忽略注释与列表) */
+/** YAML 块标量标记(`>-` / `>` / `|` / `|-` / `>+` / 带缩进指示数字):返回折叠型 or 字面型 */
+function blockScalarKind(raw: string): 'folded' | 'literal' | null {
+  const m = /^([|>])([+-]?\d*)$/.exec(raw.trim());
+  if (!m) return null;
+  return m[1] === '>' ? 'folded' : 'literal';
+}
+
+/** 组装 YAML 块标量表:`>` 折叠(相邻非空行以空格连接、空行变换行),`|` 字面保留换行;chomping 去尾部空白 */
+function foldBlockScalar(body: string[], kind: 'folded' | 'literal'): string {
+  const joined =
+    kind === 'literal'
+      ? body.join('\n')
+      : body.reduce((acc, piece) => {
+          if (piece === '') return `${acc}\n`;
+          if (acc === '' || acc.endsWith('\n')) return acc + piece;
+          return `${acc} ${piece}`;
+        }, '');
+  return joined.replace(/\s+$/, '');
+}
+
+/** 解析 YAML 风格缩进键值对(只支持字符串/数字/布尔/null/块标量,忽略注释与列表) */
 function parseIndentedYaml(content: string): Record<string, unknown> {
   const lines = content
     .split(/\r?\n/)
@@ -207,7 +227,8 @@ function parseIndentedYaml(content: string): Record<string, unknown> {
   if (lines.length === 0) return {};
   const root: Record<string, unknown> = {};
   const stack: Array<{ indent: number; obj: Record<string, unknown> }> = [{ indent: -1, obj: root }];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     const colon = line.raw.indexOf(':');
     if (colon <= 0) continue;
     const key = line.raw.slice(0, colon).trim().replace(/^['"]|['"]$/g, '');
@@ -217,6 +238,20 @@ function parseIndentedYaml(content: string): Record<string, unknown> {
       stack.pop();
     }
     const parent = stack[stack.length - 1].obj;
+    // YAML 块标量(`key: >-` 后面缩进更深的行属于该值)。
+    // 社区整页卡(露出日记-0615 等)的**每一件衣物描述**都是 `>-` 折叠标量:
+    // 不认它会把描述行当成新的键值对(键名变成 `>-`、描述被拆成半截键),
+    // 整页卡「着装」展开后拿到的全是垃圾键 → 界面上一条都显示不出来。
+    const blockKind = blockScalarKind(valueRaw);
+    if (blockKind) {
+      const body: string[] = [];
+      while (i + 1 < lines.length && lines[i + 1].indent > line.indent) {
+        i += 1;
+        body.push(lines[i].raw);
+      }
+      parent[key] = foldBlockScalar(body, blockKind);
+      continue;
+    }
     if (valueRaw === '') {
       // 子节点
       const child: Record<string, unknown> = {};

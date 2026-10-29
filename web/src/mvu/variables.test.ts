@@ -137,6 +137,44 @@ describe('collectFromInitVarContent', () => {
     expect(statValue(pathGet(out, '身体资讯.情绪'))).toBe('平静');
   });
 
+  it('YAML 块标量(>- 折叠 / | 字面):真实卡「露出日记-0615」[InitVar] 的衣物描述', () => {
+    // 取自该卡世界书 entry 33「墨墨露出变量描述[InitVar]」原文的关键子集:
+    // 8 个衣柜类别的每件衣服都用 `>-` 折叠块标量写描述,不认块标量会把描述行
+    // 当成新的键值对(键名变 `>-`、描述被拆成半截键),整页卡「着装」列表因此全空。
+    const out = collectFromInitVarContent(
+      [
+        '主角:',
+        '  衣柜:',
+        '    上装:',
+        '      $meta:',
+        '        extensible: true',
+        '      白色宽大T恤: >-',
+        '        纯棉,厚0.8mm,低弹.设计基准:胸围差13/腰围68.圆领,口深8cm宽20cm.(暴露值:5)',
+        '      霖州大学校服衬衫: >',
+        '        涤棉混纺(65/35),厚0.5mm,低弹',
+        '        翻领,长袖.(暴露值:2)',
+        '    备注: |-',
+        '      第一行',
+        '      第二行',
+      ].join('\n'),
+    );
+    expect(statValue(pathGet(out, '主角.衣柜.上装.白色宽大T恤'))).toBe(
+      '纯棉,厚0.8mm,低弹.设计基准:胸围差13/腰围68.圆领,口深8cm宽20cm.(暴露值:5)',
+    );
+    // `>` 折叠:相邻非空行以空格连接
+    expect(statValue(pathGet(out, '主角.衣柜.上装.霖州大学校服衬衫'))).toBe(
+      '涤棉混纺(65/35),厚0.5mm,低弹 翻领,长袖.(暴露值:2)',
+    );
+    // 块标量内容不得再被解析成键:该层只剩 $meta 与两件衣服
+    expect(Object.keys((pathGet(out, '主角.衣柜.上装') as Record<string, unknown>) ?? {})).toEqual([
+      '$meta',
+      '白色宽大T恤',
+      '霖州大学校服衬衫',
+    ]);
+    // `|` 字面:保留换行
+    expect(statValue(pathGet(out, '主角.衣柜.备注'))).toBe('第一行\n第二行');
+  });
+
   it('wuwa 备用开场 initvar 真实片段(注释/三层嵌套/布尔/空容器)', () => {
     // 取自 wuwa 卡备用开场 1(花房)尾部 <UpdateVariable><initvar> 原文的关键子集
     const out = collectFromInitVarContent(

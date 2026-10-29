@@ -113,6 +113,20 @@ fn parse_yaml_block(
             .to_string();
         let value_raw = raw[colon + 1..].trim().to_string();
         *idx += 1;
+        // YAML 块标量(`key: >-` / `key: |`):后续缩进更深的行都属于这个值。
+        // 社区整页卡(露出日记-0615 等)的衣物/物品描述全是折叠标量;不认它会把
+        // 描述行当新的键值对,key 变成 `>-`、描述被拆成半截键,变量树整层错乱。
+        // 前端镜像实现:web/src/mvu/variables.ts(blockScalarKind/foldBlockScalar)。
+        if let Some(folded) = block_scalar_marker(&value_raw) {
+            let base_indent = *ind;
+            let mut body: Vec<String> = Vec::new();
+            while *idx < lines.len() && lines[*idx].0 > base_indent {
+                body.push(lines[*idx].1.clone());
+                *idx += 1;
+            }
+            obj.insert(key, Value::String(fold_block_scalar(&body, folded)));
+            continue;
+        }
         if value_raw.is_empty() {
             // 子节点:下一行缩进更深则递归
             if *idx < lines.len() && lines[*idx].0 > indent {
@@ -127,6 +141,47 @@ fn parse_yaml_block(
         }
     }
     obj
+}
+
+/// YAML 块标量标记(`>` 折叠 / `|` 字面,允许 `-`/`+` chomp 与缩进指示数字)。
+/// 返回 `Some(true)` = 折叠型,`Some(false)` = 字面型,`None` = 普通标量。
+fn block_scalar_marker(raw: &str) -> Option<bool> {
+    let t = raw.trim();
+    let mut chars = t.chars();
+    let head = chars.next()?;
+    if head != '>' && head != '|' {
+        return None;
+    }
+    let rest = chars.as_str();
+    if !rest
+        .chars()
+        .all(|c| c == '-' || c == '+' || c.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(head == '>')
+}
+
+/// 组装块标量:`>` 折叠(相邻非空行以空格连接、空行变换行),`|` 字面保留换行;
+/// 末尾 chomp 掉尾部空白(与 YAML clip chomping 一致,不保留末尾空行)。
+fn fold_block_scalar(body: &[String], folded: bool) -> String {
+    let joined = if folded {
+        let mut out = String::new();
+        for piece in body {
+            if piece.is_empty() {
+                out.push('\n');
+            } else if out.is_empty() || out.ends_with('\n') {
+                out.push_str(piece);
+            } else {
+                out.push(' ');
+                out.push_str(piece);
+            }
+        }
+        out
+    } else {
+        body.join("\n")
+    };
+    joined.trim_end().to_string()
 }
 
 fn parse_yaml_scalar(raw: &str) -> Value {

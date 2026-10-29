@@ -23,6 +23,7 @@ import { applyResourceSync, loadResourceSnapshot, type ResourceSyncMessage } fro
 import { allowResourceDomain, isResourceDomainAllowed, resourceDomainOf } from '../resourceDomains';
 import { inlineCardPayload } from '../inlineCardRegistry';
 import { clearScriptErrorNotices } from '../render';
+import { unwrapStatTree } from '../mvu/unwrap';
 
 /** 卡片说明区默认文案(与 render.ts::buildRemoteResourceHtml 的初值同源,单处维护) */
 const DEFAULT_RESOURCE_NOTE =
@@ -234,9 +235,12 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
       const rawMvu = opts.mvuVariables?.value;
       if (rawMvu) {
         try {
+          // 整树解包:存储侧的 stat_data 叶子是 MagVarUpdate 的 [值, 原因] 对,而酒馆生态的
+          // 作者脚本只认裸值(卡里满屏 `typeof v === 'string'`)——不解包则任何列表都过滤成空。
+          // 写回方向由 store 的 replaceMvuVariables 包回(wrapStatTree),见 mvu/unwrap.ts。
           mvuSnapshot = {
-            stat_data: sanitizePlaneObject(rawMvu.stat_data),
-            display_data: sanitizePlaneObject(rawMvu.display_data),
+            stat_data: sanitizePlaneObject(unwrapStatTree(rawMvu.stat_data)),
+            display_data: sanitizePlaneObject(unwrapStatTree(rawMvu.display_data)),
           };
         } catch {
           mvuSnapshot = null; // 循环引用等异常:按无变量继续 boot
@@ -433,9 +437,10 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
    * ids 支持:单 id、id 数组、楼层序号(数字)、'latest';缺省/null 返回全部。
    */
   function readChatMessages(args: unknown): Array<Record<string, unknown>> {
+    // 与 boot 处同源:下发给作者脚本的 stat_data 必须是裸值(酒馆口径)。
     const snapshot = {
-      stat_data: sanitizePlaneObject(opts.mvuVariables?.value?.stat_data ?? {}),
-      display_data: sanitizePlaneObject(opts.mvuVariables?.value?.display_data ?? {}),
+      stat_data: sanitizePlaneObject(unwrapStatTree(opts.mvuVariables?.value?.stat_data ?? {})),
+      display_data: sanitizePlaneObject(unwrapStatTree(opts.mvuVariables?.value?.display_data ?? {})),
     };
     const list = opts.messages?.value ?? [];
     const rows = list.map((msg, index) => ({

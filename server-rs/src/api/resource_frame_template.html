@@ -356,10 +356,32 @@ function installTavernHelper(charData, worldbook) {
 // 酒馆整页卡的通用依赖:window.Mvu.getMvuData/replaceMvuData + 变量事件。
 // 变量真身在宿主(单会话一份),这里只持快照:读走快照,写回经 mvu-replace 上报宿主落库。
 // 与沙箱 boot-script 里的 Mvu 面向作者脚本的形态保持一致(同一批卡片两边都要能跑)。
+
+// 整树解包:宿主存储侧 stat_data 的叶子是 MagVarUpdate 的 [值, 原因] 成对数组
+// (如 ["纯棉,厚0.8mm", "初始"]),而酒馆生态的作者脚本只认裸值——卡里普遍写
+// `typeof v === 'string'` 过滤列表项,拿到数组就全滤成空(露出日记-0615 的「着装」
+// 展开后一条都不显示即此因)。宿主在下发前已解包,这里再兜一层,兼容旧宿主/旧快照。
+// 镜像实现:web/src/mvu/unwrap.ts(unwrapStatTree)。
+function __kdUnwrapStatTree(v) {
+  if (Object.prototype.toString.call(v) === '[object Array]') {
+    if (v.length === 2 && typeof v[1] === 'string') return v[0];
+    var arr = [];
+    for (var i = 0; i < v.length; i += 1) arr.push(__kdUnwrapStatTree(v[i]));
+    return arr;
+  }
+  if (v && typeof v === 'object') {
+    var out = {};
+    for (var k in v) {
+      if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = __kdUnwrapStatTree(v[k]);
+    }
+    return out;
+  }
+  return v;
+}
 function installMvu(snapshot) {
   var state = {
-    stat_data: (snapshot && snapshot.stat_data && typeof snapshot.stat_data === 'object') ? snapshot.stat_data : {},
-    display_data: (snapshot && snapshot.display_data && typeof snapshot.display_data === 'object') ? snapshot.display_data : {}
+    stat_data: (snapshot && snapshot.stat_data && typeof snapshot.stat_data === 'object') ? __kdUnwrapStatTree(snapshot.stat_data) : {},
+    display_data: (snapshot && snapshot.display_data && typeof snapshot.display_data === 'object') ? __kdUnwrapStatTree(snapshot.display_data) : {}
   };
   function view() {
     var stat = {};
@@ -390,6 +412,9 @@ function installMvu(snapshot) {
     getMvuData: view,
     replaceMvuData: function (data) {
       if (!data || typeof data !== 'object') return;
+      // 作者脚本写回的是**裸值树**(与酒馆一致):这里原样上报,宿主
+      // chat.replaceMvuVariables 用 wrapStatTree 包回 [值, 原因] 存储对,
+      // 故本函数**不要**在帧内自行包对,否则会双层嵌套。
       var stat = (data.stat_data && typeof data.stat_data === 'object') ? data.stat_data : {};
       var disp = (data.display_data && typeof data.display_data === 'object') ? data.display_data : stat;
       try { state.stat_data = JSON.parse(JSON.stringify(stat)); } catch (e) { state.stat_data = {}; }

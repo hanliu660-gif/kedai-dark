@@ -64,3 +64,33 @@ export function unwrapStatTree(v: unknown): unknown {
   }
   return v;
 }
+
+/**
+ * unwrapStatTree 的逆过程:作者脚本/整页卡写回的**裸值树**重新包成 [值, 原因] 存储对。
+ *
+ * 为什么需要:整页前端卡在酒馆里读到的 stat_data 就是裸值(酒馆变量树只有值),
+ * 卡内 `updateVariablesWith`/`Mvu.replaceMvuData` 写回的自然也是裸值;宿主存储
+ * 仍保留 MagVarUpdate 的成对约定,故写回边界必须原路包回——否则下一次读取会把
+ * 裸值当叶子对(`statValue('纯棉')` 得到 `'纯'`),变量树逐轮劣化。
+ *
+ * 原因(第二元素)优先沿用上一棵树同路径的既有值:界面改写不该抹掉 AI 的更新理由;
+ * 旧树没有该路径(或旧值不是叶子对)时记「界面写入」。
+ */
+export function wrapStatTree(v: unknown, prev: unknown): unknown {
+  if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+    const src = v as Record<string, unknown>;
+    const prevObj =
+      prev !== null && typeof prev === 'object' && !Array.isArray(prev)
+        ? (prev as Record<string, unknown>)
+        : undefined;
+    const o: Record<string, unknown> = {};
+    for (const k of Object.keys(src)) o[k] = wrapStatTree(src[k], prevObj ? prevObj[k] : undefined);
+    return o;
+  }
+  // 标量 / 数组值:整体作为叶子对的第一元素(数组按真实数组值处理,不再递归)
+  const reason =
+    Array.isArray(prev) && prev.length === 2 && typeof prev[1] === 'string'
+      ? (prev[1] as string)
+      : '界面写入';
+  return [v, reason];
+}
