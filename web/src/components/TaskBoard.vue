@@ -7,17 +7,22 @@
 //   TaskStatusPanel(头/状态/工作区) · TaskFlowBindPanel(改绑) ·
 //   TaskApprovalPanel(批准/规划对话) · TaskExecutionPanel(调用情况/步骤/子任务/流式) ·
 //   TaskResultPanel(成果/交付/文件变更/对话/追加) · TaskBoardEmpty(空态)。
-import { computed, onMounted, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, watch } from 'vue';
 import { useAppStore } from '../store';
 import { storeToRefs } from 'pinia';
 import { useTaskActions } from '../composables/useTaskActions';
 import type { TaskRunMode } from '../api';
 import TaskStatusPanel from './task/TaskStatusPanel.vue';
 import TaskFlowBindPanel from './task/TaskFlowBindPanel.vue';
-import TaskApprovalPanel from './task/TaskApprovalPanel.vue';
-import TaskExecutionPanel from './task/TaskExecutionPanel.vue';
-import TaskResultPanel from './task/TaskResultPanel.vue';
 import TaskBoardEmpty from './task/TaskBoardEmpty.vue';
+
+// 首屏预算(2026-10-30,R3.2 之后余量只剩 1,285 B):批准 / 执行 / 成果三块面板
+// 只在「已选中任务且进入对应阶段」时渲染,首屏几乎用不到,但静态 import 会把它们的模板
+// 与 scoped CSS 一起压进入口 chunk 和 index.css。改为异步组件后由 Vite 切成独立
+// chunk + 独立 CSS,渲染时才按需加载;空态与状态面板保持同步(首屏可见,不能延后)。
+const TaskApprovalPanel = defineAsyncComponent(() => import('./task/TaskApprovalPanel.vue'));
+const TaskExecutionPanel = defineAsyncComponent(() => import('./task/TaskExecutionPanel.vue'));
+const TaskResultPanel = defineAsyncComponent(() => import('./task/TaskResultPanel.vue'));
 
 const store = useAppStore();
 const { currentTask, currentTaskId, model, agentFlowLibrary } = storeToRefs(store);

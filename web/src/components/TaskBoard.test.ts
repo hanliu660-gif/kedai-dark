@@ -65,6 +65,18 @@ function mountBoard() {
   return mount(TaskBoard, { global: { plugins: [] } });
 }
 
+/**
+ * 等异步面板落地。
+ * 批准 / 执行 / 成果三块自 2026-10-30 起改为 defineAsyncComponent(首屏预算),
+ * 其 chunk 在 vitest 下要经过多轮动态 import + 异步 transform,单次 flushPromises
+ * 不够(实测仍拿到空 DOM);必须等 dynamicImportSettled 后再冲一次微任务。
+ */
+async function settlePanels(): Promise<void> {
+  await flushPromises();
+  await vi.dynamicImportSettled();
+  await flushPromises();
+}
+
 describe('TaskBoard 组件(M5 补测)', () => {
   beforeEach(() => {
     memStorage.clear();
@@ -108,7 +120,7 @@ describe('TaskBoard 组件(M5 补测)', () => {
     }
   });
 
-  it('plan 批准区渲染执行方式下拉,默认「按计划逐步执行」(2026-09-17 新增)', () => {
+  it('plan 批准区渲染执行方式下拉,默认「按计划逐步执行」(2026-09-17 新增)', async () => {
     const store = useAppStore();
     store.currentTask = makeTaskDetail({
       status: 'planned',
@@ -116,6 +128,8 @@ describe('TaskBoard 组件(M5 补测)', () => {
       plan: [{ name: '步骤一', goal: '目标一', status: 'pending', result: '' }],
     });
     const wrapper = mount(TaskBoard);
+    // 批准/执行/成果三块自 2026-10-30 起为异步组件(首屏预算),需等 chunk 落地
+    await settlePanels();
 
     const select = wrapper.find('.sv-task-approve-exec select');
     expect(select.exists(), '批准区应有执行方式下拉').toBe(true);
@@ -141,6 +155,8 @@ describe('TaskBoard 组件(M5 补测)', () => {
     });
     const spy = vi.spyOn(store, 'approveTask').mockResolvedValue(undefined);
     const wrapper = mount(TaskBoard);
+    // 异步面板需先落地,否则选择器是空的
+    await settlePanels();
 
     // 选团队协作后批准
     await wrapper.find('.sv-task-approve-exec select').setValue('team');
@@ -163,6 +179,7 @@ describe('TaskBoard 组件(M5 补测)', () => {
       plan: [{ name: '步骤一', goal: '目标一', status: 'pending', result: '' }],
     });
     const wrapper = mount(TaskBoard);
+    await settlePanels();
     store.currentTaskId = 't1';
     await wrapper.find('.sv-task-approve-exec select').setValue('solo');
     expect((wrapper.find('.sv-task-approve-exec select').element as HTMLSelectElement).value).toBe('solo');
@@ -297,7 +314,7 @@ describe('TaskBoard 多缓冲「正在生成」块(IFW-7③)', () => {
     memStorage.clear();
   });
 
-  it('多缓冲前缀用中文阶段标签,不裸露内部 key;step 阶段补步骤名', () => {
+  it('多缓冲前缀用中文阶段标签,不裸露内部 key;step 阶段补步骤名', async () => {
     const store = useAppStore();
     store.currentTaskId = 't1';
     store.currentTask = makeTaskDetail({
@@ -311,6 +328,8 @@ describe('TaskBoard 多缓冲「正在生成」块(IFW-7③)', () => {
       ['subflow.1:0', '第二条增量'],
     ]);
     const wrapper = mount(TaskBoard);
+    // 流式块本身同步渲染,但其容器 TaskExecutionPanel 是异步组件
+    await settlePanels();
     const text = wrapper.text();
 
     // 前缀可读:step 带步骤名、子图带挂载路径
@@ -322,12 +341,13 @@ describe('TaskBoard 多缓冲「正在生成」块(IFW-7③)', () => {
     wrapper.unmount();
   });
 
-  it('单缓冲不画前缀(纯文本流式块与改造前一致)', () => {
+  it('单缓冲不画前缀(纯文本流式块与改造前一致)', async () => {
     const store = useAppStore();
     store.currentTaskId = 't1';
     store.currentTask = makeTaskDetail({ id: 't1', status: 'running', task_mode: 'solo', plan: [] });
     store.liveBuffers = new Map([['step:0', '唯一一条增量']]);
     const wrapper = mount(TaskBoard);
+    await settlePanels();
     const text = wrapper.text();
     expect(text).toContain('唯一一条增量');
     expect(text).not.toContain('【步骤');
