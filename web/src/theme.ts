@@ -1,10 +1,12 @@
-// 夜间模式:主题偏好、Mode Resolver 映射桥与主题系统并轨（NIGHT-1 / R1 并轨版）
+// 夜间模式:主题偏好、Mode Resolver 映射桥与主题系统并轨（NIGHT-1 / R1/R2 并轨版）
 //
-// 设计边界与并轨约定（2026-10-30 R1）:
+// 设计边界与并轨约定（2026-10-30 R1/R2）:
 // - 本模块充当上游声明式主题注册表 (web/src/theme/registry) 的 Mode Resolver（A 方案包装桥）：
 //   - 保留三档模式: 'system' | 'light' | 'dark'
 //   - 在 'system' 下动态监听 matchMedia('(prefers-color-scheme: dark)')，自动映射到 registry 的 'dark' / 'default'
 //   - 上游 registry 内部 API 保持纯净零侵入
+// - 单一所有权与异步竞态收拢:
+//   - applyTheme 采用令牌序列守卫 + 同步锁定 + Promise 结算后最终收拢，确保浅色模式下彻底移除 data-theme 属性，绝不残留 "default"
 // - 存储键并轨与静默迁移:
 //   - 模式偏好记录于 THEME_STORAGE_KEY ('kedai.theme-mode.v1')
 //   - 当前激活主题同步落盘至上游 'kedai.theme.v1'
@@ -74,27 +76,21 @@ export function resolveDark(mode: ThemeMode): boolean {
   return mode === 'dark' || (mode === 'system' && systemPrefersDark());
 }
 
+/** 最新一次 applyTheme 的递增序列号，用于在异步结算后丢弃过期的竞态更新 */
+let currentApplyToken = 0;
+
 /**
  * 把当前偏好通过 Registry 映射桥生效并落到 <html data-theme>。
- * 浅色时摘掉属性回到 :root 亮色令牌，深色时挂载 data-theme="dark"。
- * 同步刷新 isDark，并持久化到双键中。
+ * 单一所有权保证：
+ * 1. 同步立即落 DOM（深色为 'dark'，浅色彻底移除属性），保证首帧与单测瞬时一致性；
+ * 2. 等待 themeRegistry.apply 结束并在微任务结算后二次断言最终状态，防止乱序写回 "default"；
+ * 3. 浅色模式下杜绝任何 "default" 或其它非 dark 字符串残留。
  */
-export function applyTheme(): void {
+export function applyTheme(): Promise<boolean> {
+  const token = ++currentApplyToken;
   const dark = resolveDark(themeMode.value);
   isDark.value = dark;
   const targetTheme = dark ? 'dark' : 'default';
-
-  if (typeof document !== 'undefined') {
-    const root = document.documentElement;
-    // 同步调用 registry 应用主题
-    void themeRegistry.apply(targetTheme, { persist: true });
-    if (dark) {
-      root.setAttribute('data-theme', DARK_ATTR);
-    } else {
-      // 保持浅色时无 data-theme 属性，对齐既有基线与测试断言
-      root.removeAttribute('data-theme');
-    }
-  }
 
   // 同步两份存储键
   try {
@@ -104,6 +100,31 @@ export function applyTheme(): void {
   } catch {
     /* 忽略存储异常 */
   }
+
+  if (typeof document === 'undefined') return Promise.resolve(true);
+  const root = document.documentElement;
+
+  // 1. 调用 registry 切换主题（内部会更新 activeId、通知订阅者并持久化）
+  const promise = themeRegistry.apply(targetTheme, { persist: true });
+
+  // 2. 立即接管 DOM 属性单一所有权：深色挂 data-theme="dark"，浅色彻底摘除属性
+  if (dark) {
+    root.setAttribute('data-theme', DARK_ATTR);
+  } else {
+    root.removeAttribute('data-theme');
+  }
+
+  // 3. 异步 Promise 结算后再做一次单一所有权收拢，彻底消除任何晚到微任务的覆盖竞态
+  return promise.then((res) => {
+    if (token === currentApplyToken) {
+      if (!resolveDark(themeMode.value)) {
+        root.removeAttribute('data-theme');
+      } else {
+        root.setAttribute('data-theme', DARK_ATTR);
+      }
+    }
+    return res;
+  });
 }
 
 /** 写入偏好并立即生效(持久化失败不影响本次会话)。 */
