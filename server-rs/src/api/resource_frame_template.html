@@ -423,6 +423,37 @@ function installMvu(snapshot) {
   if (typeof window.waitGlobalInitialized !== 'function') {
     window.waitGlobalInitialized = function (name) { return Mvu.waitGlobalInitialized(name); };
   }
+  // updateVariablesWith(mutator): 酒馆的「读-改-写」变量入口,同样是裸全局。
+  // 实测缺口(「露出日记-0615」数据录入向导的「完成确认」):
+  //   commit: async function(){ ...updateVariablesWith(t => { _.set(t,'stat_data.主角.名字',...) }) }
+  // 缺它时 commit() 第 N 句就 ReferenceError,外层 try 直接跳到 finally,
+  // 后面的 createChatMessages/triggerSlash 一句都不执行 → 用户点了确认毫无反应。
+  // 语义:把当前变量树深拷贝给作者回调改,改完整体写回(经 mvu-replace 落库到宿主)。
+  function updateVars(mutator) {
+    if (typeof mutator !== 'function') return Promise.resolve(view());
+    var draft = view();
+    try {
+      mutator(draft);
+    } catch (e) {
+      try { console.error('[kd-compat] updateVariablesWith 回调异常:', e); } catch (err) { /* 忽略 */ }
+      return Promise.resolve(view());
+    }
+    return Mvu.replaceMvuData(draft);
+  }
+  Mvu.updateVariablesWith = updateVars;
+  if (typeof window.updateVariablesWith !== 'function') window.updateVariablesWith = updateVars;
+  if (typeof window.replaceVariables !== 'function') window.replaceVariables = updateVars;
+  if (typeof window.insertOrAssignVariables !== 'function') {
+    window.insertOrAssignVariables = function (vars) {
+      var draft = view();
+      if (vars && typeof vars === 'object') {
+        for (var k in vars) {
+          if (Object.prototype.hasOwnProperty.call(vars, k)) draft.stat_data[k] = vars[k];
+        }
+      }
+      return Mvu.replaceMvuData(draft);
+    };
+  }
 }
 
 // ---- 酒馆运行期裸全局垫片(作者脚本直接调用的 ST 内建函数) ----
@@ -463,6 +494,34 @@ function installStGlobals(bootMsg) {
   }
   if (window.TavernHelper && typeof window.TavernHelper.getChatMessages !== 'function') {
     window.TavernHelper.getChatMessages = window.getChatMessages;
+  }
+  // createChatMessages(msgs) / triggerSlash(cmd): 酒馆里同样是裸全局。
+  // 实测缺口(「露出日记-0615」数据录入向导的「完成确认」):
+  //   async function f(){ ...await n.commit(), await createChatMessages([{role:'user',message:'开始游戏'}]), triggerSlash('/trigger') }
+  // 两者缺失 → ReferenceError 被外层 Promise 吞掉,用户点了确认毫无反应(「完成不了」)。
+  // 语义:createChatMessages 只把消息交给宿主暂存(不立刻生成),triggerSlash('/trigger')
+  // 才让宿主带着暂存正文发起一轮生成——与酒馆「先落消息、再触发生成」一致。
+  if (typeof window.createChatMessages !== 'function') {
+    window.createChatMessages = function (messages) {
+      var list = [];
+      if (Array.isArray(messages)) {
+        for (var i = 0; i < messages.length; i += 1) {
+          var item = messages[i];
+          if (!item || typeof item !== 'object') continue;
+          var text = typeof item.message === 'string' ? item.message : (typeof item.content === 'string' ? item.content : '');
+          if (!text) continue;
+          list.push({ role: typeof item.role === 'string' ? item.role : 'user', message: text });
+        }
+      } else if (typeof messages === 'string' && messages) {
+        list.push({ role: 'user', message: messages });
+      }
+      return tavernCall('createChatMessages', list);
+    };
+  }
+  if (typeof window.triggerSlash !== 'function') {
+    window.triggerSlash = function (command) {
+      return tavernCall('triggerSlash', typeof command === 'string' ? command : '');
+    };
   }
 }
 

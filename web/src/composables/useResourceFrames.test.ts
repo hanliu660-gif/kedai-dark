@@ -23,14 +23,14 @@ interface Harness {
 }
 
 /** 挂一个宿主组件:composable 在 setup 内调用(mounted 钩子可用),画布内容即卡片 HTML。 */
-function mountHarness(cardHtml: string): Harness {
+function mountHarness(cardHtml: string, options: { onCardSend?: (text: string) => void } = {}): Harness {
   let api!: FramesApi;
   const scrollArea = ref<HTMLElement | null>(null);
   const currentCharacter = ref<CharacterRecord | null>(null);
   const currentCharacterId = ref<string | null>(null);
   const Comp = defineComponent({
     setup() {
-      api = useResourceFrames({ scrollArea, currentCharacter, currentCharacterId });
+      api = useResourceFrames({ scrollArea, currentCharacter, currentCharacterId, ...options });
       return () =>
         h('div', {
           ref: (el) => (scrollArea.value = (el as HTMLElement | null) ?? null),
@@ -252,6 +252,93 @@ describe('FE-5 C 生成调用节流与错误可见性', () => {
     expect(String(byId.get('n1')?.error)).toContain('不支持的调用');
     expect(byId.get('n2')?.ok).toBe(false);
     expect(String(byId.get('n2')?.error)).toContain('消息列表为空');
+  });
+});
+
+// B1 补丁(2026-10-29):整页前端卡的「完成确认」在酒馆里是
+// `createChatMessages([{role:'user',message:'开始游戏'}]) + triggerSlash('/trigger')`,
+// 这两步拆成「暂存正文」与「依宿主发送」两段 RPC。缺了它们作者页只会静默失败
+// (异常在 Promise 里被吞,用户点了确认毫无反应)。
+describe('整页卡的 createChatMessages / triggerSlash 两步', () => {
+  it('暂存正文后 /trigger 交给宿主发送,暂存被清空', async () => {
+    allowResourceDomain(URL_A);
+    installFetchMock();
+    const sent: string[] = [];
+    harness = mountHarness(buildRemoteResourceHtml(URL_A, 'seedA'), { onCardSend: (t) => sent.push(t) });
+    await harness.api.hydrate();
+    const cw = harness.frames()[0].contentWindow as Window;
+    const spy = vi.spyOn(cw, 'postMessage');
+    const nonce = nonceOf();
+    const call = (callId: string, method: string, args: unknown): void => {
+      harness?.api.handleMessage(
+        messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce, type: 'tavern-call', callId, method, args }),
+      );
+    };
+    call('c1', 'createChatMessages', [{ role: 'user', message: '开始游戏' }]);
+    await flush();
+    // 只暂存:这时还不该开一轮生成
+    expect(sent).toEqual([]);
+    call('c2', 'triggerSlash', '/trigger');
+    await flush();
+    expect(sent).toEqual(['开始游戏']);
+    // 第二次 /trigger 不重复发送(暂存已清)
+    call('c3', 'triggerSlash', '/trigger');
+    await flush();
+    expect(sent).toEqual(['开始游戏']);
+    const ok = spy.mock.calls
+      .map(([m]) => m as { type?: string; callId?: string; ok?: boolean })
+      .filter((m) => m.type === 'tavern-result' && m.ok === true)
+      .map((m) => m.callId);
+    expect(ok).toContain('c1');
+    expect(ok).toContain('c2');
+  });
+
+  it('宿主没接 onCardSend 时明确回错,不假装已发出', async () => {
+    allowResourceDomain(URL_A);
+    installFetchMock();
+    harness = mountHarness(buildRemoteResourceHtml(URL_A, 'seedA'));
+    await harness.api.hydrate();
+    const cw = harness.frames()[0].contentWindow as Window;
+    const spy = vi.spyOn(cw, 'postMessage');
+    const nonce = nonceOf();
+    harness.api.handleMessage(
+      messageFrom(cw, {
+        channel: 'kedai-resource-frame-v1',
+        nonce,
+        type: 'tavern-call',
+        callId: 'd1',
+        method: 'triggerSlash',
+        args: '/trigger',
+      }),
+    );
+    await flush();
+    const [msg] = spy.mock.calls.map(([m]) => m as { type?: string; callId?: string; error?: string }).filter((m) => m.type === 'tavern-result');
+    expect(msg?.callId).toBe('d1');
+    expect(String(msg?.error)).toContain('不支持');
+  });
+
+  it('未实现的 slash 指令回错(不静默成功)', async () => {
+    allowResourceDomain(URL_A);
+    installFetchMock();
+    harness = mountHarness(buildRemoteResourceHtml(URL_A, 'seedA'), { onCardSend: () => undefined });
+    await harness.api.hydrate();
+    const cw = harness.frames()[0].contentWindow as Window;
+    const spy = vi.spyOn(cw, 'postMessage');
+    const nonce = nonceOf();
+    harness.api.handleMessage(
+      messageFrom(cw, {
+        channel: 'kedai-resource-frame-v1',
+        nonce,
+        type: 'tavern-call',
+        callId: 'e1',
+        method: 'triggerSlash',
+        args: '/hide',
+      }),
+    );
+    await flush();
+    const replies = spy.mock.calls.map(([m]) => m as { type?: string; ok?: boolean; error?: string }).filter((m) => m.type === 'tavern-result');
+    expect(replies[0]?.ok).toBe(false);
+    expect(String(replies[0]?.error)).toContain('未实现该指令');
   });
 });
 

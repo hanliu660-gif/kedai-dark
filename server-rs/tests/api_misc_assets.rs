@@ -501,6 +501,21 @@ async fn resource_frame_document_is_served() {
         html.contains("loadVueGlobal"),
         "宿主文档应在执行作者脚本前装载 Vue 全局运行时"
     );
+    // B1 补丁:整页卡的「完成确认」= updateVariablesWith(写变量) + createChatMessages +
+    // triggerSlash('/trigger')(发消息并开一轮生成)。三样在酒馆里都是裸全局,缺一个
+    // 就 ReferenceError 且被作者页的 try/finally 吞掉——表现为「点了确认毫无反应」。
+    assert!(
+        html.contains("window.updateVariablesWith"),
+        "宿主文档应补 updateVariablesWith(变量读改写入口)"
+    );
+    assert!(
+        html.contains("window.createChatMessages"),
+        "宿主文档应补 createChatMessages(落消息)"
+    );
+    assert!(
+        html.contains("window.triggerSlash"),
+        "宿主文档应补 triggerSlash(触发生成)"
+    );
 }
 
 // ===== 缓存诊断端点(缓存感知管线) =====

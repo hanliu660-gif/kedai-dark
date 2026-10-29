@@ -64,6 +64,16 @@ export interface UseResourceFramesOptions {
    * 只读用途:不回写、不暴露世界书写入口。
    */
   messages?: Ref<Array<{ id: string | number; role: string; content: string }>>;
+  /**
+   * 框架内脚本要「往聊天里发一条用户消息并开始一轮生成」时回调(可选)。
+   *
+   * 实测来源:「露出日记-0615」数据录入向导的「完成确认」——
+   * `await createChatMessages([{role:'user',message:'开始游戏'}]); triggerSlash('/trigger')`。
+   * 酒馆里这两个是裸全局并直接开一轮生成;Kedai 的对话推进只能在宿主 store 里做,
+   * 因此框架先把正文暂存、收到 /trigger 时把暂存正文交给宿主发送(不传则拒绝并回错,
+   * 避免作者页以为已经发出去了)。
+   */
+  onCardSend?: (text: string) => void;
 }
 
 /** MVU 变量树快照(stat_data 为用户可见状态,display_data 为展示层) */
@@ -82,6 +92,8 @@ interface ResourceEntry {
    * 正文由 inlineCardRegistry 暂存、此处直接投递。
    */
   inlineNonce?: string;
+  /** 框架内 createChatMessages 暂存的正文,等 /trigger 时一并交给宿主发送(见 onCardSend) */
+  pendingCardTexts?: string[];
   /** 当前文档代数是否已成功投递 boot(reload 后 ready 会复位为 false) */
   booted: boolean;
   /** 代理拉取连续失败次数(退避重试用,成功投递后清零) */
@@ -475,6 +487,43 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
     // TavernHelper.generate 的变量语义一致;不含世界书/正文改写,纯只读。
     if (m.method === 'getChatMessages') {
       reply(true, readChatMessages(m.args));
+      return;
+    }
+    // 整页前端卡「先落消息、再触发生成」的两步(酒馆同款裸全局,见 installStGlobals):
+    // createChatMessages 只暂存正文,收到 /trigger 才真正交给宿主发起一轮生成。
+    if (m.method === 'createChatMessages') {
+      const list = Array.isArray(m.args) ? m.args : [];
+      const staged: string[] = [];
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as { role?: unknown; message?: unknown };
+        const text = typeof rec.message === 'string' ? rec.message.trim() : '';
+        if (text && (rec.role === undefined || rec.role === 'user')) staged.push(text);
+      }
+      entry.pendingCardTexts = staged;
+      reply(true, null);
+      return;
+    }
+    if (m.method === 'triggerSlash') {
+      const command = typeof m.args === 'string' ? m.args.trim() : '';
+      const pending = (entry.pendingCardTexts ?? []).join('\n');
+      entry.pendingCardTexts = [];
+      if (!/^\/(trigger|gen|generate|continue)\b/i.test(command)) {
+        // 其余 slash 指令 Kedai 没有对应实现:明确拒绝,别让作者页以为执行成功
+        reply(false, undefined, `Kedai 未实现该指令:${command || '(空)'}`);
+        return;
+      }
+      if (!opts.onCardSend) {
+        reply(false, undefined, '当前界面不支持从角色卡发起对话');
+        return;
+      }
+      if (!pending) {
+        // 没有暂存正文(重复点确认 / 只调 /trigger):按幂等处理,不重复开一轮生成
+        reply(true, null);
+        return;
+      }
+      opts.onCardSend(pending);
+      reply(true, null);
       return;
     }
     if (m.method !== 'generate') {

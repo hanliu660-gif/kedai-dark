@@ -162,6 +162,11 @@ const frames = useResourceFrames({
   mvuVariables,
   messages,
   onMvuReplace: (data) => void store.replaceMvuVariables(data),
+  // 整页前端卡的「完成确认」= createChatMessages + triggerSlash('/trigger'):
+  // 框架只暂存正文,真正开一轮生成必须在宿主 store 里做(见 useResourceFrames::onCardSend)
+  onCardSend: (text) => {
+    void store.sendMessage(text || '开始游戏');
+  },
 });
 
 /** 渲染面板投递(实现已迁入 RenderPanelHost;此处保留薄封装,原调用点不动) */
