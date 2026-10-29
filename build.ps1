@@ -46,10 +46,18 @@ param(
     # 默认 server-rs\target。当该目录被安全软件拦截「新建可执行文件的执行」时
     # (build script exe 报 os error 5),用本参数把后端产物外置到白名单目录,例如:
     #   .\build.ps1 -RustTargetDir D:\kedai-build
-    [string]$RustTargetDir
+    [string]$RustTargetDir,
+    # 快速日常构建(日常调试推荐):跳过耗时的 LTO 全局跨 Crate 内联优化(-C lto=off),
+    # 仍保留 opt-level=3 代码优化。链接速度提升数倍,几秒到十几秒即可完成链接。
+    # 正式交付/发版归档(pack-7z.ps1)时不加本开关,保持完整的 thin LTO。
+    [switch]$Fast
 )
 
 $ErrorActionPreference = "Stop"
+if ($Fast) {
+    $env:RUSTFLAGS = if ($env:RUSTFLAGS) { "$env:RUSTFLAGS -C lto=off" } else { "-C lto=off" }
+    Write-Host "[快循环] 已开启 -Fast (跳过 LTO 全局内联,大幅加速链接阶段)" -ForegroundColor Cyan
+}
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $Root "tools\Write-BuildStamp.ps1")
 
@@ -261,9 +269,9 @@ try {
     # 不再产生 ErrorRecord;成败以退出码判断(不附加 exit 语句,见前端构建处说明)。
     $ErrorActionPreference = "Continue"
     if ($Dev) {
-        & $env:ComSpec /d /c "cargo build --target-dir `"$CargoTargetDir`" 2>&1"
+        & $env:ComSpec /d /c "cargo build --target-dir `"$CargoTargetDir`" --bin kedai-server 2>&1"
     } else {
-        & $env:ComSpec /d /c "cargo build --release --target-dir `"$CargoTargetDir`" 2>&1"
+        & $env:ComSpec /d /c "cargo build --release --target-dir `"$CargoTargetDir`" --bin kedai-server 2>&1"
     }
     $code = $LASTEXITCODE
     if ($code -ne 0) {

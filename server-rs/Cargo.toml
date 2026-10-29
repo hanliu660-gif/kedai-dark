@@ -126,3 +126,7 @@ kedai-server = { path = ".", features = ["test-support"] }
 # 代价:产物字节变(dist_hash 会更新、体积略有出入),功能行为无差异。
 lto = "thin"
 strip = true
+
+# MSVC 本地化链接进度消息与符号导入提示的告警抑制(与 src-tauri/Cargo.toml 同步):
+[lints.rust]
+linker_messages = "allow"
