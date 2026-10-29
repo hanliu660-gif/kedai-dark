@@ -528,6 +528,12 @@ async fn resource_frame_document_is_served() {
         html.contains("installScriptsInOrder"),
         "宿主文档应按文档顺序串行安装脚本(module 异步执行)"
     );
+    // B1-S:高度只量 body。documentElement.scrollHeight 至少等于 iframe 当前高度(=视口高),
+    // 用它上报会让 iframe 只能长不能缩——收起态的折叠面板(内容一行标题)被撑在默认 520px。
+    assert!(
+        html.contains("function contentHeight"),
+        "宿主文档应以 body 为准测量内容高度"
+    );
 }
 
 // ===== 缓存诊断端点(缓存感知管线) =====

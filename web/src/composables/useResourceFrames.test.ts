@@ -345,6 +345,52 @@ describe('整页卡的 createChatMessages / triggerSlash 两步', () => {
 // B1 批(2026-10-29):整页脚本卡的 HTML 交给隔离文档后,沙箱「兼容执行器」那次镜像执行
 // 必然失败(拿不到真实 DOM),它挂出来的「[脚本] …」红字属假故障 —— 卡在框架里其实能跑。
 // 这两条是「假故障不显示 / 留下残留也清掉」的判定与清理口径。
+describe('整页卡内容高度协议', () => {
+  it('按下报高度改 iframe 高度,收起的折叠面板不再留 520px 空白', async () => {
+    allowResourceDomain(URL_A);
+    installFetchMock();
+    harness = mountHarness(buildRemoteResourceHtml(URL_A, 'seedA'));
+    await harness.api.hydrate();
+    const frame = harness.frames()[0];
+    const cw = frame.contentWindow as Window;
+    // 框架启动时的 ready(带 nonce)才算接管,之后高度消息才被采纳
+    harness.api.handleMessage(
+      messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce: nonceOf(), type: 'ready' }),
+    );
+    await flush();
+
+    harness.api.handleMessage(
+      messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce: nonceOf(), type: 'height', height: 60 }),
+    );
+    // 收起态的一行标题:下限 48,故 60 被采纳(旧下限 120 会把它抬成一整块空白)
+    expect(frame.style.height).toBe('60px');
+    expect(frame.dataset.kdContentHeight).toBe('60');
+  });
+
+  it('过小的高度(未测量/瞬态)被忽略,超长页裁剪到 4000', async () => {
+    allowResourceDomain(URL_A);
+    installFetchMock();
+    harness = mountHarness(buildRemoteResourceHtml(URL_A, 'seedA'));
+    await harness.api.hydrate();
+    const frame = harness.frames()[0];
+    const cw = frame.contentWindow as Window;
+    harness.api.handleMessage(
+      messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce: nonceOf(), type: 'ready' }),
+    );
+    await flush();
+
+    harness.api.handleMessage(
+      messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce: nonceOf(), type: 'height', height: 12 }),
+    );
+    expect(frame.style.height).toBe('');
+
+    harness.api.handleMessage(
+      messageFrom(cw, { channel: 'kedai-resource-frame-v1', nonce: nonceOf(), type: 'height', height: 9000 }),
+    );
+    expect(frame.style.height).toBe('4000px');
+  });
+});
+
 describe('整页卡接管后的脚本失败提示口径', () => {
   function box(html: string): HTMLElement {
     const el = document.createElement('div');

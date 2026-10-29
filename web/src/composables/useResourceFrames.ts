@@ -405,9 +405,11 @@ export function useResourceFrames(opts: UseResourceFramesOptions) {
     }
     if (m.type === 'height') {
       // 整页卡是自然高度的长页,固定 520px 会截断;按文档上报的高度自适应。
-      // 宽屏态由 CSS flex 撑满,不受这里的 inline height 影响(裁剪在 120~4000 之外的异常值)
+      // 宽屏态由 CSS flex 撑满,不受这里的 inline height 影响(裁剪在 48~4000 之外的异常值)。
+      // 下限取 48 而非 120:空/收起的折叠面板(行为选项)内容只有一行标题,
+      // 抬高下限会让它在气泡里留一大片空白。
       const h = Number((m as { height?: unknown }).height);
-      if (Number.isFinite(h) && h >= 120) {
+      if (Number.isFinite(h) && h >= 48) {
         const clamped = Math.min(Math.round(h), 4000);
         if (entry.frame.dataset.kdContentHeight !== String(clamped)) {
           entry.frame.dataset.kdContentHeight = String(clamped);

@@ -1227,10 +1227,19 @@ function recordBoot(m, doc, headScripts, bodyScripts, error) {
 // 到 DOM 变动)的尺寸变化,另有 2s 轮询兜底(作者脚本用 canvas/瞬态动画时不触发 RO)。
 function reportHeight() {
   try {
-    var de = document.documentElement, b = document.body;
-    var h = Math.max(de ? de.scrollHeight : 0, b ? b.scrollHeight : 0);
+    var h = contentHeight();
     if (h > 0) kdPost({ type: 'height', height: h });
   } catch (e) { /* 尺寸不可读时保持宿主默认高度 */ }
+}
+// 只量 body:documentElement.scrollHeight 至少等于 iframe 当前高度(= 视口高),
+// 会让上报值永远 >= 现有高度,iframe 只能长不能缩——收起态的折叠面板(内容仅一行
+// 标题)因此被撑在宿主默认 520px,露出一大片空白。
+function contentHeight() {
+  var b = document.body, de = document.documentElement;
+  var h = 0;
+  if (b) h = Math.max(b.scrollHeight, b.offsetHeight);
+  if (!h && de) h = de.scrollHeight;
+  return h;
 }
 var heightTimer = 0;
 var lastHeight = 0;
@@ -1239,8 +1248,7 @@ function scheduleHeight() {
   heightTimer = setTimeout(function () {
     heightTimer = 0;
     try {
-      var de = document.documentElement, b = document.body;
-      var h = Math.max(de ? de.scrollHeight : 0, b ? b.scrollHeight : 0);
+      var h = contentHeight();
       if (h > 0 && Math.abs(h - lastHeight) >= 8) { lastHeight = h; reportHeight(); }
     } catch (e) { /* 忽略 */ }
   }, 150);
