@@ -9,8 +9,10 @@ export {
 export { sandboxScript } from './sandbox/boot-script';
 export { readCardGlobals, readScriptLocalStorage } from './sandbox/dom-rpc';
 export {
-  broadcastCardEvent,
-  broadcastMvuUpdate,
   executeSandboxedCharacterScript,
   sandboxAttributes,
 } from './sandbox/iframe-lifecycle';
+export {
+  broadcastCardEvent,
+  broadcastMvuUpdate,
+} from './utils/sandboxBroadcast';
