@@ -174,7 +174,7 @@ kedai/
 |---|---|---|
 | 一键启动(桌面) | 双击 `Kedai.lnk` 或 `.\start.ps1 -Portable` | lnk 指向项目根 `Kedai.exe` 图形启动器(过期/漂移自动询问重建);`.\start.ps1` 默认启动测试版浏览器模式 |
 | 桌面安装包 | `.\build.ps1 -Tauri` | 双端同步之外追加 NSIS 安装程序(需 `@tauri-apps/cli`);安装后从开始菜单启动 |
-| 一键构建 | `.\build.ps1` | **默认双端同步产出**:前端 web/dist + Rust release(测试版)+ 便携版;`-TestOnly` 仅测试版快速通道 `-Dev` debug 构建 `-NoWeb` 仅 Rust `-Tauri` 追加 NSIS 打包 |
+| 一键构建 | `.\build.ps1` | **默认双端同步产出**:前端 web/dist + Rust release(测试版)+ 便携版;`-Fast` 日常快循环构建(跳过 LTO 全局内联,秒级链接) `-TestOnly` 仅测试版快速通道 `-Dev` debug 构建 `-NoWeb` 仅 Rust `-Tauri` 追加 NSIS 打包 |
 | 兼容别名 | `npm run build:all` / `npm run build:rs` | 均等价 `.\build.ps1`(双端同步);`npm run build:test` 等价 `.\build.ps1 -TestOnly` |
 | 发布归档(7z) | `.\tools\pack-7z.ps1 [-Build]` | 便携版 → `dist\Kedai-<版本>-win64-portable.7z`(命名与归档内结构对齐历史体例;`-Build` 则先跑一次全量双端构建);出包前校验 sidecar 版本与源码一致 + 测试版/便携版 `dist_hash` 一致;7z.exe 按 参数/PATH/注册表/常见目录 探测,缺失时回退系统 bsdtar(`--format=7zip`) |
 | 统一改版本号 | `npm run version:bump -- x.y.z` | **9 个文件一次改全**(2 个 package.json、3 个 Cargo.toml、tauri.conf.json、package-lock.json 全部自身版本、`AboutSection.vue` 的 `FALLBACK_VERSION`、本文档版本行);其中 **8 处声明由 `build.ps1::Assert-VersionConsistency` 校验**(改漏即构建报错);支持 `-DryRun` 预览 |

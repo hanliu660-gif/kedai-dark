@@ -6,6 +6,7 @@
 #
 # 用法:
 #   .\build.ps1               # 前端 + Rust release + 便携版(双端同步;发布/交付/日常构建用这条)
+#   .\build.ps1 -Fast         # 快速日常构建(跳过 LTO 全局内联,秒级链接,构建立省近 5 分钟;日常迭代首选)
 #   .\build.ps1 -TestOnly     # 仅测试版(快速迭代);结尾会警告便携版未同步
 #   .\build.ps1 -Dev          # 前端 + Rust debug(供 cargo run 开发调试;保留编译缓存,仅按需清 kedai-server 指纹)
 #   .\build.ps1 -NoWeb        # 复用现有 web/dist,仅重编 Rust(双端)
