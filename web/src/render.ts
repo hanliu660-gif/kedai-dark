@@ -536,14 +536,36 @@ export const SCRIPT_ERROR_CLASS = 'sv-script-error';
  * 该容器里的卡是否已由隔离文档接管(整页脚本卡走 B1 通道)。
  * 是:沙箱那次「镜像 DOM」执行必然失败,它的提示属假故障,不该显示;
  * 否:沙箱仍是唯一执行环境,失败提示对用户有意义。
+ *
+ * 判定范围要沿祖先爬到「同一条消息」:整页卡窗口是消息渲染结果的一部分,
+ * 而沙箱执行容器常常只是其中一小块(实测气泡里 `.status-card` 容器与卡窗口是兄弟关系),
+ * 只看容器自身会漏判、误报假故障。
  */
 export function isCardOwnedByFrame(container: ParentNode): boolean {
-  return container.querySelector('[data-kd-inline-frame]') !== null;
+  const INLINE_FRAME = '[data-kd-inline-frame]';
+  if (container.querySelector(INLINE_FRAME) !== null) return true;
+  const start = container instanceof Element ? container : (container as Document | DocumentFragment)?.firstElementChild;
+  let node: Element | null = start ?? null;
+  for (let hop = 0; node && hop < 6; hop += 1) {
+    if (node.querySelector(INLINE_FRAME) !== null) return true;
+    const message = node.closest('.sv-msg');
+    if (message && message !== node) {
+      if (message.querySelector(INLINE_FRAME) !== null) return true;
+      node = message.parentElement;
+      continue;
+    }
+    node = node.parentElement;
+  }
+  return false;
 }
 
-/** 清掉容器内残留的脚本失败提示,返回清掉的节点数 */
+/**
+ * 清掉容器内残留的脚本失败提示,返回清掉的节点数。
+ * 与 `isCardOwnedByFrame` 同一范围:可能挂在容器、也可能挂在消息根上。
+ */
 export function clearScriptErrorNotices(root: ParentNode): number {
-  const nodes = Array.from(root.querySelectorAll(`.${SCRIPT_ERROR_CLASS}`));
+  const scope = root instanceof Element ? (root.closest('.sv-msg') ?? root) : root;
+  const nodes = Array.from(scope.querySelectorAll(`.${SCRIPT_ERROR_CLASS}`));
   for (const node of nodes) node.remove();
   return nodes.length;
 }

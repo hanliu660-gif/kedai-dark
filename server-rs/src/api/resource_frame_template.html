@@ -621,6 +621,56 @@ function installJQueryLite() {
     for (var i = 0; i < this.length; i++) if (asElem(this[i]) && this[i].matches(sel)) return true;
     return false;
   };
+  // 集合筛选/遍历(2026-10-29 B1 实测缺口:卡里 `$('.x').filter(sel)` 抛
+  // `$(...).filter is not a function`,整段装配逻辑中断)。这里按真实 DOM 语义实现,
+  // 不做简化桩——筛选结果是后续 toggleClass/attr 的作用对象,返回自身会改错元素。
+  PROTO.filter = function (sel) {
+    var out = [];
+    each(this, function (i, el) {
+      if (typeof sel === 'function') { if (sel.call(el, i, el)) out.push(el); return; }
+      if (asElem(el) && el.matches && el.matches(String(sel))) out.push(el);
+    });
+    return wrap(out);
+  };
+  PROTO.not = function (sel) {
+    var out = [];
+    each(this, function (i, el) {
+      if (!(asElem(el) && el.matches && el.matches(String(sel)))) out.push(el);
+    });
+    return wrap(out);
+  };
+  PROTO.map = function (fn) {
+    var out = [];
+    each(this, function (i, el) {
+      var v = fn.call(el, i, el);
+      if (v !== null && v !== undefined) out.push(v);
+    });
+    return wrap(out);
+  };
+  PROTO.toArray = function () { return Array.prototype.slice.call(this); };
+  PROTO.children = function () {
+    var out = [];
+    each(this, function (i, el) {
+      if (!asElem(el)) return;
+      for (var k = 0; k < el.children.length; k++) out.push(el.children[k]);
+    });
+    return wrap(out);
+  };
+  PROTO.parent = function () {
+    var out = [];
+    each(this, function (i, el) { if (asElem(el) && el.parentElement) out.push(el.parentElement); });
+    return wrap(out);
+  };
+  PROTO.siblings = function () {
+    var out = [];
+    each(this, function (i, el) {
+      if (!asElem(el) || !el.parentElement) return;
+      for (var k = 0; k < el.parentElement.children.length; k++) {
+        if (el.parentElement.children[k] !== el) out.push(el.parentElement.children[k]);
+      }
+    });
+    return wrap(out);
+  };
   PROTO.eq = function (i) { return wrap(i < 0 ? [this[this.length + i]].filter(Boolean) : [this[i]].filter(Boolean)); };
   PROTO.first = function () { return this.eq(0); };
   PROTO.last = function () { return this.eq(this.length - 1); };

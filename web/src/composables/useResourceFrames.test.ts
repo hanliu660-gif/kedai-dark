@@ -284,4 +284,29 @@ describe('整页卡接管后的脚本失败提示口径', () => {
     expect(clearScriptErrorNotices(scoped)).toBe(0);
     expect(clearScriptErrorNotices(scoped)).toBe(0);
   });
+
+  // 实跑补充(2026-10-29):整页卡窗口与沙箱执行容器在气泡里是**兄弟**关系——
+  // 沙箱侧 `[脚本] …` 提示挂在 `.status-card` 里,而 frame 在消息的另一个分支。
+  // 只查容器自身会漏判,提示照样冒出来(用户实测「可用了但红字还在」)。
+  it('容器内无 iframe 但同一条消息里有整页卡窗口时,也判定为已接管', () => {
+    const msg = box(
+      '<div class="sv-msg assistant"><div class="min-w-0">'
+        + '<div class="sv-msg-bubble sv-msg-md"><div class="status-card"><p class="sv-script-error">[脚本] x</p></div></div>'
+        + '<div class="sv-resource-card"><iframe data-kd-inline-frame="1"></iframe></div>'
+        + '</div></div>',
+    );
+    const container = msg.querySelector('.status-card') as HTMLElement;
+    expect(isCardOwnedByFrame(container)).toBe(true);
+    // 清理要爬到消息根:提示在容器内,frame 在兄弟层
+    expect(clearScriptErrorNotices(container)).toBe(1);
+    expect(msg.querySelectorAll('.sv-script-error').length).toBe(0);
+  });
+
+  it('消息里没有整页卡窗口时仍按容器自身判定(保留失败提示)', () => {
+    const msg = box(
+      '<div class="sv-msg assistant"><div class="status-card"><p class="sv-script-error">[脚本] x</p></div></div>',
+    );
+    const container = msg.querySelector('.status-card') as HTMLElement;
+    expect(isCardOwnedByFrame(container)).toBe(false);
+  });
 });

@@ -126,3 +126,29 @@ describe('WuWa 悬浮窗脚本形态端到端模拟', () => {
     expect(cssOps.some((o) => o.args?.[0] === 'position')).toBe(true);
   });
 });
+
+// B1 批补丁(2026-10-29):整页脚本卡在**兼容执行器**里跑时,`.filter(sel)` 等集合方法缺失
+// 会让整段装配脚本中断(实跑:露出日记-0615 报 `$(...).filter is not a function`),
+// 进而把假故障红字挂到已能正常显示的气泡上。这里锁定「链式不抛错、状态操作仍发出」。
+describe('jq 子集集合方法兼容(B1 实测缺口)', () => {
+  it('filter/not/eq/first/last/is/closest 链式调用不抛错且保留后续操作', async () => {
+    const h = makeHarness('sim-filter');
+    const code = [
+      "$('.piece').filter('.pick').addClass('on');",
+      "$('.piece').not('.pick').removeClass('on');",
+      "$('.piece').eq(0).attr('data-first','1');",
+      "$('.piece').first().css('color','#fff');",
+      "$('.piece').last().val('x');",
+      "$('.piece').is('.pick');",
+      "$('.piece').closest('.wrap').find('.inner').addClass('deep');",
+      "$('.piece').parent().children().siblings().toArray();",
+      "$('.piece').map(function(i, el){ return el; });",
+    ].join('\n');
+    const ops = await h.run(code);
+    expect(h.messages.filter((m) => m.type === 'error')).toHaveLength(0);
+    // 链式之后的写操作必须真的发出去(返回自身而不是 undefined)
+    expect(ops.some((o) => o.method === 'addClass' && o.ref?.value === '.piece')).toBe(true);
+    expect(ops.some((o) => o.method === 'attr' && String(o.args?.[0]) === 'data-first')).toBe(true);
+    expect(ops.some((o) => o.method === 'css' && String(o.args?.[0]) === 'color')).toBe(true);
+  });
+});

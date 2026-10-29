@@ -581,6 +581,26 @@ function jq(sel){
   coll.addClass=function(c){if(ref)enqueue({ref,method:'addClass',args:[c]});const st=readState();const cl=st&&Array.isArray(st.classes)?st.classes.slice():[];for(const x of String(c??'').split(/\\s+/).filter(Boolean))if(cl.indexOf(x)<0)cl.push(x);__kdPatch(sel,{classes:cl});return coll;};
   coll.removeClass=function(c){if(ref)enqueue({ref,method:'removeClass',args:[c]});const st=readState();const rm=String(c??'').split(/\\s+/).filter(Boolean);const cl=(st&&Array.isArray(st.classes)?st.classes:[]).filter(x=>rm.indexOf(x)<0);__kdPatch(sel,{classes:cl});return coll;};
   coll.hasClass=function(name){const st=readState();if(!st)probe(ref);const cl=st&&Array.isArray(st.classes)?st.classes:[];return cl.indexOf(String(name))>=0;};
+  // 集合筛选类 API:沙箱里没有真实 DOM 集合(只有选择器句柄),无法真正筛选。
+  // 这里保持链式语义(返回自身)而不是缺方法抛 TypeError——作者脚本常见写法
+  // $('.hang').filter('.pick').addClass('on') 在兼容执行器里曾整段失败
+  // (B1 批实跑:露出日记-0615 的 $(...).filter is not a function)。
+  coll.filter=function(){return coll;};
+  coll.not=function(){return coll;};
+  coll.first=function(){return coll;};
+  coll.last=function(){return coll;};
+  coll.eq=function(){return coll;};
+  coll.slice=function(){return coll;};
+  coll.map=function(cb){const out=[];if(typeof cb==='function'){try{cb.call(null,0,null);}catch(e){/* 回调依赖真实元素:忽略 */}}return jq(out);};
+  coll.toArray=function(){return [];};
+  coll.get=function(){return undefined;};
+  coll.is=function(){return false;};
+  coll.index=function(){return -1;};
+  coll.closest=function(){return coll;};
+  coll.find=function(sel){return jq(sel);};
+  coll.children=function(){return coll;};
+  coll.parent=function(){return coll;};
+  coll.siblings=function(){return coll;};
   // data:ui-draggable 反映本集合是否已应用过 draggable(销毁钩子据此决定是否 destroy);
   // 其余键沿用事件 target.data / 本地数据
   coll.data=function(name){const n=String(name);if(n==='ui-draggable')return !!(refKey&&jqDraggableApplied[refKey]);return localData[n]??'';};
