@@ -1,0 +1,126 @@
+{
+  "id": "sandbox.render.flow",
+  "domain": "sandbox",
+  "title": "前端卡渲染流程：围栏扫描 → TH-render 包裹 → teleport 挂 iframe → srcdoc/Blob",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "五步流水线": [
+      {
+        "步": "1. 扫描",
+        "动作": "对每条消息里的围栏代码块（`pre`），若其文本命中「前端卡三子串」判定（见 card.frontend.detect），就把这个 `pre` 包进一个**带标记类的占位 div**（`TH-render`）；已是则复用。",
+        "产出": "每条消息一份「要渲染的元素列表」，随消息 id 记录下来。"
+      },
+      {
+        "步": "2. 深度筛选",
+        "动作": "渲染深度为 0 → 渲染全部；否则按「忽略隐藏消息」开关过滤后**从最新往前取 N 条**。",
+        "备注": "这里就是「只渲染最近 N 楼前端卡」的实现。"
+      },
+      {
+        "步": "3. 挂载（teleport）",
+        "动作": "把 iframe 组件**传送（teleport）到那个占位 div 里**。每个元素一个 iframe；iframe 的 id/name 由「消息 id -- 序号」拼成固定前缀。",
+        "备注": "占位 div 是「渲染产物与原始代码块」的锚点，**必须先有它才能挂**。"
+      },
+      {
+        "步": "4. 清理与隐藏",
+        "动作": "挂载时**先删掉同容器里已存在的 iframe**（防止重复渲染成两份）；然后把占位 div 里的**非 iframe 子节点**加「隐藏」类。",
+        "备注": "上游注释记录过「初次进入角色卡会渲染两次」的现象，删除已有 iframe 就是为它加的。"
+      },
+      {
+        "步": "5. 卸载时复原",
+        "动作": "iframe 卸载时把「隐藏代码块」的按钮等界面状态恢复。",
+        "备注": "与「清理」对称，漏了会残留隐藏态。"
+      }
+    ],
+    "内容投递的两种方式（srcdoc / Blob）及其**非纯性能差异**": [
+      {
+        "方式": "`srcdoc`（默认）",
+        "base 标签": "**不加**",
+        "origin": "继承父窗口（`about:srcdoc` 视为同源）",
+        "相对路径资源": "直接按宿主源解析",
+        "调试": "iframe 内容难在 Sources 里定位",
+        "特例": "**某些浏览器（Firefox）在 iframe 导航时会把 `frameElement` 丢掉** ⇒ 这正是注入脚本要提前把 iframe id 缓存到 `window.name` 与一个专用字段的原因（见 sandbox.predefine.injection）"
+      },
+      {
+        "方式": "Blob URL（开关默认关）",
+        "base 标签": "**必须加**（指向宿主源），否则相对路径全解析失败",
+        "origin": "仍是父窗口，但少了 base 就废",
+        "相对路径资源": "依赖 `<base>`",
+        "调试": "独立 URL，能在 Sources 里看到",
+        "特例": "不会丢 `frameElement`"
+      }
+    ],
+    "开关不是纯优化": "它**改变了相对路径语义与 Firefox 的 frameElement 行为**。只抄一半（加了 Blob 没加 base，或换了 Blob 却没做 id 缓存）会直接坏。",
+    "两处内存管理要求（Blob 模式必做）": [
+      "**切换 src 时必须先撤销旧的 URL**（否则每次重渲染泄漏一个 blob）。",
+      "**组件卸载时必须撤销**。"
+    ],
+    "内容拼装顺序（决定了注入脚本的生效次序）": [
+      "先放资源（样式/脚本），再放注入脚本（宿主垫片），再放页面内容。",
+      "⇒ **注入脚本必须早于页面内容**：卡脚本在解析阶段就会读 `window.Xxx`，垫片晚了就 ReferenceError。",
+      "两种宿主（楼层 / 脚本）拼装的内容不同（楼层带图标库/tailwind/jQuery-UI，脚本只带 Vue）——见 sandbox.jquery.two_hosts。"
+    ],
+    "★ 「加载完成后补发 DOMContentLoaded」：**在本版本源码里找不到证据**": {
+      "事实": "全量扫描该扩展仓库的 `src/` 与构建产物，搜「contentloaded」= **0 命中**；`dispatchEvent` 只有一处与移动端栈事件相关。",
+      "⇒ 结论": "**这条说法标为「未核实」**（可能存在于更早版本或其它分支，当前 clone 没有）。",
+      "真正的替代物": [
+        "iframe 挂载时发出「渲染开始」事件",
+        "iframe `load` 时发出「渲染结束」事件",
+        "⇒ 想让脚本知道「前端卡渲染好了」，**用这两个事件**，不要指望 `DOMContentLoaded`。"
+      ]
+    },
+    "易错点": [
+      "不做 `TH-render` 包裹直接挂 iframe：没有锚点",
+      "挂载时不删已有 iframe：重复渲染成两份",
+      "漏掉「隐藏非 iframe 子节点」：原始围栏代码还会露在气泡里",
+      "用 Blob 模式却不加 `<base>`：相对路径资源全废",
+      "用 Blob 模式却不撤销旧 URL：内存泄漏",
+      "把注入脚本放在页面内容之后：卡脚本先跑就 ReferenceError",
+      "指望 `DOMContentLoaded` 被补发：本版本没有（用渲染开始/结束事件）",
+      "卸载时不恢复代码块按钮：隐藏态残留"
+    ],
+    "pseudocode": "渲染流程:\n  1) for 消息 in 消息列表:\n       for 围栏块 in 消息.围栏块:\n         若 是前端卡(围栏块.文本): 把围栏块包进 带标记类的占位div(已有则复用)\n         记录到 待渲染[消息id] += 占位元素\n  2) 若 渲染深度 > 0:\n       候选 = (忽略隐藏 ? 过滤 非隐藏 : 全部) 后 从最新往前取 N 条\n  3) for 元素 in 候选:\n       若 容器内已有 iframe: 先删\n       内容 = 拼装(资源 + 注入垫片 + 页面正文)     # 垫片必须在正文前\n       iframe = 创建(内容)                          # 默认 srcdoc;Blob 模式需加 base\n       传送到 元素的占位div\n       隐藏占位div里的非 iframe 子节点\n  4) onMounted → 发「渲染开始」事件\n     onLoad    → 发「渲染结束」事件\n  5) onUnmounted → 恢复被隐藏的按钮状态;若 Blob 模式则撤销 URL\n",
+    "★ 反向事实：**Kedai 自己补发了 DOMContentLoaded**（属「比上游宽松」的扩展，不是缺失）": "上游（酒馆助手 HEAD ecd74c7）**不补发**：全量扫 `src/` + `dist/index.js` + `@types/`，`grep -oi \"contentloaded\"` = **0 命中**；`dispatchEvent` 全库仅 1 处（`panel/component/Dialog.vue` 的移动端栈事件）。\n**Kedai 主动补发**：`server-rs/src/api/resource_frame_template.html` 里 4 处 `DOMContentLoaded` 引用，其中 `:1118` 是显式 `document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }))`。\n补发动机（同文件 `:1107-1109` 注释）：原生 `DOMContentLoaded` / `load` 在 iframe **首次加载时就已触发**，而作者整页内容是**之后**经 nonce 投递注入的 ⇒ 作者页里等 `DOMContentLoaded` 再读数据的写法会永远等不到。\n**定性**：这是 Kedai 对上游的**扩展**（多做一步终局兼容），让「等 DOMContentLoaded 装配界面」的卡能跑；不是缺陷，也**不是**上游契约要求。\n复刻/移植时注意：若照上游写（不补发），这类卡会静默不装配；若照 Kedai 写（补发），要确认补发时机在内容注入**之后**（提前补发同样无效）。"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "web/src/render.ts:455-472",
+      "web/src/render.ts:494-524",
+      "web/src/render.ts:832-834",
+      "web/src/composables/useResourceFrames.ts:240-243",
+      "server-rs/src/api/resource_frame_template.html:1150-1156",
+      "server-rs/src/api/resource_frame_template.html:1118"
+    ],
+    "note": "Kedai 走三步收敛而非上游五步：① isScriptedPageDocument 判定（比上游严格，要求脚本+文档壳标记）；② buildInlineCardHtml 生成固定壳（标题栏 + iframe src=/resource-frame.html#nonce，**用 src+稳定 nonce，不是 srcdoc/Blob**）；③ useResourceFrames 投递文档。⇒ 无 TH-render 占位类、无 teleport、无深度筛选、无渲染开始/结束事件、无 srcdoc/Blob 双模式。 【另】Kedai 额外补发 DOMContentLoaded（上游不补发）—— 属扩展，见 spec。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 message.ts（扫描围栏块并包进 TH-render 占位 div）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/store/iframe_runtimes/message.ts#L9-L56"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 Iframe.vue（srcdoc/Blob 双模式、revokeObjectURL、删已有 iframe、隐藏非 iframe 子节点）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/panel/render/Iframe.vue#L28-L79"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 render/iframe.ts（内容拼装顺序与 Blob 模式的 base 注入、vh 改写入口）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/panel/render/iframe.ts#L5-L97"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 is_frontend.ts（前端卡三子串判定与 TH-render 二次识别）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/util/is_frontend.ts#L1-L17"
+    }
+  ],
+  "related": [
+    "card.frontend.detect",
+    "sandbox.jquery.two_hosts",
+    "sandbox.height.vh",
+    "sandbox.predefine.injection"
+  ],
+  "updated": "2026-10-31"
+}

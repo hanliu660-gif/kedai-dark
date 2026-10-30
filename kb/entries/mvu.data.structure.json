@@ -1,0 +1,97 @@
+{
+  "id": "mvu.data.structure",
+  "domain": "mvu",
+  "title": "MvuData 六字段结构：stat/display/delta/schema/初始化记录/$meta",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "顶层结构（五个具名字段 + 一个开放索引）": [
+      { "字段": "`initialized_lorebooks`", "类型": "记录（书名字符串 → 数组）", "语义": "已初始化过的世界书清单。**同时充当幂等哨兵**：处理前先判「该书是否已在表里」，在则跳过。", "注意": "当前实现里值恒为空数组；旧格式（字符串数组）有迁移路径。" },
+      { "字段": "`stat_data`", "类型": "三态可嵌套的树 + 两个元数据钩子", "语义": "**真正的变量值**。值可以是对象 / 数组 / 原始值任意嵌套；对象可挂 `$meta`、数组可挂 `$arrayMeta`。", "注意": "还挂一个可选的内部字段用于「一次更新过程内」传递展示/增量数据，**持久化时必须剥掉**。" },
+      { "字段": "`schema`", "类型": "对象 schema 节点 + 三个根级开关", "语义": "由 `stat_data` 生成的校验/扩展性描述。根级可带三个开关（严格模板 / 数组模板拼接 / 严格写入）。", "注意": "生成前会**克隆**，因为生成过程会就地删元数据。" },
+      { "字段": "`display_data`", "类型": "记录", "语义": "**已废弃**。值是字符串形式的变化描述 `旧值 -> 新值 (原因)`。", "注意": "仍被完整写入并持久化，但上游注释明确「不再需要」。**可以保留，但不应当作契约依赖。**" },
+      { "字段": "`delta_data`", "类型": "记录", "语义": "**已废弃**，同 display_data 的废弃状态。", "注意": "同上。" },
+      { "字段": "开放索引", "类型": "任意", "语义": "允许携带额外键（不参与 MVU 核心逻辑）。", "注意": "—" }
+    ],
+    "结构判定（loose）": "「是 MvuData」的判定只看**两个顶层键存在**：`stat_data` 与 `schema` 都存在即算。⇒ **不校验类型、不校验版本**，这是宽松判定，复刻时不要加严。",
+    "stat_data 的元数据钩子（`$meta` / `$arrayMeta`）": {
+      "`$meta` 是什么": "「**声明期**」标记：在初始变量里用来声明某个对象/字段的扩展性、是否必填、模板等。**不进入最终数据**。",
+      "生命周期（三处清理）": [
+        "生成 schema 时**就地删除**（在克隆体上删，所以真实数据不受影响）",
+        "统一清理阶段删对象上的 `$meta`",
+        "数组里的标记元素（一个魔法字符串）与 `$arrayMeta` 元素一并移除"
+      ],
+      "魔法字符串": "数组任意位置出现一个固定的哨兵字符串 ⇒ 令该数组「可扩展」并把该标记移除。**这个标记在白名单里是「不占 token」的——它初始化后就从数据里删掉了。**",
+      "`$arrayMeta`": "挂在数组元素上，作用类似对象上的 `$meta`。"
+    },
+    "schema 的三个根级开关": [
+      { "开关": "严格模板（strictTemplate）", "作用": "禁止「原始值 → 单元素数组」这类隐式模板转换" },
+      { "开关": "数组模板拼接（concatTemplateArray）", "作用": "决定数组模板是「拼接」还是「覆盖」" },
+      { "开关": "严格写入（strictSet）", "作用": "开启后赋值不再保留「值-描述对」的描述位（见 mvu.vwd.pair）" }
+    ],
+    "schema 节点的字段": [
+      { "字段": "type", "说明": "固定为对象（叶子节点有别的 type）" },
+      { "字段": "properties", "说明": "键 → 子 schema（每个子节点可带 `required`）" },
+      { "字段": "extensible", "说明": "**能否被插入新键**；它直接决定「插入/合并」类命令是否被拒绝（见 mvu.updatevariable.commands）" },
+      { "字段": "template", "说明": "新元素的模板（新建消息时用来补默认值）" },
+      { "字段": "recursiveExtensible", "说明": "扩展性是否向下递归" }
+    ],
+    "schema 与「值-描述对」的关系（结构性事实，容易想当然）": "**schema 层完全不感知值-描述对**：一对 `[值, 描述]` 在 schema 里就是「一个数组、元素类型是值的类型、不可扩展」。⇒ 值-描述语义只在**读写旧值时**生效（见 mvu.vwd.pair），不在 schema 校验层。复刻时若在 schema 层给值-描述对特殊处理，会与上游不一致。",
+    "持久化的落点（变量到底存在哪）": {
+      "位置": "每个聊天消息上的「按页（swipe）分槽」的变量数组里，即 `消息.variables[页号]`，页号缺省 0。",
+      "取上一楼": "更新时取的是「当前消息之前最后一个**有效**变量」的那一楼（倒序扫、命中即用），取到的是**克隆副本**。",
+      "写回": "先逐字段写（`schema` / `display` / `delta` 为未定义时要**删除该键**而不是留 null），然后：可选地同时写「聊天级变量」，且**总是**写回「消息级变量」。",
+      "第 0 层特例": "消息 id 为 0 时读的是 `[0,1)` 区间（即只读第 0 层自己），不是「上一楼」。"
+    },
+    "内部字段（不进持久化）": "`stat_data` 上还挂一个内部字段，仅在**一次更新过程内**用来在两个阶段之间传递 display/delta 的引用；更新结束前会被摘除。⇒ **持久化前必须剥掉**，否则会污染数据。",
+    "易错点": [
+      "把 `display_data` / `delta_data` 当契约字段使用：已废弃",
+      "以为 `$meta` 会留在数据里：生成 schema 与统一清理都会删，**它不占 token**",
+      "在 schema 层给值-描述对做特殊处理：上游不感知",
+      "持久化时把内部字段一起存下去：污染",
+      "写回时把 `schema` / `display` / `delta` 的「未定义」写成 null：上游是**删除该键**",
+      "把「是 MvuData」判定加严（校验类型/版本）：上游只看两个顶层键存在",
+      "以为 `initialized_lorebooks` 的值有内容：当前恒空数组，它只是哨兵"
+    ],
+    "pseudocode": "MvuData = {\n  initialized_lorebooks: { 书名 → [] },        # 幂等哨兵\n  stat_data: 树(对象/数组/原始值可嵌套, 可挂 $meta / $arrayMeta),\n  schema: { type:'object', properties:{...}, extensible?, template?, recursiveExtensible? } + 三个根级开关,\n  display_data?: 记录,                          # 已废弃\n  delta_data?: 记录,                            # 已废弃\n  ...额外键\n}\n\n是MvuData(v) = v.stat_data 存在 ∧ v.schema 存在      # loose\n\n# 持久化前\n剥掉 stat_data 上的内部字段\n删掉对象上的 $meta\n删掉数组里的 哨兵元素 与 $arrayMeta 元素\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "web/src/mvu/unwrap.ts:1-13",
+      "web/src/mvu/unwrap.ts:55-59",
+      "server-rs/src/parsing/assistant/vars.rs:12-16",
+      "server-rs/src/parsing/assistant/initvar.rs:25-36"
+    ],
+    "note": "Kedai 实现了**双树模型**（`stat_data` 逻辑值树 + `display_data` 展示树），叶子为 `[值, 原因]` 成对数组，展示串为「老值->新值(原因)」——与上游的 display_data 语义一致（但在上游那里 display_data **已废弃**，Kedai 反而当成主力）。**缺 `delta_data`、缺 `schema`（无 zod 结构）、缺 `$meta`/`$arrayMeta` 的声明期语义、缺 `initialized_lorebooks`**。⇒ 上游那套「schema 驱动扩展性校验 / 严格写入 / 模板」整层在 Kedai 里不存在；Kedai 的 `[InitVar]` 靠 `merge_deep` 直接合并树，没有幂等哨兵（重复合并靠覆盖而非跳过）。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU variable_def.ts（MvuData 与 StatData 的字段级定义、$meta 类型、isMvuData 判定）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/variable_def.ts#L1-L45"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_def.ts（MvuData 顶层字段与 display/delta 的废弃标注）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/variable_def.ts#L121-L173"
+    },
+    {
+      "kind": "src",
+      "name": "MVU schema.ts（$meta 就地删除、魔法标记、统一清理）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/schema.ts#L15-L152"
+    },
+    {
+      "kind": "src",
+      "name": "MVU schema.ts（cleanUpMetadata 三处清理）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/schema.ts#L295-L327"
+    },
+    {
+      "kind": "src",
+      "name": "MVU util.ts（变量持久化落点：消息级 variables[swipe_id]，取上一楼有效变量）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/util.ts#L20-L32"
+    }
+  ],
+  "related": ["mvu.vwd.pair", "mvu.parse.fallback", "mvu.initvar.merge"],
+  "updated": "2026-10-31"
+}

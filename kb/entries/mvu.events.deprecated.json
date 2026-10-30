@@ -1,0 +1,166 @@
+{
+  "id": "mvu.events.deprecated",
+  "domain": "mvu",
+  "title": "MVU 事件表（6 个公共事件 + 2 个对外通道）与 10 项 deprecated API",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么必须用常量而不是硬编码字符串": "上游事件名的**拼写不统一**：大部分是 `mag_xxx_yyy` 形式，但至少有一处（初始化事件）是 `mag_variable_initialized`、另有一处结尾事件是 `mag_variable_update_ended` —— 与「变量更新开始」的 `mag_variable_update_started` 看似对称、实际需要逐一核对。⇒ **卡里/脚本里必须写 `Mvu.events.XXX`，不要写字符串字面量**：写错一个字母就静默不触发（事件总线不会报错）。",
+    "6 个公共事件（按生命周期顺序）": [
+      {
+        "事件": "VARIABLE_INITIALIZED",
+        "值": "`mag_variable_initialized`",
+        "参数": "(变量数据, 页号)",
+        "触发时机": "新聊天初始化时，**每个页（swipe）各一次**",
+        "用途": "初始化后一次性挂 UI / 首次播种提示"
+      },
+      {
+        "事件": "VARIABLE_UPDATE_STARTED",
+        "值": "`mag_variable_update_started`",
+        "参数": "(变量数据, 本轮是否有更新的布尔)",
+        "触发时机": "每轮更新开始，**在命令解析之后、执行之前**",
+        "用途": "可在此改「本轮是否算更新」的标志"
+      },
+      {
+        "事件": "COMMAND_PARSED",
+        "值": "`mag_command_parsed`",
+        "参数": "(变量数据, 命令数组, 原始消息正文)",
+        "触发时机": "命令解析完、**执行前**",
+        "用途": "**唯一可以改写命令的钩子**：可改某个命令的参数、也可以往数组里 push 新命令（上游文档给了示例）",
+        "注意": "这是 MVU 里最有用的扩展点；复刻若砍掉它，所有「想干预更新内容」的卡都会失效"
+      },
+      {
+        "事件": "VARIABLE_UPDATE_ENDED",
+        "值": "`mag_variable_update_ended`",
+        "参数": "(变量数据, 更新前的变量快照)",
+        "触发时机": "所有命令执行完，**在 schema 重算之前**",
+        "用途": "主流的状态栏刷新钩子（多数卡监听它）；注意它**早于** schema 对齐"
+      },
+      {
+        "事件": "BEFORE_MESSAGE_UPDATE",
+        "值": "`mag_before_message_update`",
+        "参数": "上下文对象 `{变量数据, 消息正文}`",
+        "触发时机": "即将改写楼层正文之前",
+        "用途": "可在此改「最终写进消息里的正文」（监听器改过的文本优先）",
+        "注意": "上游变更日志称「无论有没有实际更新都会调用」"
+      },
+      {
+        "事件": "SINGLE_VARIABLE_UPDATED",
+        "值": "`mag_variable_updated`",
+        "参数": "(变量树, 路径, 旧值, 新值)",
+        "触发时机": "**每条命令成功时**都会发",
+        "状态": "**已废弃**（保留 emit 但不建议新代码依赖）"
+      }
+    ],
+    "两组未写进公共表但真实存在的事件（复刻要清楚它们的性质）": [
+      {
+        "类型": "内部/Zod 桥接事件",
+        "形态": "在上述三个事件名后追加固定的后缀（`_for_zod` / `_ended_for_zod`）",
+        "用途": "给 MVU 自己的 Zod 校验层在解析后清理命令用",
+        "性质": "**非公共 API**，但确实被 emit ⇒ 若有卡误用会「碰巧」生效或失效，不要当契约"
+      },
+      {
+        "类型": "对外 event 通道",
+        "形态": "两个具名事件（`mag_invoke_mvu` / `mag_update_variable`）",
+        "用途": "前者走「旧数据 + 新数据」的回调式处理；后者直连单个变量的更新",
+        "性质": "后者是 **deprecated 语义**（单一变量）；前者是对外推荐通道"
+      }
+    ],
+    "10 项 deprecated API（含替代方案）": [
+      {
+        "废弃 API": "取当前楼层的变量数据",
+        "替代": "取「当前消息」作用域的变量数据（显式传消息 id）"
+      },
+      {
+        "废弃 API": "替换当前楼层的变量数据",
+        "替代": "通用的「替换变量数据」并显式传作用域"
+      },
+      {
+        "废弃 API": "重载初始变量",
+        "替代": "直接调初始变量加载，或重进聊天"
+      },
+      {
+        "废弃 API": "设置单个变量（带选项）",
+        "替代": "用「解析消息」或监听事件自己写"
+      },
+      {
+        "废弃 API": "取单个变量（带分类参数）",
+        "替代": "直接按路径取变量树（注意：旧 API 会**替值-描述对自动取第 0 位**，直接取不会 ⇒ 替代方案行为有细微差别）"
+      },
+      {
+        "废弃 API": "按分类取整条记录",
+        "替代": "直接取字段"
+      },
+      {
+        "废弃事件": "单变量更新事件",
+        "替代": "用更新结束事件"
+      },
+      {
+        "废弃字段": "`display_data` / `delta_data`",
+        "替代": "无（仍写入，但官方说不再需要）"
+      },
+      {
+        "废弃函数": "单变量更新函数（旧版，支持 display/delta）",
+        "替代": "通用的多命令更新函数"
+      },
+      {
+        "废弃实现": "正则式/`_.find` 式命令提取",
+        "替代": "括号配对状态机（见 mvu.block.scalar 的命令级配对）"
+      }
+    ],
+    "一个文档与实现不一致的点（记录下来避免误判）": "`parseMessage` 的注释写「无变化返回 undefined」，**实现总是返回新数据**（总是对旧数据克隆后更新并返回）。⇒ 以**实现**为准（卡作者按行为写代码，不会按注释写）。",
+    "易错点": [
+      "硬编码事件名字符串：拼写不统一，写错一个字母静默不触发",
+      "把 `VARIABLE_UPDATE_ENDED` 当「schema 已对齐之后」：它**在重算之前**",
+      "以为 `COMMAND_PARSED` 只能读：它能**改写/追加命令**（唯一的干预点）",
+      "忽略 `BEFORE_MESSAGE_UPDATE`：它是改「最终写进消息的正文」的最后机会",
+      "把 Zod 桥接后缀事件当公共 API",
+      "信 `parseMessage` 的注释「无变化返回 undefined」：实现总是返回新数据",
+      "用旧的「取单个变量」API 期望拿到原始值：它会替值-描述对自动取首位的"
+    ],
+    "pseudocode": "# 生命周期顺序(单轮更新)\n丢 更新开始事件(变量, 本轮是否有更新)\n  解析命令 → 丢 COMMAND_PARSED(变量, 命令数组, 正文)   # ← 可改写命令的唯一钩子\n  逐条执行命令(成功则丢 单变量更新事件, 已废弃)\n丢 更新结束事件(变量, 更新前快照)                   # ← 早于 schema 重算\n重算并对齐 schema\n若 要改消息正文:\n  丢 即将更新消息事件(上下文)                        # ← 可改最终正文\n  写回消息(若正文有变化)\n重渲染消息\n\n# 初始化\n新聊天 → 每个页: 丢 初始化事件(变量, 页号)\n\n# 对外通道(非事件表)\nINVOKE_MVU_PROCESS  → 回调式处理(旧数据 + 新数据)\nUPDATE_VARIABLE     → 单变量更新(已废弃语义)\n",
+    "★ Kedai 现状：VARIABLE_UPDATE_ENDED 绑错了值（= 上游废弃事件的值）": "上游有两个**不同**的事件常量，差值一个 `ed`：\n  · `VARIABLE_UPDATE_ENDED` = `mag_variable_update_ended`（**整轮更新结束**，正确订阅目标）\n  · `SINGLE_VARIABLE_UPDATED` = `mag_variable_updated`（**已废弃**的单变量事件，每条命令都发）\n**Kedai 两处都把 `VARIABLE_UPDATE_ENDED` 绑到了废弃值 `mag_variable_updated`**：\n  · `web/src/sandbox/boot/mvu-tavern.ts:74`（沙箱垫片）\n  · `server-rs/src/api/resource_frame_template.html:433`（整页卡帧模板）\n**后果分两种，都不好**：\n  ① 卡里用 `Mvu.events.VARIABLE_UPDATE_ENDED` 订阅 ⇒ **能收到**（因为两边指向同一个错值），但触发时机是「每条命令都发」的废弃语义，**不是**「整轮结束」⇒ 状态栏可能被重算多次、或在不该刷新时刷新。\n  ② 卡里**硬编码**字符串 `\"mag_variable_update_ended\"`（部分卡确实这么写）⇒ 在 Kedai 里**永远收不到**，状态栏永久不刷新。\n`VARIABLE_UPDATE_STARTED` 的值 (`mag_variable_update_started`) **两侧一致**，没有这个问题。\n**修复方向（一行改两处）**：把 Kedai 的 `VARIABLE_UPDATE_ENDED` 改回 `mag_variable_update_ended`；若还想保留废弃事件兼容，另加一个 `SINGLE_VARIABLE_UPDATED: mag_variable_updated` 键。",
+    "修复记录": "Kedai 2026-10-31 修正：`VARIABLE_UPDATE_ENDED` 常量与所有 emit 点统一为 `mag_variable_update_ended`（上游正确值）。此前绑的是废弃的单变量事件值 `mag_variable_updated`，导致硬编码正确字符串的卡收不到事件。"
+  },
+  "kedai": {
+    "status": "match",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:74",
+      "server-rs/src/api/resource_frame_template.html:433"
+    ],
+    "note": "【已修 2026-10-31】`VARIABLE_UPDATE_ENDED` 已从上游废弃值 `mag_variable_updated` 改为正确的 `mag_variable_update_ended`，并同步全部 emit 点（chat.ts / host.ts / sandboxBroadcast.ts / 帧模板），常量与发射值不再分裂。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU variable_def.ts（variable_events 六个公共事件的常量与值）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/variable_def.ts#L175-L242"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_def.ts（各事件的参数类型定义）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/variable_def.ts#L244-L314"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（更新开始/解析完成/更新结束三个事件的 emit 点）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L860-L910"
+    },
+    {
+      "kind": "src",
+      "name": "MVU global/index.ts（10 项 deprecated API 的定义与替代注释）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/global/index.ts#L75-L155"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（初始化事件按 swipe 逐一 emit）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L188"
+    }
+  ],
+  "related": [
+    "mvu.data.structure",
+    "mvu.updatevariable.commands",
+    "sandbox.event.table"
+  ],
+  "updated": "2026-10-31"
+}

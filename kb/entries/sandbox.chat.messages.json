@@ -1,0 +1,114 @@
+{
+  "id": "sandbox.chat.messages",
+  "domain": "sandbox",
+  "title": "消息层 API：range 解析（负数=深度反查）、include_swipes 两种不对称形状、refresh 三态",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "取消息（range 解析四条规则）": [
+      "**先展开宏**：传入的 range 字符串**先做宏替换**再解析（`'0-{{lastMessageId}}'` 这类写法靠这一步成立）。⇒ **未展开的字符串匹配不上任何格式 ⇒ 返回空数组，不抛错。**",
+      "**负数 = 深度反查（1-based）**：`-1` = 最后一楼，`-2` = 倒数第二楼。正数则是 **0-based**（`0` = 第一楼）。⇒ **两套计数法混用是本条最易错的地方**。",
+      "**越界一律夹住、不报错**：单值 `999` 在 3 楼聊天里返回最后一楼那 1 条；`'2-9'` 上界被夹到最后一楼；比深度还深的 `-7` 夹到第 0 楼。",
+      "**范围自动排序**：`'5-0'` 与 `'0-5'` 等价。格式非法（`'abc'` / `'1-2-3'`）⇒ 返回空数组。"
+    ],
+    "取消息的其它三条契约": [
+      "**返回值是深拷贝**：拿到的 `data` / `extra` / `swipes_data` 改了**不会写回**，必须再调「写消息」API。",
+      "**role 是推导出来的，不是消息上的原始字段**：用户发的 → `user`；角色发的 → `assistant`；旁白类型 → `system`；**而「旁白 + 用户发的」会得到 `unknown`** —— 这个值不在 role 枚举里 ⇒ `role='all'` 时能取到、按任何具体 role 过滤都取不到。",
+      "**隐藏状态与返回字段名不一致**：过滤参数叫 `hidden`/`unhidden`，底层判定用的是消息的「是系统消息」标志；返回对象里这个标志又叫 `is_hidden`。⇒ 同一底层字段三个名字（`is_system` / `hide_state` / `is_hidden`），是历史包袱。"
+    ],
+    "include_swipes：两种**不对称**的返回形状（本条核心）": [
+      {
+        "开关": "假（默认）→ 单页形状",
+        "有": "当前正文 `message`、当前页变量 `data`、当前页信息 `extra`、以及 `swipe_id` / `swipes` / `swipes_data`（后三者标注「为兼容而带」）",
+        "没有": "`swipes_info`（**没有任何一页的信息数组**）"
+      },
+      {
+        "开关": "真 → 多页形状",
+        "有": "`swipe_id` / `swipes` / `swipes_data` / `swipes_info`（四件套齐全）",
+        "没有": "**`message` / `data` / `extra` 全部没有**"
+      }
+    ],
+    "不对称是刻意的": "想同时要「当前正文」+「全部页」必须**调两次**，或自己从 `swipes[swipe_id]` / `swipes_data[swipe_id]` 取。这个不对称由两个返回类型定义确认，**不是 bug**。",
+    "多页数组的补齐规则": [
+      "**以 `swipes` 的长度为准**；`swipes_data` / `swipes_info` **短的补空对象、长的被截断** ⇒ 三数组最终等长。",
+      "单页消息（没有 `swipes`）⇒ 三数组分别由「正文 / 空对象 / 当前页信息」构成。",
+      "注意第一项是 `message.mes` 而**未做空值兜底**，若正文为空会得到 `[undefined]`，靠后续逐项兜底成空串。"
+    ],
+    "写消息（setChatMessages）的三条关键语义": [
+      "**同 id 多条输入先浅合并**（后覆盖前），且每个 id 先做「负数转正」归一。",
+      "**走「单页分支」还是「多页分支」由字段存在性决定**：只要带了 `message` **或** `data`（**哪怕值是 undefined**）就走单页分支，`swipes` 相关字段被忽略。⇒ 想改页数组必须**不带**这两个字段。",
+      "**只带 `message_id` 的调用等价于「只重渲染不改数据」**（所有字段回退原值）——这是上游 d.ts 明确示范的用法。",
+      "字段落点有**双写**：`extra` 同时写「消息本体」与「当前页信息数组」；`message` 在有页数组时**同时写页数组对应项**。"
+    ],
+    "refresh 三态（最易错：`none` 不是「不落盘」）": [
+      { "值": "none", "落盘": "**仍然落盘**（防抖保存）", "界面": "不碰 DOM", "陷阱": "「none = 完全不落盘」是错的" },
+      { "值": "affected（默认）", "落盘": "**防抖**保存", "界面": "只刷新受影响的那几条消息", "陷阱": "「只重渲染」的语义，不重载整页" },
+      { "值": "all", "落盘": "**立即**保存（不是防抖）", "界面": "**整个聊天重载**，会触发 `CHAT_CHANGED` 事件", "陷阱": "用错了会连带重置一大堆界面状态；若 all 也用防抖，重载可能读不到刚写的值" }
+    ],
+    "refresh 的额外边界": [
+      "**结构性增删（新建 / 删除 / 旋转消息）不接受 `none`**：托管聊天界面下会直接抛错。`setChatMessages` 不受此限。",
+      "新建消息时**变量只写第 0 页**（不是当前 `swipe_id` 页）——与「写消息」的双写语义不同，容易混。"
+    ],
+    "新建 / 删除 / 旋转的三条补充契约": [
+      "新建：`insert_at` 是 `insert_before` 的**废弃别名且优先级更高**；`'end'` = 末尾；数字允许**负数**（`-1` = 插到最后一楼之前）并夹在合法区间。",
+      "新建：`role` 决定 `name` 默认值（显式 name > 系统默认 > 用户名 > 角色名）。",
+      "删除：先过滤非法 id（**用左闭右开区间判定**）→ 归一 → 排序 → **去重**；空数组直接返回；然后**一次性按索引移除**。",
+      "旋转：`[起, 中) [中, 止)` → `[中, 止) [起, 中)`；**`止` 是「结尾楼层号 + 1」（左闭右开）**；`中` 被夹进 `[起, 止]`，越界不报错。"
+    ],
+    "易错点": [
+      "负数当 0-based：`-1` 会算成第 -1 楼（应等于最后一楼）",
+      "range 未展开宏就先解析：`{{lastMessageId}}` 写法全失效并静默返回空数组",
+      "越界报错：上游一律夹住",
+      "以为 `include_swipes:true` 能同时拿到正文：拿不到，必须两次调用",
+      "以为 `include_swipes:false` 一定有 `swipes_info`：没有",
+      "写页数组时顺手带了 `message`：会走单页分支，`swipes` 被忽略",
+      "把 `refresh:'none'` 当成不落盘",
+      "把 `refresh:'all'` 实现成「只刷受影响」：不会触发聊天重载与 `CHAT_CHANGED`",
+      "旋转时把 `end` 当闭区间：会多转一楼"
+    ],
+    "pseudocode": "解析范围(文本, 最小, 最大):\n  文本 = 展开宏(文本)\n  若 文本 匹配 单个整数:\n    值 = clamp(整数 < 0 ? 最大 + 整数 + 1 : 整数, 最小, 最大)   # 负数是 1-based 深度\n    起 = 止 = 值\n  否则若 文本 匹配 两个整数用连字符:\n    起, 止 = 排序(夹住(两个整数))\n  否则: 返回 空(⇒ 调用方返回空数组)\n\n取消息(范围, 选项):\n  结果范围 = 解析范围(范围, 0, 聊天长度-1)\n  若 空: 返回 []\n  for id in 结果范围:\n    消息 = 聊天[id]\n    角色 = 推导角色(消息)            # 旁白+用户 = 'unknown'(过滤不到)\n    若 角色 不匹配 选项.role: 跳过\n    若 隐藏状态 不匹配 选项.hide_state: 跳过\n    若 选项.include_swipes:\n      页数组 = 补齐三数组(消息)\n      结果 += { id, 名, 角色, 隐藏, 页号, 页数组, 页变量数组, 页信息数组 }\n    否则:\n      结果 += { id, 名, 角色, 隐藏, 正文, 当前页变量, 当前页信息, 页号, 页数组, 页变量数组 }\n  返回 深拷贝(结果)\n\n写消息(条目列表, refresh):\n  合并 = 按 id 排序分组后 浅合并(后覆盖前), 每个 id 先负转正\n  for 条目 in 合并:\n    消息 = 聊天[条目.id]\n    若 条目 有 'message' 或 'data' 字段(含值未定义):   # 单页分支\n      按字段逐个写(含 extra 双写、message 双写)\n    否则:                                            # 多页分支\n      取最长, 夹页号, 三数组对齐, 整组写回\n  落盘与刷新(refresh)                                  # none 也落盘(防抖); all 立即落盘并重载聊天\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/api/resource_frame_template.html:493-522",
+      "server-rs/src/api/resource_frame_template.html:529-544",
+      "web/src/sandbox/boot/mvu-tavern.ts:153-172"
+    ],
+    "note": "Kedai 有 getChatMessages 的 RPC 通道（整页卡侧回宿主读真实消息，含 MVU 变量树）与 createChatMessages（经 RPC 交宿主暂存），但**卡片级脚本沙箱里写操作是显式占位桩**：createChatMessages / triggerSlash 返回空数组且首次告警「不可写（仅占位，不落库）」，getCurrentMessageId / getLastMessageId 恒返回 -1。⇒ range 解析、include_swipes 两形状、refresh 三态、setChatMessages 合并与双写、新建/删除/旋转均无实现。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（range 解析：宏展开、负数深度反查、夹住、排序）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L49-L87"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（include_swipes 两种不对称返回形状与三数组补齐）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L122-L165"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（role/hide_state 推导与过滤）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L91-L118"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（refresh 三态的双路径实现）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L172-L198"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（setChatMessages 合并、单页/多页分支判定与字段双写）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L216-L313"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 chat_message.ts（create/delete/rotate 的边界规则）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/chat_message.ts#L341-L488"
+    }
+  ],
+  "related": ["sandbox.event.table", "sandbox.render.flow", "card.chat.jsonl"],
+  "updated": "2026-10-31"
+}

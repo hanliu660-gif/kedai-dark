@@ -1,0 +1,91 @@
+{
+  "id": "macro.alias.rules",
+  "domain": "macro",
+  "title": "别名与大小写：查找键统一小写、别名继承主宏全部行为、隐藏别名只影响文档",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "名称大小写": "宏名**大小写不敏感**：注册与查找都把名字统一转小写后比对。⇒ 文档里写的 `{{User}}` / `{{USER}}` / `{{user}}` 是同一个宏。",
+    "注册名的预处理": "注册时名字先 **trim**；trim 后为空或不符合标识符规则则拒绝（注释宏的 `//` 是显式合法的特例）。",
+    "别名机制": [
+      "别名是**独立条目**，指向同一份定义 ⇒ **继承主宏的全部行为**（参数契约、类型校验、处理器、是否有副作用全部一致）。",
+      "别名条目额外记录两件事：①「我别名于谁」（供文档展示回溯）；② 可见性（`visible === false` 的只不出现在文档与自动补全里）。",
+      "注册别名需校验：目标存在、别名 ≠ 目标名（忽略大小写）、别名本身是合法标识符。",
+      "别名**不是新宏**：若把别名当新宏单独注册，参数契约会与主宏漂移，这是最隐蔽的一类错。"
+    ],
+    "重复注册": "同名重复注册**不抛错**：只告警并**覆盖**。⇒ 注册顺序有意义，后注册者赢；扩展注册同名宏可覆盖内置。",
+    "隐藏别名（`visible:false`）的实际名单": "隐藏别名只影响 `getAllMacros` 的过滤结果（文档/补全用），**运行时照样可调用**。上游内置的隐藏别名有：`comment`（`//` 的别名）、`version` 与 `char_version`（charVersion）、`idle_duration`（idleDuration）、`charIfNotGroup`（group）。",
+    "大小写不敏感的两端一致": [
+      "宏名：注册与查找都 lower。",
+      "**dynamicMacros（动态注入的宏表）**：键也统一 lower ⇒ 卡里写 `{{Pipe}}` 与 `{{pipe}}` 命中同一项。",
+      "**scoped 宏配对**：开闭标签按名字忽略大小写配（`{{if}}…{{/IF}}` 能配对）。"
+    ],
+    "变量简写的规则（与宏名规则不同）": {
+      "两个前缀": "点号（`.`）= 会话级 local；美元号（`$`）= 全局 global。",
+      "名规则": "字母开头 + 词字符/下划线/连字符，**且不能以连字符或下划线结尾**（避免与 `++`/`--` 的符号歧义）。",
+      "不合法时怎么办": "只是**不能用简写**，完整宏形式（`{{getvar::名}}` 等）照样可用；界面提示但不阻止保存。",
+      "等价关系": [
+        "`{{.名}}` ≈ 取 local；`{{$名}}` ≈ 取 global",
+        "`{{.名 = 值}}` ≈ 设 local（返回空串）；`{{$名 = 值}}` ≈ 设 global（返回空串）",
+        "`{{.名++}}` / `{{.名--}}` ≈ 自增/自减（**返回新值**）",
+        "`{{.名 += 值}}` ≈ 增量（返回空串）；`{{.名 -= 值}}` ≈ 负增量（返回空串，非数字则告警且不改）",
+        "`{{.名 || 默认}}`（falsy 才用默认，惰性求值）/ `{{.名 ?? 默认}}`（**仅不存在**才用默认）",
+        "`{{.名 ||= 值}}` / `{{.名 ??= 值}}`：对应条件下写入并返回",
+        "`{{.名 == 值}}` / `{{.名 != 值}}`：**字符串**比较；`>` `>=` `<` `<=`：**数值**比较（任一侧非数字则返回字符串 `false`）"
+      ]
+    },
+    "宏名与变量名的规则互不相同（三条易混正则的归属）": [
+      { "规则": "字母开头 + 词字符/下划线/连字符", "归属": "**宏标识符**（`{{宏名}}` 里的名字）", "特例": "`//` 合法" },
+      { "规则": "字母开头 + 词字符/下划线/连字符 + 不以连字符或下划线结尾", "归属": "**变量简写**（`{{.名}}` / `{{$名}}`）", "范围": "仅简写语法" },
+      { "规则": "变量名本身", "归属": "**只有「非空」校验**", "范围": "任意非空字符串" }
+    ],
+    "易错点": [
+      "宏名做成大小写敏感：`{{User}}` 失效",
+      "别名单独注册成新宏：参数契约与主宏漂移",
+      "把隐藏别名当作「不可调用」：它只是不出现在文档，运行时能用",
+      "重复注册抛错：上游只告警并覆盖",
+      "scoped 配对区分大小写：`{{/IF}}` 配不上 `{{if}}`",
+      "dynamicMacros 键不做小写归一：动态注入的宏时灵时不灵",
+      "把宏标识符规则用到变量名上：中文变量名全被拒"
+    ],
+    "pseudocode": "注册(名, 选项):\n  键 = 小写(trim(名))\n  若 键 为空 或 不满足标识符规则(除 '//') → 拒绝\n  若 查找表已含 键 → 告警(不抛错)\n  查找表[键] = 定义\n\n注册别名(主名, 别名, 可见? = 真):\n  校验 主名 存在 ∧ 别名 ≠ 主名(忽略大小写) ∧ 别名 是合法标识符\n  查找表[小写(别名)] = 主定义的副本 + { 别名于: 主名, 别名可见: 可见? }\n\n查找(名) = 查找表[小写(trim(名))]\n\n列出(排除隐藏别名?): 若 排除 → 过滤掉 别名可见 == 假 的条目\n\n# scoped 配对\n配对(开标签名, 闭标签名) = 小写(开) == 小写(闭)\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:98-100",
+      "server-rs/src/parsing/macros.rs:97-131",
+      "server-rs/src/parsing/macros.rs:101-102"
+    ],
+    "note": "Kedai 的 `expand_one` 第一件事就是 `name.to_lowercase()` ⇒ **宏名大小写不敏感这条是符合的**（`{{User}}` 能命中 `user`）。别名靠 match 分支的 `|` 并列实现（`\"char\" | \"character_name\"`、`\"user\" | \"user_name\"`、`\"newline\" | \"lf\"`、`\"datetime\" | \"date\"`、`\"lastmessage\" | \"mes\"`），**等价于「别名 = 同一 handler」**，所以「别名继承全部行为」这条实质满足；但没有别名表、没有可见性概念、没有重复注册覆盖逻辑（硬编码树里不可能重复）。变量简写（`{{.名}}` / `{{$名}}`）完全未实现。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（注册与查找统一 lowercase、重复注册只告警覆盖）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L241-L342"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（别名条目结构与 getPrimaryMacro 回溯）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L364-L386"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroLexer.js（宏标识符规则与变量简写规则两条正则，及注释宏特例）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroLexer.js#L17-L28"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEnvBuilder.js（dynamicMacros 键小写归一）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEnvBuilder.js#L156-L160"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Variable Shorthands（前缀、运算符与等价关系）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L369-L520"
+    }
+  ],
+  "related": ["macro.builtin.catalog", "variable.name.rules", "macro.registry.args"],
+  "updated": "2026-10-31"
+}

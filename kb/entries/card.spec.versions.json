@@ -1,0 +1,89 @@
+{
+  "id": "card.spec.versions",
+  "domain": "card",
+  "title": "角色卡规格 V1/V2/V3：包装层、字段位置与 V3 两个「未实现」字段",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "三套规格的判别": [
+      { "规格": "V1（无 spec 标记的裸卡）", "判别": "**没有 `spec` 字段**", "结构": "所有字段平铺在顶层：name / description / personality / scenario / first_mes / mes_example；作者注释用 `creatorcomment`；**没有** data 子对象" },
+      { "规格": "V2", "判别": "`spec === 'chara_card_v2'` ∧ `spec_version === '2.0'`", "结构": "**正文全部在 `data` 子对象内**（name / description / personality / scenario / first_mes / mes_example / creator_notes / system_prompt / post_history_instructions / alternate_greetings / character_book / tags / creator / character_version / extensions）；top 层只放 spec 与 data" },
+      { "规格": "V3", "判别": "`spec === 'chara_card_v3'` ∧ `spec_version === '3.0'`", "结构": "与 V2 同构（正文仍在 `data` 内），差异只在 `data.assets` 与若干新增字段" }
+    ],
+    "V1 到 V2 的字段改名（导入时最容易丢的四处）": [
+      { "V1 字段": "creatorcomment", "V2 字段": "creator_notes" },
+      { "V1 字段": "mes_example", "V2 字段": "mes_example（同名，但可能在 data 内）" },
+      { "V1 字段": "平铺顶层", "V2 字段": "全部搬进 data 子对象" },
+      { "V1 字段": "缺 spec", "V2 字段": "必须补 spec 与 spec_version" }
+    ],
+    "PNG 载体与规格的关系": [
+      "V2 卡：PNG 的 `chara` 块里是**整个 V2 对象**（含 spec/data）。",
+      "V3 卡：PNG 里**同时**可能有 `chara` 与 `ccv3` 两块，读取时 **ccv3 优先**（见 card.png.text）。",
+      "写入时 `ccv3` 块**不是重新组织的数据**，而是同一份 V2 JSON 改掉 spec/spec_version 两个字段（见 card.png.text）。"
+    ],
+    "V3 的两个「未实现」字段（**这是本轮最需要写清的事实**）": {
+      "`nickname`": "**ST 源码里没有任何读取点**（全仓（排除分词器资源）grep = 0 命中）⇒ 卡里写了也不生效，界面上不显示昵称。**不要实现，也不要当契约。**",
+      "`group_only_greetings`": "**同样零读取点** ⇒ 群聊专属问候语不被识别，群聊里仍用普通 alternate_greetings。**不要实现。**",
+      "结论": "V3 相对 V2 的**真正可用**增量目前只有 `data.assets`（资产清单，供 CHARX 用）+ 若干纯展示/扩展字段。复刻时按 V2 主体做，V3 只额外处理 `data` 扁平化与 `assets`。",
+      "出处性质": "这条是「上游未实现」**事实**，不是我们的判断；写进实现注释里，避免后人误以为是我们漏做。"
+    },
+    "V3 `assets` 的形态（唯一有实际用途的 V3 增量）": [
+      "位于 `data.assets`，是数组；每项含 `type` / `name` / `ext` / `uri` / 可能含 `order`。",
+      "`uri` 是**指向压缩包内路径的伪协议**，前缀兼容三种写法：`embeded://`（**故意保留上游的拼写错误**，RisuAI 导出用这个）、`embedded://`（正确拼写）、`__asset:`。",
+      "`type` 里 `icon` 是主图标；`name` 为 `main` 的那一项优先作为主图标。"
+    ],
+    "V3 的另一种可能：整份卡在 zip 里（CHARX）": "CHARX 是 zip 容器，内部固定有 `card.json`（内容就是 CCv2 或 CCv3 规格的整份卡）+ 资产文件。判定与读取见 card.container.others。",
+    "导出侧的包装规则（反向：ST 内部结构 → 卡文件）": [
+      "写 V2 时：`spec = 'chara_card_v2'`、`spec_version = '2.0'`，正文放进 `data`。",
+      "其它格式（如 BYAF 导入）也一律转成 V2 形态再存。",
+      "⇒ 导出的卡**永远**是 V2 或 V3，不会是「无 spec 的 V1」。V1 只在**导入遗留文件**时出现。"
+    ],
+    "易错点": [
+      "V1 卡不补 spec 就当 V2 读：所有字段会读不到（因为 V2 在 data 内）",
+      "V3 卡只读顶层：顶层往往是空的，必须在 data 内读",
+      "把 `creatorcomment` 与 `creator_notes` 当两个字段：导入时要映射",
+      "实现 `nickname` / `group_only_greetings`：上游未实现，做了就是自造契约",
+      "把 `embeded://` 当拼写错误「修正」成 `embedded://`：会导致 RisuAI 导出的 CHARX 资产全部找不到",
+      "以为 V3 就是「结构大改」：主体与 V2 完全同构"
+    ],
+    "pseudocode": "读取(整份卡 对象):\n  规格 = 对象.spec\n  若 规格 == 'chara_card_v3':\n    正文 = 对象.data                    # 必须在 data 内\n    资产 = 数据.assets 或 []\n    扁平化: 把 data 内字段提升到顶层(顶层非空者不覆盖),保留 data 原样\n  否则若 规格 == 'chara_card_v2':\n    正文 = 对象.data\n  否则(无 spec):\n    正文 = 对象                          # V1:全部平铺\n    映射: creatorcomment → creator_notes\n    补: spec = 'chara_card_v2', spec_version = '2.0'（导入归一）\n  # 注意:不读 nickname, 不读 group_only_greetings（上游未实现）\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/character_card.rs:221-229",
+      "server-rs/src/parsing/character_card.rs:244-258",
+      "server-rs/src/parsing/character_card.rs:260-282"
+    ],
+    "note": "Kedai 有 `ensure_spec`（缺失 spec 时补 `chara_card_v1`）与 `flatten_v3_data`（V3 时把 data 内字段提升到顶层、顶层非空不覆盖、data 原样保留、spec 保持 v3、幂等），比上游更主动。但**没有 V1→V2 的字段改名映射**（`creatorcomment` 不会变成 `creator_notes`）、**没有 V3 assets 处理**（grep assets/embeded 0 命中）、也没有 CHARX zip 容器支持（Cargo.toml 无 zip 依赖）。⇒ 兼容采纳了 V3 的正文位置，但丢掉了 V1 的老字段与 V3 的资产清单。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 char-data.js（V2 与 V1 字段定义、data 包装、creatorcomment 差异）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/char-data.js#L50-L123"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 character-card-parser.js（写入时 ccv3 块由 V2 改两个字段生成）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/character-card-parser.js#L15-L45"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 charx.js（V3 data.assets 与 embeded:// 三前缀的读取点）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/charx.js#L1-L200"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 byaf.js（导入侧一律产出 V2 形态）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/byaf.js#L240-L265"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 endpoints/characters.js（导出侧写死 V2 spec 与版本）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/characters.js#L596-L597"
+    }
+  ],
+  "related": ["card.png.text", "worldinfo.book.convert"],
+  "updated": "2026-10-31"
+}

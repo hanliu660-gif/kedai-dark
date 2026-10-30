@@ -17,15 +17,15 @@
       "只改广播侧不改订阅侧（或者反过来）——两边都在自己仓里，必须同时对齐",
       "用「前缀一致」做批量校验：这条不满足该启发式"
     ],
-    "pseudocode": "# 正确\n事件常量.CHAT_CHANGED = 'chat_id_changed'\n# 错误（静默失效）\n事件常量.CHAT_CHANGED = 'chat_changed'\n\n校验: for (键, 值) in 常量表: 断言 值 == 上游常量表[键].值\n"
+    "pseudocode": "# 正确\n事件常量.CHAT_CHANGED = 'chat_id_changed'\n# 错误（静默失效）\n事件常量.CHAT_CHANGED = 'chat_changed'\n\n校验: for (键, 值) in 常量表: 断言 值 == 上游常量表[键].值\n",
+    "修复记录": "Kedai 2026-10-31 修正：`tavern_events.CHAT_CHANGED` 由 `chat_changed` 改为 `chat_id_changed`（与上游一致）。"
   },
   "kedai": {
-    "status": "differs",
+    "status": "match",
     "evidence": [
-      "web/src/sandbox/boot/mvu-tavern.ts:184-193",
-      "web/src/sandbox/boot/mvu-tavern.ts:192"
+      "web/src/sandbox/boot/mvu-tavern.ts:213"
     ],
-    "note": "Kedai 的沙箱事件常量表里 `CHAT_CHANGED:'chat_changed'` —— 值写错（上游是 `chat_id_changed`）。⇒ 监听切会话的卡在 Kedai 里永远收不到该事件。另注：Kedai 的事件总线只有 `eventOn/eventOff/eventEmit` 三个裸函数（基于内部 Map），也没有 ST 的 `eventSource` 语义，且常量注释自己写明「其余常量仅列出供脚本引用，kedai 侧暂无对应广播源不会触发」。"
+    "note": "【已修 2026-10-31】值已改为上游正确的 `chat_id_changed`（原为 `chat_changed`）。卡用 eventOn(CHAT_CHANGED) 订阅切会话现在能收到。"
   },
   "sources": [
     {
@@ -44,6 +44,9 @@
       "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/@types/iframe/event.d.ts#L330-L345"
     }
   ],
-  "related": ["sandbox.iframe.pagehide", "sandbox.predefine.injection"],
+  "related": [
+    "sandbox.iframe.pagehide",
+    "sandbox.predefine.injection"
+  ],
   "updated": "2026-10-31"
 }

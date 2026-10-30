@@ -24,15 +24,16 @@
       "把整个宿主 window 直接摊给 iframe：会把 `document` / `location` 带进去，直接搞坏沙箱",
       "只挂 `SillyTavern.getContext` 但不去掉对 `window.parent` 的依赖：跨源访问直接抛"
     ],
-    "pseudocode": "定义访问器(window, 'SillyTavern'):\n  取 = 函数():\n    上下文 = 宿主.取上下文()      # 每次访问都重新取\n    副本 = 浅拷贝(上下文)\n    副本.写扩展字段 = 宿主.写扩展字段\n    副本.取上下文 = 取              # 自引用,支持二次调用\n    返回 副本\n  只有 getter，不设 setter（避免卡把本体覆盖掉）\n"
+    "pseudocode": "定义访问器(window, 'SillyTavern'):\n  取 = 函数():\n    上下文 = 宿主.取上下文()      # 每次访问都重新取\n    副本 = 浅拷贝(上下文)\n    副本.写扩展字段 = 宿主.写扩展字段\n    副本.取上下文 = 取              # 自引用,支持二次调用\n    返回 副本\n  只有 getter，不设 setter（避免卡把本体覆盖掉）\n",
+    "修复记录": "Kedai 2026-10-31 修正：`SillyTavern` 由静态空壳改为带 `getContext()` / `getContextAsync()` 的对象；宿主新增 `st-context` RPC（只回只读数据面：name1 / characters / chat 最近 8 条摘要 / extensionSettings / chatMetadata）。采用惰性拉取（首次调用才发 RPC），不干扰启动期 RPC 计数。"
   },
   "kedai": {
-    "status": "missing",
+    "status": "match",
     "evidence": [
-      "web/src/sandbox/boot/mvu-tavern.ts:176-178",
-      "web/src/render.ts:787"
+      "web/src/sandbox/boot/mvu-tavern.ts:181-198",
+      "web/src/cardScriptHost.ts:231-252"
     ],
-    "note": "Kedai 在沙箱 boot 里给出的是静态可写空壳 `{extensionSettings:{},chat:[],characters:[],name1:'user'}`，`grep getContext web/src/sandbox/` = **0 命中**。⇒ 现代卡最常用的入口 `SillyTavern.getContext()` 在 Kedai 沙箱里必定 TypeError；整页卡的隔离文档（resource-frame.html）里也完全没有注入 `SillyTavern`（grep 只有注释提到）。这属于「性质差异」而非参数差异，必须加 RPC 桥才能补齐。"
+    "note": "【已修 2026-10-31】`SillyTavern` 现在是「带 `getContext()` 的对象」：首次调用才惰性发一次 `st-context` RPC（启动不预拉），宿主 op 已实现（`cardScriptHost.ts` rpcExtensions）；RPC 不可用时静默回退静态形状，绝不抛错。另提供 `getContextAsync()`。"
   },
   "sources": [
     {
@@ -51,6 +52,9 @@
       "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/For_Contributors/Writing-Extensions.md#L1-L60"
     }
   ],
-  "related": ["sandbox.predefine.injection", "sandbox.jquery.two_hosts"],
+  "related": [
+    "sandbox.predefine.injection",
+    "sandbox.jquery.two_hosts"
+  ],
   "updated": "2026-10-31"
 }

@@ -1,0 +1,91 @@
+{
+  "id": "mvu.parse.fallback",
+  "domain": "mvu",
+  "title": "两条**不同**的解析链：parseString 四段回退 vs parseStructuredUpdate 的 JSON5 优先",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么必须分成两条": "MVU 有两套解析入口，**尝试顺序相反**。用错一套，同一段文本会得到不同结果（甚至一边成功一边失败）。复刻时把它们合成一条是最常见的结构性错误。",
+    "链一：通用文本解析（四段回退 + 一个前置判断）": {
+      "前置判断": "看内容首字符：以 `[` 或 `{` 开头即「像 JSON」。",
+      "顺序（先判 JSON 与否，决定先试哪个）": [
+        { "序": 1, "条件": "不像 JSON", "尝试": "**YAML 解析**（支持 `<<` 合并键）" },
+        { "序": 2, "尝试": "**JSON5**" },
+        { "序": 3, "尝试": "**修复后的 JSON**（先用容错修复器修一遍再标准解析）" },
+        { "序": 4, "条件": "**仅当「像 JSON」时**", "尝试": "再试一次 YAML" }
+      ],
+      "⇒ 实际顺序": "像 JSON 时：跳过第 1 步，走 `JSON5 → 修复JSON → YAML`；不像 JSON 时：走 `YAML → JSON5 → 修复JSON`。",
+      "为什么第 1 步要主动抛错": "如果内容以 `{`/`[` 开头却先让 YAML 解析，YAML 会把某些合法 JSON5 当成普通字符串 ⇒ 结果与预期不符。所以**主动跳过**。",
+      "错误信息形态": "四段全失败时，把三方的错误信息打包成一个**YAML 字符串**再抛出（方便阅读）。"
+    },
+    "链二：更新块/补丁专用解析（JSON5 优先）": {
+      "顺序": "先剥包裹（去首尾空白 → 去开头的代码围栏标记 → 去结尾的围栏 → 再去空白）→ **先试 JSON5** → 失败才回落到链一的四段回退。",
+      "为什么与链一相反": "YAML 可能把以 `//` 或 `/*` 开头的**合法 JSON5**（含注释）当成普通字符串 ⇒ 先试 YAML 会吃掉注释并给出错误结果。所以这条链必须先 JSON5。",
+      "附加校验 `isJsonSafe`": "递归检查：拒绝循环引用、拒绝非有限数值、拒绝非 JSON 类型（只允许 null / 字符串 / 布尔 / 数值 / 数组 / 纯对象）。⇒ **这条**是「补丁能不能落地」的门，不是链一的职责。"
+    },
+    "链三（另一处，别与上两条混）：命令参数的取值解析": {
+      "用于": "补丁/命令里的**单个参数值**（不是整段块）。",
+      "顺序": [
+        "非字符串直接返回（已经是值了）",
+        "`true` / `false` / `null` / `undefined` 字面量",
+        "标准 JSON 解析",
+        "以 `{` / `[` 包裹时试 JSON5",
+        "以单引号包裹时试 YAML",
+        "**表达式求值**（受限的数学表达式引擎，只注入只读的数学命名空间）",
+        "YAML 解析",
+        "兜底：去掉首尾引号/反斜杠/空格/反引号"
+      ],
+      "安全设计": "表达式求值**禁止直接 eval**；用的是**受限实例**（冻结的独立命名空间 + AST 过滤赋值与非法访问）。⇒ 复刻不能用真 eval。",
+      "数值收敛": "求值结果是复数/矩阵时转字符串；是数值时按有效位数收敛（避免浮点噪声）。"
+    },
+    "三条链的对照表（复刻时贴墙上）": [
+      { "链": "通用文本", "第一优先": "YAML（若不像 JSON）", "JSON5 的位置": "第二", "返回值": "任意值", "用途": "初始变量内容 / 世界书条目内容" },
+      { "链": "更新块专用", "第一优先": "**JSON5**", "JSON5 的位置": "第一", "返回值": "任意值（再过 isJsonSafe）", "用途": "`<UpdateVariable>` 块内 / 补丁块" },
+      { "链": "命令参数", "第一优先": "JSON / 字面量", "JSON5 的位置": "第三（仅当以花括号/方括号开头）", "返回值": "单值", "用途": "`_.set(path, value)` 里的 value" }
+    ],
+    "易错点": [
+      "把两条链合成一条：至少有一边结果会与上游不同",
+      "链一不判「像 JSON」就直接 YAML：JSON5 内容被 YAML 吞",
+      "链二先 YAML：带注释的 JSON5 被吃掉注释",
+      "链一失败时不打包三方错误：排障信息全丢",
+      "命令参数用真 eval 求值：**安全问题**",
+      "命令参数不收敛浮点：会出现 0.30000000000000004 这类值",
+      "忘记 isJsonSafe 的三类拒绝：循环引用 / 非有限数 / 非 JSON 类型会写进变量树"
+    ],
+    "pseudocode": "# 链一:通用文本解析\n通用解析(文本):\n  像JSON = 文本.去前导空白().首字符 ∈ ['[', '{']\n  if 非 像JSON:\n    尝试: 返回 YAML解析(文本, 支持合并键)\n  尝试: 返回 JSON5解析(文本)\n  尝试: 返回 标准JSON解析(修复(文本))\n  if 像JSON:\n    尝试: 返回 YAML解析(文本, 支持合并键)\n  抛错(打包三方错误信息为 YAML 字符串)\n\n# 链二:更新块专用\n更新块解析(文本):\n  干净 = 去首尾空白 → 去开头围栏 → 去结尾围栏 → 再去空白\n  尝试: 返回 JSON5解析(干净)\n  否则: 返回 通用解析(干净)\n  落地前: 断言 isJsonSafe(结果)     # 拒循环引用/非有限数/非 JSON 类型\n\n# 链三:命令参数\n参数解析(值):\n  若 值 非字符串: 返回 值\n  若 值是 true/false/null/undefined 字面量: 返回对应值\n  尝试 标准JSON\n  若 以 '{' 或 '[' 开头: 尝试 JSON5\n  若 以单引号包裹: 尝试 YAML\n  尝试 受限表达式求值        # 禁 eval,冻结命名空间 + AST 过滤\n  尝试 YAML\n  兜底: 去掉首尾引号/反斜杠/空格/反引号\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/assistant/initvar.rs:38-63",
+      "server-rs/src/parsing/assistant/initvar.rs:65-130",
+      "server-rs/src/parsing/assistant/patch.rs:75-83",
+      "server-rs/src/parsing/assistant/patch.rs:105-124"
+    ],
+    "note": "Kedai **没有三条链的体系**，而是按用途各写一套：① `[InitVar]` 侧是「`_.set(...)` 语句序列 → 整体 JSON → **自研的 YAML 风格缩进解析器**」三档（不是 YAML 库、不认 JSON5、不认 jsonrepair）；② 补丁侧 `<JSONPatch>` 直接 `serde_json::from_str`（**严格 JSON，失败即回落到 `_.set` 扫描**，无 JSON5、无修复器）；③ 命令参数没有独立解析链。⇒ 上游最关键的「两条链顺序相反」这个设计在 Kedai 里完全不存在，因此带注释的 JSON5、残缺 JSON、`<<` 合并键这几类输入在 Kedai 里会全部失败或被静默丢弃。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU common.ts（parseString 四段回退与 json_first 前置判断）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/util/common.ts#L27-L73"
+    },
+    {
+      "kind": "src",
+      "name": "MVU structured_update.ts（parseStructuredUpdate：JSON5 优先 + 围栏剥离 + isJsonSafe）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update/structured_update.ts#L289-L330"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（parseCommandValue 命令参数解析与受限表达式求值）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L226-L325"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（受限数学命名空间与 AST 过滤，禁 eval）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L34-L159"
+    }
+  ],
+  "related": ["mvu.data.structure", "mvu.merge.correctly", "mvu.updatevariable.commands"],
+  "updated": "2026-10-31"
+}

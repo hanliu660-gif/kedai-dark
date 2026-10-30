@@ -1,0 +1,85 @@
+{
+  "id": "worldinfo.decorators",
+  "domain": "worldinfo",
+  "title": "世界书条目装饰器：只吃开头的 `@@` 行，顺序压得住 constant",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "两个来源，不要混": [
+      {
+        "层": "ST 内核只认两个",
+        "内容": "`@@activate`（无视关键词直接激活）与 `@@dont_activate`（直接跳过）。这两个在**扫描期**起作用，属于激活判定的一环。",
+        "位置": "解析在排序阶段（每条目一次），效果在逐条判定的第 11/12 关。"
+      },
+      {
+        "层": "ST-Prompt-Template 扩展认一整套",
+        "内容": "`@@if` / `@@unless`(扩展侧实际提供 `@@if` 与语义相反的写法) / `@@var` / `@@set` / `@@generate_before` / `@@generate_after` / `@@render_before` / `@@render_after` / `@@message_formatting` / `@@preload` / `@@only_preload` / `@@dont_preload` / `@@initial_variables` / `@@always_enabled` / `@@private` / `@@iframe` / `@@preprocessing` 等十余个。",
+        "位置": "**渲染/生成期**起作用，不改 ST 的激活判定；由扩展自己扫内容开头的 `@@` 行。"
+      }
+    ],
+    "语法规则（两个来源一致）": [
+      "装饰器必须在**正文的第一行开始**，每行一个。",
+      "装饰器之间**不能有空行**，也不能夹杂普通内容；遇到第一个非 `@@` 行（或空行）即装饰器区结束。",
+      "名称与参数用**第一个空格**分隔：`@@if 好感度 > 50` → 名 `@@if`、参数 `好感度 > 50`。",
+      "`@@@` 前缀是转义：`@@@activate` 表示**字面量** `@@activate`（不生效），该行保留为正文。",
+      "未识别的 `@@xxx` 行：ST 内核**剥掉该行但仍存进 decorators**（不丢信息）；ST-Prompt-Template 扩展则**直接丢弃**该行。两套行为不同。"
+    ],
+    "激活判定的顺序敏感性（最易错）": [
+      "扫描期第 11 关：装饰器含「强制激活」→ **激活**，直接跳到下一轮，后续判定一律不再看。",
+      "第 12 关：装饰器含「禁止激活」→ 跳过。",
+      "第 14 关才是 constant。",
+      "⇒ **「禁止激活」压得住 constant**（因为第 12 关在前），但**压不住「强制激活」**（第 11 关已经返回了）。两者同时写时强制激活赢。",
+      "⇒ 这两个装饰器都在关键词判定（第 16/17 关）之前，所以无关键词条目也能被强制激活。"
+    ],
+    "`@@if` 的语义（扩展侧）": [
+      "条件为假 → **该条目整体不注入**（相当于这次跳过它）。",
+      "条件表达式由扩展自己的模板引擎求值，可用变量与宏。",
+      "条件求值失败时按「未命中装饰器」的容错方向处理：**条目照常注入**（保证内容不丢）。这条与「条件为假」的结果相反，容易搞反。"
+    ],
+    "`@@var` / `@@set` 的语义（扩展侧）": "在渲染本条正文**之前**把值写进变量树，从而影响本条后续模板表达式的读取。写的是变量树（不是正文）。",
+    "易错点": [
+      "把 ST 内核的两个装饰器与扩展的十几个混成一套：内核只认两个",
+      "以为 `@@dont_activate` 能压住 constant：能压住；但以为它能压住 `@@activate`：不能",
+      "把装饰器写在正文中间：不生效（只认开头连续行）",
+      "装饰器之间插空行：空行即终止装饰器区",
+      "`@@@activate` 当成生效：它是转义（字面量）",
+      "未识别装饰器按「保留在正文」处理：内核会剥掉该行（正文里不再有这一行）",
+      "`@@if` 求值失败时跳过条目：应放行"
+    ],
+    "pseudocode": "解析装饰器(正文) → (装饰器行集合, 剥离后的正文):\n  若 正文 不以 '@@' 开头: 返回 (空, 正文)\n  逐行扫描:\n    空行 → 装饰器区结束,该空行保留进正文\n    以 '@@@' 开头 → 剥一个 @ 后作为字面量放进正文,装饰器区继续\n    以 '@@' 开头 → 收进集合,该行不进正文\n    其它 → 装饰器区结束,该行及后续全进正文\n\n激活判定:\n  若 装饰器含 强制激活标记 → 激活; 跳过后续全部判定\n  若 装饰器含 禁止激活标记 → 跳过\n  ...(其余 16 关)...\n  若 constant → 激活\n\n渲染期(扩展侧):\n  for 装饰器 in 集合:\n    @@if <表达式> → 若求值为假: 本条不注入\n    @@unless <表达式> → 若求值为真: 本条不注入\n    @@var/@@set <路径> = <表达式> → 写入变量树(渲染本条之前)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:130-141",
+      "server-rs/src/parsing/world_book.rs:113-117",
+      "server-rs/src/parsing/assistant/ctx.rs:104-125",
+      "server-rs/src/agents/engine/worldbook.rs:113-116"
+    ],
+    "note": "Kedai 只实现了扩展侧的四个：`@@if` / `@@unless` / `@@var` / `@@set`（`apply_entry_decorators` 里 match 的四个分支），**未识别装饰器一律忽略且已剥行**（注释写「兼容层不丢信息」）。⇒ ST 内核的两个（`@@activate` / `@@dont_activate`）在 Kedai 里**没有任何效果**：只在测试里被解析成字符串存着，注入链路从不消费，于是「用 @@activate 强制激活无关键词条目」失效。另 Kedai 没有 constant 与装饰器的顺序敏感问题（因为根本没实现 @@dont_activate）。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST-Prompt-Template 文档 · Decorators（完整装饰器清单与语法规则）",
+      "ref": "https://github.com/zonde306/ST-Prompt-Template/blob/main/docs/features.md#L720-L800"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（内核已知装饰器常量表）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L100"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（装饰器逐行解析：@@ 开头、@@@ 转义、遇到非 @@ 行即止）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4652-L4707"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（第 11/12 关：强制激活与禁止激活的先后）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4875-L4884"
+    }
+  ],
+  "related": ["worldinfo.activation.flow", "worldinfo.book.convert"],
+  "updated": "2026-10-31"
+}

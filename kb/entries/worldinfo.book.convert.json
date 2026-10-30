@@ -1,0 +1,85 @@
+{
+  "id": "worldinfo.book.convert",
+  "domain": "worldinfo",
+  "title": "卡内书转换：整本书级元数据被丢，条目字段靠模板兜底，position 有两套语义",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "输入输出": "输入是角色卡里的内嵌书对象（V2 顶层 / V3 在 data 内），输出 `{ 条目表, 原始数据整份留档 }`。**只取条目，书级元数据全部丢弃**。",
+    "整本被丢弃的书级字段": "书名、描述、扫描深度、token 预算、递归扫描、书级扩展 —— 全部不返回。⇒ 书级的预算与递归设置在导入后被 ST 自身的全局激活设置接管，卡作者的意图丢失。",
+    "条目字段映射（左边=卡内书，右边=ST 条目）": [
+      { "卡内书字段": "id", "ST": "uid", "备注": "缺失时用**数组下标**补齐（并写回入参对象）" },
+      { "卡内书字段": "keys", "ST": "key", "备注": "**没有默认值兜底**：为 null 时原样传 null ⇒ 扫描期因「主键非数组」被跳过" },
+      { "卡内书字段": "secondary_keys", "ST": "keysecondary", "备注": "缺失兜 `[]`" },
+      { "卡内书字段": "comment", "ST": "comment", "备注": "缺失兜空串" },
+      { "卡内书字段": "content", "ST": "content", "备注": "无兜底，缺失即 undefined" },
+      { "卡内书字段": "constant", "ST": "constant", "备注": "缺失兜 false" },
+      { "卡内书字段": "selective", "ST": "selective", "备注": "`entry.selective || false` ⇒ 缺失变 false ⇒ **副关键词完全不参与**（卡里写 `\"selective\": false` 且给了 secondary_keys 时，副键被静默无视）" },
+      { "卡内书字段": "insertion_order", "ST": "order", "备注": "**无兜底**：缺失即 undefined ⇒ 全局排序时相减得 NaN ⇒ 排序不稳定" },
+      { "卡内书字段": "enabled", "ST": "disable", "备注": "`disable = !enabled` ⇒ **缺失时 `!undefined = true` = 条目被禁用**" },
+      { "卡内书字段": "position", "ST": "position", "备注": "见下「两套 position 语义」" },
+      { "卡内书字段": "extensions.全家族", "ST": "对应字段", "备注": "概率/深度/组/递归/outlet/role/match* 等**全部从 extensions 读**，缺失各自兜默认值" }
+    ],
+    "两套 position 语义的桥（最容易错）": {
+      "规则": "优先取 `extensions.position`；否则按 `position` 字符串映射，且**只有 `before_char` 映射成 before(0)**，**其它一切值（含 `after_char`、缺省、空串、数字）都映射成 after(1)**。",
+      "后果": "这是个三元判断不是白名单 ⇒ 卡内书写成 `position: \"after_char\"` 得到 after(1)（正确），但写成 `position: 0` 或 `position: \"top\"` 也得到 after(1)（错）。",
+      "复刻要求": "只要 `extensions.position` 存在就必须优先用它；没有它时不要试图「智能」猜测。"
+    },
+    "`use_regex` 为何被强制写 true（卡导出方向）": [
+      "ST 把「关键词是否正则」**不当作条目字段**，而是**逐 key 就地解析**：任意 key 只要形如 `/…/flags` 就自动按正则匹配。",
+      "导出到 V2 卡时规格要求一个 `use_regex` 布尔，但 ST 无法表达「只有部分 key 是正则」（没有这种字段）。",
+      "⇒ 于是**统一写 true**，语义是「请按 ST 的规则去解析我的 keys（形如 `/…/` 的当正则，其余当字面量）」。",
+      "反向导入**完全不读** `use_regex` ⇒ 第三方卡写 false 也会被忽略。",
+      "复刻建议：**不要**实现 `use_regex` 开关；实现「逐 key 尝试按 `/pattern/flags` 解析」即可，导出侧恒写 true。"
+    ],
+    "其它异常": [
+      "条目 `id` 重复：**后者覆盖前者**（直接按 id 赋值），无告警。",
+      "未知 `extensions.*`：不丢（整份保留），但扫描不读。"
+    ],
+    "同类转换器（都会**先用默认模板打底再显式覆盖**）": [
+      { "来源格式": "Agnai memory book", "识别": "JSON 的 `kind === 'memory'`", "特点": "主键取 `keywords`；`selective:false`、`constant:false`、`position:0`；order 取 `weight`" },
+      { "来源格式": "Risu lorebook", "识别": "JSON 的 `type === 'risu'`", "特点": "主键/副键按逗号切分并 trim；概率取 `activationPercent`（**数值被当布尔用**，边界需注意）；position 恒 before" },
+      { "来源格式": "NovelAI lorebook", "识别": "JSON 有 `lorebookVersion`", "特点": "主键取 `keys`；order 取 `contextConfig.budgetPriority`；`addMemo` 取决于 displayName 非空；position 恒 0" }
+    ],
+    "易错点": [
+      "以为书级 scan_depth / token_budget 会带过来：全丢",
+      "position 匹配写成白名单：上游是三元（非 before_char 一律 after）",
+      "`enabled` 缺失当启用：上游会变成**禁用**",
+      "`insertion_order` 缺失不管：排序会不稳定（NaN）",
+      "实现 `use_regex` 开关：与上游语义冲突",
+      "`selective` 缺失当 true：上游兜 false，副键静默失效"
+    ],
+    "pseudocode": "转换(卡内书):\n  结果 = { 条目表: {}, 原始数据: 卡内书 }\n  for 条目, 下标 in 卡内书.entries:\n    若 条目.id 缺失: 条目.id = 下标        # 写回入参\n    结果.条目表[条目.id] = 默认模板 ∪ {\n      uid: 条目.id,\n      key: 条目.keys,                       # 无兜底\n      keysecondary: 条目.secondary_keys 或 [],\n      constant: 条目.constant 或 false,\n      selective: 条目.selective 或 false,\n      order: 条目.insertion_order,           # 无兜底\n      position: 条目.extensions.position ?? (条目.position == 'before_char' ? before : after),\n      disable: 非 条目.enabled,             # 缺失 → 禁用\n      ...概率/深度/组/递归/outlet/role/match* 全部从 extensions 读,各自兜默认\n    }\n  返回 结果\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:317-329",
+      "server-rs/src/parsing/world_book.rs:332-448",
+      "server-rs/src/parsing/world_book.rs:451-468",
+      "server-rs/src/parsing/world_book_convert.rs:38-57",
+      "server-rs/src/parsing/world_book_convert.rs:92-102",
+      "server-rs/src/parsing/world_book_convert.rs:200-211"
+    ],
+    "note": "Kedai 的卡内书入口 `character_book_entries` 与上游同构（V2 顶层 / V3 在 data 内、先找到非空者），但字段归一走的是自己的启发式转换器（`convert_world_book`），方向与上游不同：会拆分关键词字符串、把 constant 的字符串/数字转布尔、**缺失 constant 时自动判定为常驻**（无关键词且无正则→常驻）、归一 enabled/disable/disabled 三变体，而**不读 extensions.* 家族**。⇒ 上游「缺失 constant 兜 false（激发）」被 Kedai 改成「自动判定常驻」，方向相反；position 只有 0..4 且仅作排序键。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（convertCharacterBook 逐字段映射与两套 position 语义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5617-L5674"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 characters.js（导出侧 position 桥与 use_regex 恒 true 的由来）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/characters.js#L663-L681"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（另三个转换器：Agnai / Risu / NovelAI）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5477-L5615"
+    }
+  ],
+  "related": ["worldinfo.decorators", "worldinfo.field.schema", "worldinfo.position.slots"],
+  "updated": "2026-10-31"
+}

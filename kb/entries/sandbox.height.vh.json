@@ -1,0 +1,85 @@
+{
+  "id": "sandbox.height.vh",
+  "domain": "sandbox",
+  "title": "高度同步（ResizeObserver + rAF 合帧 + 直接改宿主元素）与 vh 改写（只动 min-height）",
+  "priority": "P1",
+  "authority": "src",
+  "spec": {
+    "为什么要有高度同步": "iframe 的默认高度是固定的（或由属性决定）；把前端卡放进去后内容会撑高，但 iframe 不会自动长高 ⇒ 需要把「内容真实高度」回写到 iframe 元素上。",
+    "高度同步的三层机制": [
+      "**1. 监听内容尺寸变化**：对 `body` 挂尺寸观察器（`ResizeObserver`），body 一变就重测。",
+      "**2. 合帧**：用 `requestAnimationFrame` 把同一帧内的多次请求合并；另有「已排程」标志防抖。老浏览器无 rAF 时退化为「500ms 节流」。",
+      "**3. 写回**：测完**直接写自己的宿主元素（`frameElement.style.height = 像素值`）**。"
+    ],
+    "写回方式的硬含义（容易忽略）": [
+      "**不是 postMessage 回父窗**，而是 iframe 脚本直接改自己的 `frameElement` ⇒ **这要求同源**（`srcdoc` 天然同源；若换成跨源方式就做不到）。",
+      "⇒ 复刻若用不透明源沙箱（无 `allow-same-origin`），**这条通道物理上不可用**，必须换成「iframe 内测量 + 消息回传 + 宿主设置高度」。",
+      "高度的**取样来源是 `body.scrollHeight`**（不是 `documentElement`）；另取了 documentElement 但只用于「是否为空」判空。",
+      "测到非有限值或 ≤0 时**直接放弃本次**（不写 0）。"
+    ],
+    "触发时机": "页面 ready 后先测一次，然后挂上观察器持续跟进。⇒ **首次渲染必须主动测一次**，不能只靠观察器（观察器只在变化时触发）。",
+    "视口高度（vh）改写的动机": "iframe 里的 `vh` 是「iframe 视口高度的 1%」，但 iframe 高度是动态撑开的 ⇒ **`vh` 会随内容增长而算错**。因此把 `vh` 换成「父窗真实视口高度」的变量。",
+    "vh 改写的**四个替换点**（全部锚定 `min-height`）": [
+      "CSS 声明块里的 `min-height: …vh`",
+      "行内 `style=\"min-height: …vh\"`",
+      "JS 赋值 `element.style.minHeight = \"…vh\"`",
+      "JS 赋值 `setProperty('min-height', \"…vh\")`"
+    ],
+    "换算规则": "`100vh` 换成「父窗视口高度变量」原样；`Nvh`（非 100）换成 `calc(变量 * N/100)`。",
+    "前置检测": "三种模式都不命中就**原样返回**（纯性能考虑）。",
+    "★ 三个必须记住的限制（易错）": [
+      "**只处理 `min-height`，完全不碰 `height` / `max-height`** ⇒ 卡里写 `height: 100vh` 的不会改，仍然是 iframe 视口语义（可能算错）。",
+      "**只锚定后缀是 `vh` 的数值**，出现在注释或字符串里也会被替换（边界只保证前侧）。",
+      "**vh 改写只在楼层 iframe 里做，脚本 iframe 不做**（两者用途不同：楼层要展示布局，脚本只是逻辑容器）。"
+    ],
+    "两条互不依赖的视口通道（别混）": [
+      { "通道": "视口高度变量", "机制": "iframe 脚本把「父窗内高」写进一个 CSS 变量；父窗 resize 时通过消息通知 iframe 重新更新" },
+      { "通道": "内容高度回写", "机制": "iframe 测 body 高度并直接写 frameElement（见上）" },
+      "结论：**两条互不依赖**。一条坏不会自动由另一条兜住，复刻时两条都要实现（或明确取舍）。"
+    ],
+    "与宿主侧「只有 min-height 才改」的后果": "若卡用 `height: 100vh`（非常常见），改写不生效 ⇒ 在 iframe 里它等于「iframe 自身视口高度的 100%」，而 iframe 高度是动态的 ⇒ 视觉上会出现「内容被裁 / 高度抖动」。这是上游的既有限制，复刻若想更好就必须自己扩到 `height`（但那会与上游行为不同）。",
+    "易错点": [
+      "用 postMessage 回父窗设高度（上游是直接改 frameElement，需同源）",
+      "高度取 `documentElement.scrollHeight`（上游取 body）",
+      "只挂观察器不首发测量：首屏高度可能为 0",
+      "把 rAF 合帧与节流都省掉：高频重排时抖动",
+      "把 vh 改写扩到 `height`：与上游行为不同（可以，但要显式记录差异）",
+      "在脚本 iframe 里也做 vh 改写：上游不做",
+      "把两条视口通道当一条：以为设了变量就不用回写高度"
+    ],
+    "pseudocode": "高度同步(iframe 内):\n  已排程 = 假\n  测并写回():\n    已排程 = 假\n    高 = body.scrollHeight\n    若 高 非有限 或 <= 0: 返回\n    frameElement.style.height = 高 + 'px'\n  请求测量():\n    若 已排程: 返回\n    已排程 = 真\n    若有 rAF: rAF(测并写回) 否则 500ms节流(测并写回)\n  挂观察器(body → 请求测量)\n  就绪后: 请求测量()                       # 首屏必须主动测一次\n\nvh 改写(内容文本):\n  若 内容 不含任何 min-height 模式: 返回 原内容\n  对四个位置做替换:\n    'min-height: Nvh' → 100vh ? var(--视口高度) : calc(var(--视口高度) * N/100)\n    style=\"min-height: Nvh\" 同上\n    .style.minHeight = \"Nvh\" 同上\n    setProperty('min-height', \"Nvh\") 同上\n  返回 替换后内容\n\n# 只处理 min-height;脚本 iframe 不调用\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/api/resource_frame_template.html:1150-1156",
+      "server-rs/src/api/resource_frame_template.html:555-562",
+      "web/src/render.ts:832-834"
+    ],
+    "note": "Kedai 的整页卡宿主是 `/resource-frame.html`（真实独立文档 + 垫片），**不透明源**（沙箱无 allow-same-origin）⇒ 上游「iframe 直接改 frameElement.style.height」物理上不可用。Kedai 做法是垫片里「高度只量 body」并经消息回传宿主，由 useResourceFrames 设置容器高度。⇒ **vh 改写完全未实现**（该模板 grep vh 无命中），卡里 `min-height:100vh` 会按 opaque-origin iframe 自身视口算，与酒馆下的视觉结果不同。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 adjust_iframe_height.js（ResizeObserver + rAF 合帧 + 直接写 frameElement.style.height）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/adjust_iframe_height.js#L1-L57"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 render/iframe.ts（replaceVhInContent 的四个替换点与换算规则）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/panel/render/iframe.ts#L5-L75"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 Iframe.vue（父窗 resize 时向 iframe 发视口高度更新消息）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/panel/render/Iframe.vue#L34-L36"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 adjust_viewport.js（把父窗 innerHeight 写成 CSS 变量）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/adjust_viewport.js#L1-L8"
+    }
+  ],
+  "related": ["sandbox.render.flow", "sandbox.jquery.two_hosts"],
+  "updated": "2026-10-31"
+}

@@ -1,0 +1,74 @@
+{
+  "id": "variable.resolve.order",
+  "domain": "variable",
+  "title": "查找顺序有两套：通用解析 scope→local→global→字面量，操作数解析多一档「数字优先」",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么有两套": "同一批变量在两个不同场景被解析，**顺序不同**。写错会导致「变量明明存在却取不到」或「名为数字的变量永远取不到」。",
+    "第一套：通用变量解析（四步）": [
+      { "序": 1, "来源": "脚本作用域变量", "说明": "slash 命令作用域，会沿父链上溯" },
+      { "序": 2, "来源": "local（本聊天）", "说明": "存在才取" },
+      { "序": 3, "来源": "global（全局）", "说明": "存在才取" },
+      { "序": 4, "来源": "**原样返回名字本身**", "说明": "找不到**不报错**，把入参当字符串返回" }
+    ],
+    "第二套：布尔/数值操作数解析（五步，数字档在最前）": [
+      { "序": 1, "来源": "**数字字面量**", "说明": "能转成数就当数字用" },
+      { "序": 2, "来源": "脚本作用域变量" },
+      { "序": 3, "来源": "local" },
+      { "序": 4, "来源": "global" },
+      { "序": 5, "来源": "字符串字面量" }
+    ],
+    "两套的**唯一实质差别**": "第二套多了「数字字面量在最前」这一档 ⇒ **名为 `123` 的变量永远取不到**（会先被当数字 123）。第一套没有这一档，所以 `{{getvar::123}}` 能取到变量 `123`。\n⇒ 复刻时若把两套合成一套，必然有一边错。",
+    "第一套的「找不到返回名字」的后果": [
+      "这是**特性不是 bug**：让 `{{getvar::未定义}}` 这类写法在文本里输出变量名本身，可用于调试。",
+      "但它也让「拼错变量名」静默变成「输出那串名字」——排查时要记得这一点。",
+      "⇒ 若复刻改成「找不到返回空串」，所有依赖「未定义时输出名字」的语义都会变（例如判空逻辑）。"
+    ],
+    "作用域继承": "脚本作用域的「存在判定」与「取值」都会沿父链上溯 ⇒ 子作用域能读到父作用域的同名变量，但不遮蔽时会继续向上找。",
+    "变量简写与查找顺序的关系": "简写语法（`{{.名}}` / `{{$名}}`）左侧点号 = local、美元号 = global，**是显式指定域**，不走查找顺序。⇒ 简写与 `getvar` / `getglobalvar` 的等价关系要按域对齐，不要按顺序对齐。",
+    "易错点": [
+      "把两套顺序合成一套：要么数字名变量取不到，要么操作数把 `\"5\"` 当字符串",
+      "第一套的兜底写成返回空串：上游返回名字本身",
+      "把作用域放在 local 之后：作用域变量会被同名的聊天变量遮蔽",
+      "作用域不沿父链上溯：闭包里的变量读不到",
+      "把简写当走查找顺序：简写是显式域，且只有两档（local / global）",
+      "数值比较时先做字符串比较：上游操作数是数字优先"
+    ],
+    "pseudocode": "# 第一套:通用解析\n解析变量(名, 作用域):\n  若 作用域 存在该名: 返回 作用域.取(名)        # 沿父链上溯\n  若 local 存在该名: 返回 local.取(名)\n  若 global 存在该名: 返回 global.取(名)\n  返回 名                                       # 兜底:名字本身\n\n# 第二套:操作数解析(布尔/数值上下文)\n解析操作数(令牌, 作用域):\n  若 令牌 能转数: 返回 数字(令牌)                # ← 多的一档,在最前\n  若 作用域 存在该令牌: 返回 作用域.取(令牌) 或 空串\n  若 local 存在该令牌: 返回 local.取(令牌) 或 空串\n  若 global 存在该令牌: 返回 global.取(令牌) 或 空串\n  返回 字符串(令牌) 或 空串\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/scopes.rs:1-14",
+      "server-rs/src/parsing/scopes.rs:199-262",
+      "server-rs/src/parsing/macros.rs:140-151",
+      "server-rs/src/parsing/macros.rs:247-266"
+    ],
+    "note": "Kedai 有一套**七档作用域**（global / preset / character / chat扁平 / chat树 / message / script / extension），读链「低→高：global < preset < character < chat扁平 < chat树 < message」，比上游的三档（scope / local / global）**更细**。但两条关键差异：① 兜底不是「返回名字本身」——`getvar` 取不到返回**空串**（`ctx.vars.get(key).cloned().unwrap_or_default()`），所以「拼错名字输出名字」这类调试/判空语义会变；② 没有「数字字面量优先」那一档，也不存在两套顺序之分（只有 `getvar` 一条路径 + `read_scope` 一条路径）。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（通用解析：scope → local → global → 名字本身）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L218-L236"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（操作数解析：数字字面量在最前，五档顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L441-L480"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 SlashCommandScope.js（作用域存在判定沿 parent 链上溯）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/slash-commands/SlashCommandScope.js#L52-L58"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · 变量简写前缀（点号=local / 美元号=global 的显式域语义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L369-L394"
+    }
+  ],
+  "related": ["variable.store.scope", "variable.get.set", "variable.name.rules"],
+  "updated": "2026-10-31"
+}

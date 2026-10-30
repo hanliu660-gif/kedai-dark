@@ -1,0 +1,69 @@
+{
+  "id": "mvu.merge.correctly",
+  "domain": "mvu",
+  "title": "correctlyMerge 三态：数组**整体替换** / 对象深合并 / 标量覆盖",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "存在理由（上游注释明确）": "通用的深合并函数对数组的处理是**按下标逐位合并**：把一个长数组合并到短数组上时，会得到「取两者较长」的混合结果，而不是「后者取代前者」。⇒ MVU 需要一份「数组一律整体替换」的合并，于是有了这个单行包装。",
+    "三态语义（这是契约的全部）": [
+      {
+        "态": "右边是**数组**",
+        "动作": "**整体替换**（不做下标对齐、不做保留尾部、不 append）",
+        "例子": "左边 `[1, 2, 3]` 合并右边 `[4, 5]` ⇒ 结果 `[4, 5]`（**不是** `[4, 5, 3]`）",
+        "说明": "这是与通用深合并唯一的实质区别，也是本条目存在的全部意义。"
+      },
+      {
+        "态": "右边是**对象**",
+        "动作": "**深合并**（递归到每个键；遇到数组仍按上面的规则整体替换）",
+        "例子": "左边 `{a:{b:1}}` 合并右边 `{a:{c:2}}` ⇒ `{a:{b:1, c:2}}`"
+      },
+      {
+        "态": "右边是**标量**（原始值 / null）",
+        "动作": "**覆盖**左边的值",
+        "例子": "左边 `{a:1}` 合并右边 `{a:2}` ⇒ `{a:2}`"
+      }
+    ],
+    "实现方式（一句话）": "用的是「带自定义合并器」的深合并：**自定义合并器只在一个情况下返回「覆盖」——即右边是数组时**；其余情况返回「未定义」让默认深合并逻辑接管。⇒ 复刻时写成「递归合并 + 遇数组整体替换」即可，不必依赖具体库。",
+    "被用在哪些地方（决定它的影响力）": [
+      "**同书多条 `[InitVar]` 条目之间**：按条目顺序依次合并 ⇒ 数组是后者取代前者（不是累加）。",
+      "**开场白里的多个初始变量块之间**：同样依次合并。",
+      "**「与已有变量」的合并**：注意这一步**不是**用本函数，而是**顶层浅展开**（已有值赢，见 mvu.initvar.merge）⇒ **同一条链上有两种不同的合并策略**，这是最容易认错的地方。"
+    ],
+    "易错点": [
+      "把数组合并实现成「拼接（append）」：`[1,2]`+`[3]` 会变 `[1,2,3]`，上游是 `[3]`",
+      "把数组合并实现成「按下标逐位覆盖」：`[1,2,3]`+`[4,5]` 会变 `[4,5,3]`，上游是 `[4,5]`",
+      "对象不递归（只做浅覆盖）：深层键会丢",
+      "把「与已有变量的合并」也用本函数：会变成深合并，破坏「已有值赢」的整块覆盖语义",
+      "把本函数用于 schema 合并：schema 走的是另一套（就地重算再合并回去）"
+    ],
+    "pseudocode": "合并(左, 右):\n  若 右 是数组: 返回 右                        # ← 本函数的全部特殊性\n  若 右 是对象 且 左 是对象:\n    for 键 in 右:\n      左[键] = 合并(左[键], 右[键])             # 递归,数组仍整体替换\n    返回 左\n  否则: 返回 右                                # 标量覆盖\n\n# 注意:与「已有变量」的那一步不同 —— 那是顶层浅展开(已有值赢),不是本函数\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/assistant/initvar.rs:25-36",
+      "server-rs/src/parsing/assistant/initvar.rs:38-63"
+    ],
+    "note": "Kedai 的 `[InitVar]` 合并用的是 `merge_deep`（`collect_init_vars` 里 `merge_deep(&mut tree, &p)`），注释与上游意图相近（「按条目顺序深度合并」），但**没有针对数组的特殊处理**——`merge_deep` 的实现未声明数组优先替换，需按实际代码确认；更关键的是 Kedai **只有这一种合并**，没有上游那条「同书内深合并 + 与已有值顶层浅展开·已有值赢」的两段式差别（见 mvu.initvar.merge），所以「数组整体替换」这条契约在 Kedai 里没有独立的存在位置。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU common.ts（correctlyMerge 单行包装与动机注释）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/util/common.ts#L7-L9"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（同书多条目依次合并、多初始变量块累加）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L150-L166"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（与已有变量之间的顶层浅展开（与 correctlyMerge 不同））",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L314-L320"
+    }
+  ],
+  "related": ["mvu.initvar.merge", "mvu.parse.fallback", "mvu.data.structure"],
+  "updated": "2026-10-31"
+}

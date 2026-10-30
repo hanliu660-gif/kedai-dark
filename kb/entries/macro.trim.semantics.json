@@ -1,0 +1,76 @@
+{
+  "id": "macro.trim.semantics",
+  "domain": "macro",
+  "title": "scoped 内容默认自动 trim **并去公共缩进（dedent）**，只有 `#` 能关",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "一句话": "开闭标签之间的内容会被自动修剪，而且**不是简单的字符串 trim**：它还会「去公共缩进」。默认开，只有「保留空白」标志（`#`）能关掉。",
+    "修剪的两步（顺序固定）": [
+      "1. **去首尾空白**：整体 trim。",
+      "2. **去公共缩进（dedent）**：以「第一个非空行的前导空白长度」为基准 `base`，逐行处理——",
+      "   若某行前导空白 ≥ base → 切掉恰好 base 个字符；",
+      "   若某行前导空白 < base（缩进更浅的行）→ 只做 `trimStart`（把这行前导全去掉）；",
+      "   最后整体再 trim 一次。",
+      "3. 特例：**若基准为 0**（第一个非空行就没缩进）→ 直接退化成普通 trim，不做逐行处理。"
+    ],
+    "文档给的例子": "输入是「开标签换行 + 4 空格缩进的 `# 标题` + 换行 + 4 空格缩进的 `一些内容` + 换行」，输出是「`# 标题` 换行 `一些内容`」——**前导空格全部消失**。",
+    "为什么「不是简单 trim」很关键": [
+      "普通 trim 只动首尾，**多行中间的空格一个都不会动**。",
+      "dedent 会把**每一行的公共缩进都切掉** ⇒ 多行文本的相对缩进保留、绝对缩进消失。",
+      "若卡里靠缩进排版（缩进列表、代码示例、Markdown 嵌套），按「简单 trim」实现会让输出多出整片前导空白；按「dedent」实现才与上游一致。",
+      "反向风险：若某些行缩进**比基准更浅**（例如第一行缩进 8、后面某行只缩进 2），那一行会被 `trimStart` 削平，与「切掉 base」的结果不同。"
+    ],
+    "关闭方式": "在开标签的宏名之前加保留空白标志（`#`）。加了这个标志后：**既不 trim 也不 dedent**，开闭标签之间的所有空白与换行原样保留（含首尾换行）。",
+    "作用范围（只对 scoped 内容）": [
+      "只对「开闭标签之间那段内容」生效，**不作用于参数**。",
+      "参数本身的空白由词法层吞掉（那是另一回事）。",
+      "对**非 scoped 的宏**加 `#` 没有任何副作用。",
+      "例外：**声明了「延迟参数解析」的宏**（如条件宏）其 scoped 内容走另一条路径，由 handler 自己决定修剪（条件宏是自己调修剪函数，并受它自己的 `#` 判定控制）。"
+    ],
+    "与「空 scoped 内容」的关系": "开闭标签紧挨着（中间什么都没有）时，引擎会往参数列表里补一个**空串**参数——这是「参数个数校验」能通过的前提，与修剪无关。",
+    "易错点": [
+      "按简单 `String.trim()` 实现：多行缩进全留着，Markdown 嵌套结构变样",
+      "只 dedent 不 trim（或反过来）：首尾空行残留",
+      "基准取「最小缩进」而不是「第一个非空行的缩进」：混缩进行为不同",
+      "基准为 0 还继续逐行处理：会把所有行 trimStart，破坏第二行之后的缩进",
+      "缩进更浅的行按「切掉 base」处理（会切掉不存在的字符）：上游是 trimStart",
+      "把 `#` 当成「只关 trim 不关 dedent」：它关的是整个修剪",
+      "把修剪作用到参数上：参数不走这套"
+    ],
+    "pseudocode": "修剪scoped(内容, 是否保留空白):\n  若 内容 为空: 返回 空串\n  若 保留空白: 返回 内容                 # 什么都不动\n  行 = 内容.按换行切分()\n  基准 = 第一个非空行 的前导空白长度\n  若 基准 == 0: 返回 内容.整体trim()      # 退化分支\n  结果 = []\n  for 行 in 行:\n    若 该行 前导空白 >= 基准: 结果 += 该行.去掉前 基准 个字符\n    否则: 结果 += 该行.去前导空白()\n  返回 结果.用换行连接().整体trim()\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:44-48",
+      "server-rs/src/parsing/macros.rs:64-69",
+      "server-rs/src/parsing/macros.rs:33-81"
+    ],
+    "note": "Kedai **没有 scoped 语法**（`{{宏}}内容{{/宏}}` 不被识别，`{{/名}}` 闭标签会落进「未知宏原样保留」），因此这套 trim+dedent 修剪整个不存在。Kedai 的 `{{trim}}` 被实现成一个**修饰标志**：置起 `trim_next`，让**紧随其后的那一个宏输出**被 `.trim()`（`out.push_str(expanded.trim())`）。⇒ 语义与上游完全不同：上游的 `{{trim}}` 靠后处理器删除标记本身与其两侧换行，与「修剪某一个宏的输出」不是一回事。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Content Trimming（两步修剪与 `#` 关闭）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L190-L208"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Preserve Whitespace Flag",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L328-L341"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（trimScopedContent：trim + 去公共缩进的完整算法）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L372-L413"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（scoped 内容求值后自动修剪，`#` 可关）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L449-L458"
+    }
+  ],
+  "related": ["macro.flags", "macro.eval.order", "macro.conditional"],
+  "updated": "2026-10-31"
+}

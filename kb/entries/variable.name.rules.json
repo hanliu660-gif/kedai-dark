@@ -1,0 +1,72 @@
+{
+  "id": "variable.name.rules",
+  "domain": "variable",
+  "title": "变量名没有字符集正则：只有「非空」校验；那条 `[a-zA-Z0-9_]{1,64}` 是 OpenAI 消息名",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "真正的规则": "写入侧**只有一个校验**：名字不能为空（未定义或空串直接抛错）。**没有任何字符集或长度限制** ⇒ 任意非空字符串都能当变量键，包括中文、空格、点号、方括号、emoji。",
+    "读侧更不校验": "`get` 对名字不做任何校验，不存在就返回空串。",
+    "张冠李戴陷阱（本条要点的核心）": {
+      "那条正则": "`^[a-zA-Z0-9_]{1,64}$`",
+      "它实际是什么": "**OpenAI 消息 `name` 字段**的合法性校验（配套一个把非法字符替换成下划线的清洗函数，并截断到 64 字符）。与变量系统**毫无关系**。",
+      "误用的后果": "若照它限制变量名：中文变量名（几乎每张中文卡都用）会全部被拒 ⇒ 变量读写全崩。"
+    },
+    "另一条易混淆的正则（是简写语法，不是变量名）": {
+      "正则": "字母开头 + 词字符/下划线/连字符，**且不能以连字符或下划线结尾**",
+      "它实际是什么": "**变量简写语法**（`{{.名}}` / `{{$名}}`）的合法名限制。",
+      "关键": "不合法的名字**仍然可以用完整宏形式**（`{{getvar::名}}` / `{{setvar::名::值}}` / `/getvar`）读写；界面只给提示，**不阻止保存**。",
+      "⇒ 正确做法": "把变量名规则实现成「非空」；简写可用性再单独判一次，不合法的降级为「不可用简写但仍可用完整形式」。",
+      "为什么简写要这条限制": "简写语法的词法层与自增/自减（`++`/`--`）共享符号，名字若以连字符结尾会产生歧义。"
+    },
+    "第三类：模型标识符（也常被误当变量名）": "宏标识符（`{{宏名}}` 里的名字）有自己的规则：字母开头 + 词字符/下划线/连字符。这也是**宏名**的限制，不是变量名。",
+    "变量名里出现特殊字符时的实际影响": [
+      "宏形式：`{{getvar::a b}}` —— 参数是整段，所以含空格的名字能用（只要不被 slash 解析器拆成位置参数）。",
+      "变量简写：含空格/点号的名字会因词法规则被切开，不能用。",
+      "slash 命令：`/setvar key=a b` 会被解析成「命名参数 key=a」+「位置参数 b」，这是**解析器行为**不是变量名限制。",
+      "⇒ 「变量名限制」在生态里其实**不存在**，出现限制的地方都是**语法层**（简写词法 / slash 参数解析）。"
+    ],
+    "易错点": [
+      "给变量名加 `[a-zA-Z0-9_]` 限制：中文卡全崩",
+      "把宏标识符规则当变量名规则",
+      "把简写规则当变量名规则（会拒掉合法的完整形式写法）",
+      "把 OpenAI 消息名规则当变量名规则（本条重点）",
+      "给变量名加长度上限：上游没有（OpenAI 消息名的 64 是被误传的源头）",
+      "允许空名：上游写入会抛错；空名不抛的话会写进 `[\"\"]` 这种脏键"
+    ],
+    "pseudocode": "合法变量名(名) = 名 非空\n\n可写(名):\n  若 名 为空: 抛错「变量名不能为空」\n  否则: 允许(任意非空字符串)\n\n可读(名): 允许(任意,不存在则返回空串)\n\n可用简写(名) = 名 匹配 [字母开头 + 词字符/下划线/连字符 + 不以连字符或下划线结尾]\n# 不可用简写 ≠ 不可用,完整宏形式仍可读写\n\n# 以下两个正则与变量名无关,勿混:\n#   宏标识符规则  → 用于 {{宏名}}\n#   消息名字规则  → 用于 OpenAI 消息的 name 字段(并配 64 字截断)\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/assistant/vars.rs:53-68",
+      "server-rs/src/parsing/macros.rs:140-151",
+      "server-rs/src/services/session_service.rs:641-645"
+    ],
+    "note": "Kedai 的会话变量是 SQLite 的 `(session_id, key)` 文本键，**没有字符集限制**（与上游「非空即可」方向一致，这条算 match 的部分）；变量树侧用**点路径**（`split_path` 按点/方括号切分），于是**名字里含点号或方括号的键会被当成嵌套路径** ⇒ 与上游「点号只是普通字符」实质不同。另 Kedai 没有变量简写语法（`{{.名}}` / `{{$名}}`）实现（grep 0 命中），所以简写规则那一层不存在。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（写入侧唯一校验：名字非空）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L48-L51"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（`[a-zA-Z0-9_]{1,64}` 是 OpenAI 消息 name 校验，配 sanitizeName 与截断）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L1344-L1351"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroLexer.js（宏标识符规则与变量简写规则两条正则）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroLexer.js#L17-L28"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Variable Names（变量名与简写可用性的区分）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L382-L404"
+    }
+  ],
+  "related": ["variable.store.scope", "macro.variable.family", "variable.resolve.order"],
+  "updated": "2026-10-31"
+}

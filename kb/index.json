@@ -31,7 +31,13 @@
         "worldinfo.activation.flow",
         "worldinfo.budget.sticky",
         "worldinfo.timed.state",
-        "worldinfo.depth.atdepth"
+        "worldinfo.depth.atdepth",
+        "worldinfo.group.competition",
+        "worldinfo.decorators",
+        "worldinfo.book.convert",
+        "worldinfo.settings.global",
+        "worldinfo.buffer.score",
+        "worldinfo.rescan.paths"
       ]
     },
     "macro": {
@@ -42,7 +48,13 @@
         "macro.eval.order",
         "macro.registry.args",
         "macro.variable.family",
-        "macro.flags"
+        "macro.flags",
+        "macro.trim.semantics",
+        "macro.conditional",
+        "macro.builtin.catalog",
+        "macro.alias.rules",
+        "macro.eval.context",
+        "macro.vs.command"
       ]
     },
     "regex": {
@@ -68,7 +80,11 @@
       "label": "变量存储",
       "upstream": "SillyTavern 内建 + 酒馆助手",
       "entries": [
-        "variable.store.scope"
+        "variable.store.scope",
+        "variable.get.set",
+        "variable.add.inc.dec",
+        "variable.name.rules",
+        "variable.resolve.order"
       ]
     },
     "card": {
@@ -78,7 +94,8 @@
         "card.png.text",
         "card.chat.jsonl",
         "card.frontend.detect",
-        "card.lodash.shared"
+        "card.lodash.shared",
+        "card.spec.versions"
       ]
     },
     "sandbox": {
@@ -89,7 +106,11 @@
         "sandbox.predefine.injection",
         "sandbox.jquery.two_hosts",
         "sandbox.event.chat_changed",
-        "sandbox.iframe.pagehide"
+        "sandbox.iframe.pagehide",
+        "sandbox.chat.messages",
+        "sandbox.event.table",
+        "sandbox.render.flow",
+        "sandbox.height.vh"
       ]
     },
     "mvu": {
@@ -99,7 +120,11 @@
         "mvu.vwd.pair",
         "mvu.updatevariable.commands",
         "mvu.block.scalar",
-        "mvu.initvar.merge"
+        "mvu.initvar.merge",
+        "mvu.data.structure",
+        "mvu.parse.fallback",
+        "mvu.merge.correctly",
+        "mvu.events.deprecated"
       ]
     },
     "stscript": {
@@ -109,16 +134,16 @@
     }
   },
   "stats": {
-    "total_entries": 33,
+    "total_entries": 58,
     "by_status": {
       "match": 0,
-      "partial": 8,
-      "missing": 12,
-      "differs": 13
+      "partial": 16,
+      "missing": 16,
+      "differs": 26
     },
     "by_priority": {
-      "P0": 31,
-      "P1": 2,
+      "P0": 53,
+      "P1": 5,
       "P2": 0
     }
   }

@@ -1,0 +1,71 @@
+{
+  "id": "macro.conditional",
+  "domain": "macro",
+  "title": "条件宏 {{if}}：必须延迟参数解析，否则两个分支都执行",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "为什么单列一条": "这是「看起来对、实际全跑一遍」的典型。条件宏如果不声明「延迟参数解析」，引擎会**先把两条分支里的嵌套宏都求值一遍**，再交给 handler 挑一条 ⇒ 分支里的 `setvar` / `addvar` 会**双跑**，变量被写坏。这是最容易做成「结果文本看着对」而副作用全错的实现。",
+    "两种写法都支持": [
+      { "形态": "块式", "写法": "开标签 + scoped 内容 + 闭标签；可直接带条件参数" },
+      { "形态": "内联式", "写法": "条件与内容各作为一个参数" }
+    ],
+    "条件可以是什么（四类，都合法）": [
+      "**裸宏名**：若该宏无需参数，引擎会自动解析它并取结果作条件（例如用某角色字段宏直接当条件）。",
+      "**嵌套宏的结果**：如某个取变量宏的输出。",
+      "**变量简写**：点号前缀（会话级）/ 美元号前缀（全局级）的简写形式，也支持前面加 `!` 取反。",
+      "**任意文本**：按其内容隐式判真假。"
+    ],
+    "真假判定（falsy 全集）": "空串、`false`、`0`、`off`、`no` 都算假。⇒ 注意字符串 `\"0\"` / `\"false\"` / `\"off\"` / `\"no\"` 也在其中，这与直觉不符。",
+    "取反": "条件前加 `!` 取反。",
+    "两分支结构（分流机制）": [
+      "handler 里有专门的「顶层 else 切分」逻辑：只在**顶层**寻找 else 标记，**嵌套在里面的 else 不会被误认**（避免嵌套条件时切错）。",
+      "else 本身是个独立宏，它的 handler 只是返回一个**内部标记字符串**（含不可见的控制字符），由**后处理器**最终把这个标记清理掉。",
+      "⇒ 若漏了「清理 else 标记」这一步，输出里会残留不可见字符（表面上像是莫名其妙多了控制字符）。"
+    ],
+    "修剪交互": "条件宏的 scoped 内容/分支内容由 handler 自己调修剪函数，并且受 `#`（保留空白）标志控制 ⇒ 与普通宏的自动修剪路径不同（见 macro.trim.semantics 的「例外」条）。",
+    "延迟参数解析的连带责任": "声明后，handler 拿到的是**原始文本**，必须自己解析：先解析条件、再解析**被选中的那一支**。⇒ 复刻时这两次解析都要带正确的偏移（依赖位置做种子的宏如 pick 需要它），否则在条件块内使用 pick 会拿到错的位置。",
+    "易错点": [
+      "不声明延迟参数解析：两条分支里的副作用全部执行（最严重的错）",
+      "handler 拿到已解析文本还想「只跑一支」：已经晚了，副作用已发生",
+      "else 切分不限定顶层：嵌套条件会被切错分支",
+      "漏掉 else 标记的后处理清理：输出残留控制字符",
+      "真假判定把 `\"0\"` / `\"off\"` / `\"no\"` 当字符串真值：上游算假",
+      "取反只支持裸文本不支持简写：四种条件形态都要能取反",
+      "handler 自己解析时丢了原宏偏移：条件块内的 pick 之类会错位"
+    ],
+    "pseudocode": "# 注册时:条件宏声明「延迟参数解析 = 真」\n\n求值(条件宏):\n  条件原文 = 参数原文                     # 未预先解析\n  内容原文 = scoped 内容 或 第二参数原文    # 未预先解析\n\n  # 切分(仅顶层寻找 else)\n  若 内容原文 里 顶层存在 else 标记:\n    真支原文, 假支原文 = 切分(内容原文)\n  否则:\n    真支原文 = 内容原文; 假支原文 = 无\n\n  条件值 = 解析(条件原文)                 # 第一次主动解析(带偏移)\n  若 条件原文 以 '!' 开头: 条件值 = 取反(条件值)\n\n  若 条件值 为真: 选中 = 真支原文 或 空串\n  否则: 选中 = 假支原文 或 空串\n\n  输出 = 解析(选中)                       # 第二次主动解析(带偏移)\n  输出 = 修剪(输出, 保留空白标志)          # 由 handler 自己调\n  返回 输出\n\n# 后处理:清理残留的 else 内部标记\n"
+  },
+  "kedai": {
+    "status": "missing",
+        "evidence": [
+      "server-rs/src/parsing/macros.rs:97-131",
+      "server-rs/src/parsing/macros.rs:132-241"
+    ],
+    "note": "Kedai **完全没有条件宏**：`expand_one` 的 match 分支里没有 `if` / `else`，`strip_prefix` 名单里也没有；`grep '\"if\"' macros.rs` = 0 命中。⇒ `{{if 条件}}…{{else}}…{{/if}}` 这类写法在 Kedai 里会整体落进「未知宏原样保留」分支（因为 `find_macro_end` 只找第一个 `}}`，`{{if ...}}` 会被当作单个未知宏留下，后面的分支正文与 `{{/if}}` 也原样留在文本里）。副作用层面反而「安全」（不会双跑，因为一个都不跑），但条件逻辑彻底失效、且会把宏原文发给模型。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Conditional Macros（简单条件 / 简写 / 取反 / if-else 分支）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L210-L282"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（delayArgResolution 分支：参数与 scoped 内容原样传入）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L405-L430"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 core-macros.js（if 宏注册项：displayOverride / 顶层 else 切分 / falsy 判定 / 两次主动解析）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/core-macros.js#L134-L215"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（else 内部标记与后处理器清理）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L316-L323"
+    }
+  ],
+  "related": ["macro.eval.order", "macro.trim.semantics", "macro.builtin.catalog"],
+  "updated": "2026-10-31"
+}

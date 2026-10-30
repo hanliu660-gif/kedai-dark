@@ -1,0 +1,82 @@
+{
+  "id": "macro.eval.context",
+  "domain": "macro",
+  "title": "求值环境（MacroEnvBuilder）：环境里有什么、惰性字段、一次性函数、provider 扩展点",
+  "priority": "P1",
+  "authority": "src",
+  "spec": {
+    "环境结构（八个顶层分组）": [
+      { "组": "原始串", "内容": "content（本次要展开的整串）", "备注": "求值器拿它算哈希" },
+      { "组": "内容哈希", "内容": "contentHash", "备注": "**供给 `pick` 做确定性种子**（同串同位置结果稳定）" },
+      { "组": "名字", "内容": "user / char / group / groupNotMuted / notChar", "备注": "group 系列在无群聊时按「当前角色」或「当前用户」兜底" },
+      { "组": "角色卡字段", "内容": "description / personality / scenario / persona / charPrompt / charInstruction / mesExamplesRaw / charDepthPrompt / creatorNotes / version / firstMessage / alternateGreetings（共 12 项）", "备注": "**惰性 getter**：不读就不取；除 alternateGreetings 兜底空数组外，其余兜底空串" },
+      { "组": "系统", "内容": "model", "备注": "当前生成所用模型名" },
+      { "组": "函数", "内容": "original（一次性）/ postProcess（单宏结果后处理）", "备注": "见下两条" },
+      { "组": "动态宏表", "内容": "dynamicMacros", "备注": "键小写归一；运行时优先于注册表" },
+      { "组": "扩展位", "内容": "extra", "备注": "**声明了但引擎从不往里填任何东西**——是个空对象占位" }
+    ],
+    "两条特殊语义（复刻最容易漏）": [
+      {
+        "一次性函数": "`original` 是个**闭包**：第一次调用返回真值，第二次起恒返回空串。⇒ `{{original}}` 宏在一次求值里**只能生效一次**，第二次出现就是空。这是「一次性」的实现方式，不是缓存问题。"
+      },
+      {
+        "单宏后处理": "`postProcess` 是**每个宏的结果各调一次**（从内到外），**不是整串处理完再统一过**。⇒ 调用方传入的后处理函数（例如负责宏替换后收尾的那层）会对每个宏单独生效，顺序敏感。"
+      }
+    ],
+    "provider 扩展点（五档顺序）": [
+      "EARLIEST(0) → EARLY(10) → NORMAL(50) → LATE(90) → LATEST(100)",
+      "provider 按 order **升序**执行；同名/同序按注册先后。",
+      "**单个 provider 抛错只记日志，不影响后续求值**（求值器不因扩展点的异常而崩）。"
+    ],
+    "哈希的性质": "用的是自定义的字符串哈希（双流混合，固定初值）⇒ 同一串永远得到同一值，可作确定性种子。不需要与任何标准哈希算法对齐，只要**同输入同输出**。",
+    "名字来源的优先级": "user 名取「覆盖值 ?? 默认用户名 ?? 空串」；group 三兄弟在「未选群聊」时分别兜底到当前角色或当前用户。",
+    "环境冻结的边界（重要）": "引擎给 handler 的环境是**浅冻结副本**：顶层属性冻结，但**嵌套对象仍是同一引用**（dynamicMacros / character / extra 共享）。⇒ handler 理论上可以往 `dynamicMacros` 里写东西污染后续宏（引擎没防）。复刻若想更严格，应深冻结或克隆。",
+    "未核实部分（明确标注）": [
+      "「provider 注册时机与去重」只在源码看到注册与排序，**没有实测**；若两个 provider 返回同名键，覆盖顺序按 order 与注册先后推断，未单独验证。",
+      "`postProcess` 在「宏本身抛运行期错误」时是否仍被调用：未核实（只确认了正常路径）。",
+      "`extra` 位是否有第三方扩展通过内部手段写入：未在本机源码里找到写入点，**判定为「声明了但不用」**，但这是「没找到」而非「作者明确不用」。"
+    ],
+    "易错点": [
+      "把 `original` 当普通取值：第二次调用会得到空串而不是同一份内容",
+      "把 postProcess 做成整串一次性：宏结果的处理顺序与次数都会变",
+      "角色卡字段不惰性取：每次求值都全量读卡，性能与副作用面变大",
+      "provider 抛错就中断求值：上游是只记日志继续",
+      "浅冻结当成深冻结：以为 handler 改不了嵌套对象",
+      "contentHash 用标准哈希但忘了「必须与内容整串绑定」：pick 的确定性会坏"
+    ],
+    "pseudocode": "构建环境(上下文):\n  环境 = {\n    content: 上下文.内容,\n    contentHash: 哈希(上下文.内容),\n    names: { user: 覆盖 ?? 默认 ?? '', char: ..., group: 群聊? 群名 : 当前角色或用户, groupNotMuted: ..., notChar: ... },\n    character: 惰性(12 个字段),          # 不取不读\n    system: { model: 当前模型 },\n    functions: { original: 一次性闭包, postProcess: 调用方传入 },\n    dynamicMacros: 小写归一后的表,\n    extra: {}                            # 引擎不写入\n  }\n  for provider in 按 order 升序的 provider 列表:\n    尝试 provider(环境)                  # 抛错只记日志,继续\n  浅冻结(环境)\n  返回 环境\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:13-30",
+      "server-rs/src/parsing/macros.rs:33-81",
+      "server-rs/src/parsing/macros.rs:97-131"
+    ],
+    "note": "Kedai 没有独立的「环境层」：`MacroCtx` 就是 10 个字段（character_name / character_description / user_name / personality / scenario / user_input / history / vars / assistant_vars / scopes），没有 contentHash、dynamicMacros、provider 扩展点、postProcess、model 与群聊名字三兄弟。⇒ 三条后果：① pick 的确定性种子无从构建；② 无「一次性函数」语义（original 未实现）；③ 无 provider 机制，第三方无法注入环境数据。而 user_input / scopes / assistant_vars 是 Kedai 额外字段，上游环境里没有。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEnv.types.js（MacroEnv 的字段声明与 extra 位）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEnv.types.js#L57-L66"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEnvBuilder.js（惰性 getter、名字兜底、一次性 original、dynamicMacros 小写归一、provider 排序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEnvBuilder.js#L81-L211"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（浅冻结环境副本）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L117-L125"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（每个宏结果单独过 postProcess）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L218-L232"
+    }
+  ],
+  "related": ["macro.eval.order", "macro.builtin.catalog", "macro.alias.rules"],
+  "updated": "2026-10-31"
+}

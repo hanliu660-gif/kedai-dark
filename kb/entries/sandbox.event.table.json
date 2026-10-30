@@ -1,0 +1,105 @@
+{
+  "id": "sandbox.event.table",
+  "domain": "sandbox",
+  "title": "事件表与两个实测反差：eventOn 不去重、返回的 .stop() 实际无效",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "两套事件名表": [
+      { "表": "扩展自有事件（9 个）", "用途": "扩展与 iframe 之间的生命周期/流式事件", "举例": "iframe 渲染开始 / 渲染结束 / 生成请求 / 生成开始 / 流式完整文本 / 流式增量 / 推理流完整 / 推理流增量 / 生成结束", "备注": "**类型声明文件漏了「推理流」那两个**（实现里有，d.ts 没有）" },
+      { "表": "酒馆事件（82 个）", "用途": "直接镜像 ST 的事件常量", "备注": "与类型声明**逐键一致**" }
+    ],
+    "酒馆事件表里四个「名字与值不规整」的坑": [
+      { "坑": "键名与值不一致", "例子": "键叫「聊天切换」但值是 `chat_id_changed`", "后果": "按直觉写 `chat_changed` 搜不到、监听不到" },
+      { "坑": "值是驼峰而非全小写", "例子": "角色删除、角色管理下拉两个事件", "后果": "以为全小写批量生成事件名会错" },
+      { "坑": "**两个键指向同一个字符串值**", "例子": "平滑流式 token 与普通流式 token", "后果": "按值去重时它们会被合并；按 `Object.values` 遍历会重复" },
+      { "坑": "大小写风格不一致", "例子": "生成后命令是大写开头、生成开始是全小写", "后果": "不能靠统一大小写规则推导" }
+    ],
+    "★ 反差一：`eventOn` **不去重**（类型声明的承诺不成立）": {
+      "声明承诺": "「如果该监听器已经在监听这个事件，则调用本函数不会有任何效果」",
+      "实测事实": "同一函数注册 3 次 ⇒ **监听器列表长度 3、emit 时触发 3 次**。",
+      "成因": "内部用一张「监听器 → 包装函数」的映射，`getOrSet` 只保证同一监听器映射到**同一个包装函数**，但**每次注册都无条件把它挂到事件总线上一次** ⇒ 总线上同一个包装被 push 多次。",
+      "⇒ 复刻要求": "要么照源码（不去重），要么自己加一个「同事件同函数已注册则跳过」的判定。**不要文档写「会去重」而实现不去重。**"
+    },
+    "★ 反差二：`eventOn(...)` 返回的 `.stop()` **实际什么都不做**": {
+      "声明承诺": "返回对象里的 `stop()` 是「取消监听」",
+      "实测事实": "调 `stop()` 之后监听器数量不变、emit 照样触发 ⇒ **NO-OP**。",
+      "成因": "注册时登记的是「原始函数 → 包装函数」这张表；而 `stop()` 内部把**包装函数**（表里的 value）传给了「按原始函数查表」的移除函数 ⇒ 查不到 ⇒ 什么也没删。",
+      "**真正有效的三种取消方式**": [
+        "① **iframe 卸载**：卸载时整体清理（这条有效，实测清理彻底）",
+        "② **显式移除 API**（按「事件类型 + 原始函数」）—— 在 iframe 内是绑定版、传的是正确的键，因此**有效**",
+        "③ `eventOnce` 的「只触发一次」是靠事件总线自身的一次性注册实现的，**不是靠 `stop()`**"
+      ],
+      "⇒ 复刻要求": "**必须修**这两个 bug（否则卡作者写的 `const h = eventOn(...); h.stop()` 会以为取消了其实还在）。或者按源码照抄但在文档里明确不承诺。**不要一半一半。**"
+    },
+    "事件的参数归一化（一个静默失效陷阱）": [
+      "对**七类消息级事件**（swiped / sent / received / edited / updated / 用户消息渲染 / 角色消息渲染），包装层会把**第一个参数强制转整数**。",
+      "**转换失败（NaN）时直接返回 ⇒ 监听器不被调用**（不是报错、不是传原值）。",
+      "⇒ 若上游某次 emit 传了非数字第一参数，这些监听器**静默不触发**。复刻时要么照抄（保持静默），要么显式告警——但不能「自动修复成 0」。"
+    ],
+    "`eventEmit` 与 `eventEmitAndWait` 的差别（易误读）": [
+      "两个都叫「发出事件」，但实现路径不同：`eventEmit` 是**异步并逐个等待监听器**；`eventEmitAndWait` 是**同步循环**、**不等待异步监听器**。",
+      "⇒ 想让异步监听器跑完必须 `await eventEmit`。`eventEmitAndWait` 的类型声明说「等待事件处理结束」但**对异步监听器不成立**。"
+    ],
+    "包装层的三个作用（为什么必须有）": [
+      "**拿到 iframe 身份**：事件总线是全局单例，直接把监听器注册进去就丢了「我是哪个 iframe」。",
+      "**按 iframe 精确清理**：三层映射（iframe 名 → 事件类型 → 监听器→包装）才能做到「只清自己」。",
+      "**参数归一化**：在包装层做（见上）。"
+    ],
+    "自定义事件名": "事件名允许**任意自定义字符串**（除内置表之外）。⇒ 复刻不能只白名单校验，否则卡自己定义的事件会抛错。",
+    "易错点": [
+      "把 `eventOn` 做成去重（与上游不同）或文档承诺去重但没实现",
+      "把 `.stop()` 实现成真能取消：上游是无效的（修与不修都必须显式决策）",
+      "只在 iframe 卸载时清一部分：上游是清该 iframe 全部",
+      "不按 iframe 身份隔离：多个卡互删监听",
+      "参数归一化失败时传 0 或原值：上游是**不调用监听器**",
+      "用 `eventEmitAndWait` 等异步监听器：等不到",
+      "按「值全小写」批量生成事件名：有驼峰例外",
+      "按值去重两个同值键：会合并掉一个"
+    ],
+    "pseudocode": "注册(事件类型, 监听器):\n  包装 = 映射[本iframe][事件类型][监听器] 或 新建(闭包住本iframe身份, 含参数归一化)\n  总线.挂(事件类型, 包装)            # ← 无条件挂,这就是「不去重」的成因\n  返回 { 取消: 移除(事件类型, 包装) }  # ← 传错参数,实际无效\n\n# 正确移除(上游的有效路径)\n移除(事件类型, 监听器):\n  包装 = 映射[本iframe][事件类型].取(监听器)\n  若 包装: 映射.删(监听器); 总线.摘(事件类型, 包装)\n\n# iframe 卸载\n清空全部():\n  for 事件类型 in 映射[本iframe]:\n    for (监听器, 包装) in 该类型表: 总线.摘(事件类型, 包装)\n  删掉 映射[本iframe]\n\n# 包装层参数归一化\n包装(参数...):\n  若 事件类型 in 七类消息级事件:\n    首参 = 转整数(参数[0])\n    若 失败: **直接返回**(监听器不调用)\n    参数[0] = 首参\n  调用 监听器(参数...)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:59-64",
+      "web/src/sandbox/boot/mvu-tavern.ts:184-193",
+      "web/src/sandbox/boot/mvu-tavern.ts:63"
+    ],
+    "note": "Kedai 的事件层是 iframe 内一个纯内存 Map（`__kdEventBus`）加三个裸函数：`eventOn` 返回删除闭包、`eventOff` 按「事件类型+回调」删、`eventEmit` 同步派发。三条与上游不同：① 常量表只列 8 个且 `CHAT_CHANGED` 值写错；② **返回值是真能删的闭包**（比上游 stop 无效更正确，但与上游不一致）；③ 无 iframe 身份、无跨 iframe 隔离、无清理点、无参数归一化、无 eventEmitAndWait。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（三层 Map 包装架构与按 iframe 清理）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L9-L22"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（eventOn 的注册与返回 stop 的传参缺陷）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L72-L144"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（七类消息级事件的首参 parseInt 归一化与失败即不调用）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L39-L54"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（eventEmit 与 eventEmitAndWait 的实现差异）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L115-L129"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（两套事件名表：9 个 iframe 事件 + 82 个酒馆事件）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L171-L268"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 @types/iframe/event.d.ts（stop 与去重的文档承诺）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/@types/iframe/event.d.ts#L1-L60"
+    }
+  ],
+  "related": ["sandbox.iframe.pagehide", "sandbox.event.chat_changed", "sandbox.chat.messages"],
+  "updated": "2026-10-31"
+}

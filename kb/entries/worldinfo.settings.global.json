@@ -1,0 +1,95 @@
+{
+  "id": "worldinfo.settings.global",
+  "domain": "worldinfo",
+  "title": "全局激活设置：13 个模块级默认值，两个「depth」同名不同物",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "官方文档讲每个开关「是什么意思」，但**不讲代码初值**，也不讲出货配置快照与代码初值不一致。默认值直接影响卡能不能触发。",
+    "代码初值（模块级变量的初始值，即真正的契约默认）": [
+      { "设置": "扫描深度", "初值": "**2**", "语义": "关键词只看最近 2 条消息（0 = 只评估递归条目与作者注）" },
+      { "设置": "最小激活数", "初值": "0", "语义": ">0 时向前补扫直到凑够条数" },
+      { "设置": "补扫深度上限", "初值": "0", "语义": "0 = 无上限（用满全部历史）" },
+      { "设置": "预算（百分比）", "初值": "**25**", "语义": "占上下文上限的百分比；**>100 会被迁移重置回 25**" },
+      { "设置": "预算封顶", "初值": "0", "语义": "0 = 不封顶；>0 时取「百分比预算」与它较小者" },
+      { "设置": "扫描含名字", "初值": "**true**", "语义": "扫描文本里每条消息前拼「名字: 」前缀" },
+      { "设置": "递归扫描", "初值": "false", "语义": "开启后已激活条目的正文可作为下一轮的扫描源" },
+      { "设置": "超预算告警", "初值": "false", "语义": "仅供 UI 提示" },
+      { "设置": "大小写敏感", "初值": "false", "语义": "条目可用自身设置覆盖（null = 跟随全局）" },
+      { "设置": "整词匹配", "初值": "false", "语义": "同上" },
+      { "设置": "组评分", "初值": "false", "语义": "同上" },
+      { "设置": "来源书策略", "初值": "**角色书优先**（枚举值 1）", "语义": "角色书 / 全局书 的合并顺序策略，三档：均匀混合 / 角色优先 / 全局优先" },
+      { "设置": "最大递归步数", "初值": "0", "语义": "0 = 只由预算限制；非 0 = 限制总扫描轮数。**非 0 时编辑器会把最小激活数强制归 0**" }
+    ],
+    "两个「depth」不是同一个东西": {
+      "全局扫描深度": "初值 **2**，控制「关键词看多少条消息」",
+      "条目 atDepth 的默认深度": "常量 **4**，控制「注入到 prompt 的哪个位置」",
+      "陷阱": "两者都叫 depth、数值不同、语义正交。混用会导致「扫描窗口莫名收窄」或「注入位置错位」。"
+    },
+    "出货配置 ≠ 代码初值（重要）": "默认配置文件里的「新用户快照」把递归扫描与整词匹配写成了 true，与代码初值（false）不同。⇒ 复刻以**代码初值**为准；出货快照只是首次启动时灌进用户设置的一份值。",
+    "其余相关上限常量": [
+      "最大扫描深度 1000（扫描缓冲构造时封顶）",
+      "条目 order 默认 100；组权重默认 100",
+      "条目标题（comment）最大长度 100"
+    ],
+    "来源书收集的四路（决定的默认集合）": [
+      { "来源": "角色书", "取法": "角色数据的 extensions 里指定的书 + 附加书列表", "去重": "若该书已在全局选择 / 聊天书 / 人物书里，则跳过" },
+      { "来源": "全局书", "取法": "用户勾选的全局书列表全量", "去重": "无" },
+      { "来源": "聊天书", "取法": "聊天元数据里绑定的书", "去重": "与全局书重复则跳过" },
+      { "来源": "人物设定书", "取法": "人物设定里指定的书", "去重": "与聊天书 / 全局书重复则跳过" }
+    ],
+    "排序策略三档（来源书顺序）": [
+      { "档": "均匀混合（默认枚举 0）", "行为": "全局书与角色书合并后**统一按 order 排序**（忽略来源）" },
+      { "档": "角色书优先（代码初值 1）", "行为": "角色书整段在前（各自内部按 order 排），全局书整段在后" },
+      { "档": "全局书优先（2）", "行为": "与上一档相反" },
+      "补充：聊天书与人物书**永远排在最前**（在三种策略之上）。未知策略值会告警并回落到「均匀混合」。"
+    ],
+    "易错点": [
+      "把全局扫描深度写成 4（那是 atDepth 的默认）",
+      "把出货配置里的递归=true / 整词=true 当代码默认",
+      "预算>100 不知会被重置回 25",
+      "排序只影响「同轮处理先后」，误当成最终注入顺序（最终顺序由组装期再排）",
+      "忘了聊天书与人物书永远最前"
+    ],
+    "pseudocode": "全局初值 = {\n  扫描深度:2, 最小激活:0, 补扫深度上限:0, 预算百分比:25, 预算封顶:0,\n  含名字:true, 递归:false, 超预算告警:false,\n  大小写敏感:false, 整词:false, 组评分:false, 来源策略:角色书优先, 最大递归步数:0\n}\nif 预算百分比 > 100: 预算百分比 = 25          # 迁移重置\n\n预算额 = max(1, round(预算百分比 × 上下文上限 / 100))\nif 预算封顶 > 0: 预算额 = min(预算额, 预算封顶)\n\n条目集合 =\n  按策略合并(角色书, 全局书) +\n  [聊天书, 人物书] 永远排最前\n  内部按 order 降序(仅决定同轮处理先后)\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:305-311",
+      "server-rs/src/parsing/world_book.rs:527-534",
+      "server-rs/src/services/prompt_kit.rs:69-77",
+      "web/src/components/WorldBooksModal.vue:427"
+    ],
+    "note": "Kedai **没有任何全局世界书激活设置**：`grep world_info_depth|world_info_budget|min_activations|max_recursion_steps|world_info_recursive|include_names|character_strategy` 全仓 0 命中。仅有的近似物是：排序用「position → order → id」升序（不是 order 降序）、扫描窗口的兜底值由**调用方传入**（引擎侧传 entry.depth，generate-raw 侧传 0），而不是全局设置。⇒ 「预算」「最小激活」「递归」「来源书优先级」这些卡作者依赖的全局行为在 Kedai 里完全缺失。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Activation Settings（扫描深度/含名字/预算/最小激活/递归/整词）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L335-L455"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Lore Insertion Strategy（三档来源书顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L65-L84"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（13 个模块级变量初值）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L69-L82"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（预算上限常量与预算>100 的迁移重置）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L946-L948"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（四路来源书收集与三档排序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4475-L4645"
+    }
+  ],
+  "related": ["worldinfo.budget.sticky", "worldinfo.rescan.paths", "worldinfo.depth.atdepth"],
+  "updated": "2026-10-31"
+}

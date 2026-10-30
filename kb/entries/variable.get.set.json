@@ -1,0 +1,82 @@
+{
+  "id": "variable.get.set",
+  "domain": "variable",
+  "title": "get 自动数字化 vs set 带索引时整条 JSON 化：同一变量两种物理表示",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么这是最容易错的一条": "同一个变量名在库里可能有**两种完全不同的物理形态**：普通写入是「原样字符串/数字」，带索引写入是「整条 JSON 串」。而 `get` 对**两种形态都做自动数字化**。⇒ 读出来的类型取决于存的时候怎么写的，卡里做数值比较时可能静默变成字符串比较。",
+    "取值键的优先级": "命名参数里的 `key` **优先于**位置参数传的名字。⇒ `/getvar key=身高` 与 `/getvar 身高` 结果相同，但两者同时给时 `key` 赢。",
+    "get 的四步": [
+      "1. **懒初始化**：local 的变量容器不存在就先建一个空对象 ⇒ **`get` 也有副作用**（写操作）。",
+      "2. 按 `key` 或名字取原始值。",
+      "3. 若带了 `index`：把原始值当 JSON 解析 → 数字索引按数组下标取、非数字索引按对象键取 → **取到对象再序列化回字符串**。解析失败静默吞掉，退化成普通读取（不报错）。",
+      "4. **自动数字化**：值 trim 后非空且能转成数字 → 返回**数字类型**；否则返回原始字符串（undefined/null 归一到空串）。"
+    ],
+    "自动数字化的完整边界": [
+      { "库里存的": "物理形态", "读出来": "说明" },
+      { "库里存的": "`\"5\"`", "物理形态": "普通字符串", "读出来": "**数字 5**", "说明": "能转数就转" },
+      { "库里存的": "`\"5 apples\"`", "物理形态": "普通字符串", "读出来": "字符串", "说明": "转不了数，原样" },
+      { "库里存的": "`\"\"`", "物理形态": "空串", "读出来": "空串", "说明": "trim 后为空 ⇒ 走字符串分支" },
+      { "库里存的": "`0`", "物理形态": "数字", "读出来": "数字 0", "说明": "本就数字" },
+      { "库里存的": "`\"0\"`", "物理形态": "字符串", "读出来": "数字 0", "说明": "「0」也是数" },
+      { "库里存的": "`\"true\"`", "物理形态": "字符串", "读出来": "**字符串 `true`**", "说明": "`Number('true')` 是 NaN ⇒ 不转" },
+      { "库里存的": "未定义", "物理形态": "不存在", "读出来": "空串", "说明": "不报错" }
+    ],
+    "set 的两种物理形态（核心差异）": {
+      "无索引": "`容器[名] = 值` —— **原样存，不做类型转换、不做 JSON 化**。存字符串就是字符串，存数字就是数字。",
+      "有索引": [
+        "把 `容器[名]` 当 JSON 解析（缺省为 `null`）；",
+        "索引能转数字 → 当数组（null 时先建空数组）；索引转不了数字 → 当对象（null 时先建空对象）；",
+        "按可选的目标类型转换值（字符串 / 数字 / 整数 / 浮点 / 布尔 / null / undefined / 列表 / 对象字典）；",
+        "**整个容器序列化回 JSON 串再存** ⇒ 该变量从此在库里是一条 JSON 文本。"
+      ],
+      "后果": "同一变量先 `set 名=值`（原样）再 `set 名[0]=值`（JSON 化），物理形态完全变了；再 `get 名` 时读的是 JSON 解析 → 取下标 → 序列化 的链路。⇒ 混用两种写法做「字符串 ↔ 结构」转换是上游的既存用法，复刻必须两条都实现，不能统一成一种。"
+    },
+    "目标类型转换支持的范围": "字符串 / 数字 / 整数 / 浮点 / 布尔（真值集合 on/true/1，假值 off/false/0）/ null / undefined（含 none）/ 列表（array）/ 对象（dict / dictionary）。**未指定的类型或值是闭包时原样返回**，不做转换。",
+    "易错点": [
+      "统一按字符串存：`get` 的数字自动转换会失效（因为反向要 JSON 化）",
+      "统一按 JSON 化存：不带索引的简单变量会变成带引号的 JSON 串，卡里拼文本会多出引号",
+      "get 不做数字化：`\"5\"` 与 `5` 在比较时行为不同",
+      "把不停数字的都转成数字（NaN）：上游是返回原字符串",
+      "`\"true\"` 当布尔：上游读出来是字符串 `true`（falsy 判定另有规则）",
+      "get 不带懒初始化：某些卡依赖「先读一次把容器建出来」的副作用",
+      "index 解析失败就报错：上游静默退化"
+    ],
+    "pseudocode": "取值(名, 索引?, 键?):\n  键 = 键 或 名\n  确保容器存在(不存在就建空对象)     # get 有副作用\n  值 = 容器[键]\n  若 传了索引:\n    尝试 解析 = JSON解析(值)\n    若 索引 能转数: 值 = 解析[数字(索引)]\n    否则: 值 = 解析[索引]\n    若 值 是对象: 值 = 序列化(值)\n    (解析失败则忽略以上,保持原值)\n  若 值 为空 或 不能转数: 返回 值 或 空串\n  否则: 返回 数字(值)\n\n赋值(名, 值, 索引?, 目标类型?):\n  若 名 为空: 抛错\n  若 无索引: 容器[名] = 值              # 原样,不转换\n  否则:\n    旧 = JSON解析(容器[名] 或 null)\n    若 索引 能转数: 旧 = 旧 为数组 ? 旧 : []\n    否则: 旧 = 旧 为对象 ? 旧 : {}\n    旧[索引] = 按目标类型转换(值)\n    容器[名] = 序列化(旧)\n  防抖保存; 返回 值\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:140-151",
+      "server-rs/src/services/session_service.rs:633-657",
+      "server-rs/src/services/session_service.rs:659-660",
+      "server-rs/src/parsing/assistant/vars.rs:53-68"
+    ],
+    "note": "Kedai 的会话变量是**纯字符串**：`session_vars` 表两列全是 TEXT（`SELECT key, value FROM session_vars`，写入 `HashMap<String,String>`），`getvar` 直接 `ctx.vars.get(key).cloned()` 返回字符串，**没有自动数字化**、**没有索引通道**、**没有目标类型转换**、**没有懒初始化副作用**。⇒ `{{getvar}}` 读出来永远是字符串；卡里 `{{getvar::身高}} + 1` 之类的数值运算依赖宏层自己做类型推断（`infer_value`），而不是变量层的数字化契约。另 Kedai 变量树（AssistantVars）侧有数字语义（`add` 走 `value_to_f64`，非数字返回 Err），但那是 MVU 树不是 ST local 变量。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（getLocalVariable：懒初始化、index 分支、自动数字化）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L22-L46"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（setLocalVariable：无 index 原样存 / 有 index 整条 JSON 化）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L48-L81"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 utils.js（convertValueType 支持的目标类型全集）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/utils.js#L208-L268"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 slash-commands.js（/getvar 与 /setvar 的 key/index/as 命名参数）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/slash-commands.js#L934-L1050"
+    }
+  ],
+  "related": ["variable.store.scope", "variable.add.inc.dec", "macro.variable.family"],
+  "updated": "2026-10-31"
+}

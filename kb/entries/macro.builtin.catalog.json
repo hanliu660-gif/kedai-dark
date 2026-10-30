@@ -1,0 +1,168 @@
+{
+  "id": "macro.builtin.catalog",
+  "domain": "macro",
+  "title": "内建宏全目录：93 主宏 / 31 别名 / 124 查找项，按类归组并标 Kedai 覆盖",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "计数口径（三个数字别搞混）": {
+      "注册调用点": "**76** 个（`grep` 口径，不等于宏条数）",
+      "主宏（清单条数）": "**93** = 75 个字面名注册 + 18 个由帮助函数展开（那一个帮助函数被调用 18 次，每次展开 1 主宏 + 若干别名）",
+      "别名": "**31** = 21 个显式声明 + 10 个来自帮助函数的复数名",
+      "查找表条目（大小写不敏感、键唯一）": "**124** = 93 + 31",
+      "为什么调用点 ≠ 条数": "差额 17 全来自同一个帮助函数被复用 18 次 ⇒ 核对时要用「主宏 93」这个口径，不要用 grep 的 76。"
+    },
+    "按类归组（每类列出主宏名；括号内为别名）": [
+      {
+        "类": "名字类（5）",
+        "宏": ["user", "char", "group（别名 charIfNotGroup）", "groupNotMuted", "notChar"]
+      },
+      {
+        "类": "卡字段类（14）",
+        "宏": [
+          "charPrompt", "charInstruction",
+          "charDescription（别名 description）", "charPersonality（别名 personality）",
+          "charScenario（别名 scenario）", "persona", "mesExamplesRaw", "mesExamples",
+          "charDepthPrompt", "charCreatorNotes（别名 creatorNotes）",
+          "charFirstMessage（别名 greeting）", "charVersion（别名 version / char_version，均隐藏）",
+          "model", "original"
+        ],
+        "说明": "其中 `mesExamples` 带计算逻辑（在 instruct 且非 openai 模式下会做示例解析与指令模式格式化）；`original` 有副作用（一次性消费，第二次调用返回空串）。"
+      },
+      {
+        "类": "聊天/会话类（9）",
+        "宏": ["lastMessage", "lastMessageId", "lastUserMessage", "lastCharMessage", "firstIncludedMessageId", "firstDisplayedMessageId", "lastSwipeId", "currentSwipeId", "allChatRange"],
+        "说明": "全部零参数。`firstDisplayedMessageId` 读 DOM（取聊天区消息节点上的 id 属性）。"
+      },
+      {
+        "类": "时间类（8）",
+        "宏": ["time", "date", "weekday", "isotime", "isodate", "datetimeformat", "idleDuration（别名 idle_duration，隐藏）", "timeDiff"],
+        "说明": "`time` 支持时区偏移参数；`idleDuration` 是「距最后一条消息过了多久」；`timeDiff` 是人化时间差。"
+      },
+      {
+        "类": "随机类（3）",
+        "宏": ["random", "roll", "pick"],
+        "说明": "`random` 与 `pick` 声明了列表参数（`list: true`）；`pick` 是**确定性随机**——种子由「聊天 id 哈希 + 整串内容哈希 + 宏在文本中的偏移 + 重掷种子」合成，所以要 `/reroll-pick` 才变。"
+      },
+      {
+        "类": "工具类（8）",
+        "宏": ["space", "newline", "noop", "trim", "reverse", "//（别名 comment，隐藏）", "banned", "outlet"],
+        "说明": "`banned` 有副作用（把词推进外部禁用词数组）；`outlet` 取世界书 outlet 桶的内容；`//` 是注释宏（合法标识符特例）。"
+      },
+      {
+        "类": "条件类（2）",
+        "宏": ["if", "else"],
+        "说明": "`if` 必须延迟参数解析（见 macro.conditional）；`else` 只产出内部标记，靠后处理器清理。"
+      },
+      {
+        "类": "变量类（18）",
+        "宏": [
+          "getvar", "setvar", "addvar", "incvar", "decvar", "hasvar（别名 varexists）", "deletevar（别名 flushvar）", "setvarkey（别名 setvarindex）", "getvarkey（别名 getvarindex）",
+          "getglobalvar", "setglobalvar", "addglobalvar", "incglobalvar", "decglobalvar", "hasglobalvar（别名 globalvarexists）", "deleteglobalvar（别名 flushglobalvar）", "setglobalvarkey（别名 setglobalvarindex）", "getglobalvarkey（别名 getglobalvarindex）"
+        ]
+      },
+      {
+        "类": "指令模式类（19）",
+        "宏": [
+          "instructStoryStringPrefix", "instructStoryStringSuffix",
+          "instructUserPrefix（别名 instructInput）", "instructUserSuffix",
+          "instructAssistantPrefix（别名 instructOutput）", "instructAssistantSuffix（别名 instructSeparator）",
+          "instructSystemPrefix", "instructSystemSuffix",
+          "instructFirstAssistantPrefix（别名 instructFirstOutputPrefix）", "instructLastAssistantPrefix（别名 instructLastOutputPrefix）",
+          "instructStop", "instructUserFiller", "instructSystemInstructionPrefix",
+          "instructFirstUserPrefix（别名 instructFirstInput）", "instructLastUserPrefix（别名 instructLastInput）",
+          "defaultSystemPrompt（别名 instructSystem / instructSystemPrompt）",
+          "exampleSeparator（别名 chatSeparator）", "chatStart",
+          "systemPrompt"
+        ],
+        "说明": "除最后一条 `systemPrompt` 是直接注册外，其余 18 条由帮助函数展开。**共同语义**：零参数、开关关闭时返回空串、无返回值说明字段。"
+      },
+      {
+        "类": "状态/其它类（4）",
+        "宏": ["lastGenerationType", "hasExtension", "input", "isMobile"],
+        "说明": "`lastGenerationType` 在**注册期**挂事件监听（生成开始时记录类型、切聊天时清空）；`hasExtension` 检查扩展是否启用；`input` 读输入框 DOM；`isMobile` 返回布尔。"
+      },
+      {
+        "类": "上限类（3）",
+        "宏": ["maxPrompt（别名 maxPromptTokens）", "maxContext（别名 maxContextTokens）", "maxResponse（别名 maxResponseTokens）"],
+        "说明": "取各上下文上限的数值。"
+      }
+    ],
+    "注册顺序（同名后注册者覆盖先注册者）": "core → env → state → chat → time → variable → instruct（共 7 组）。⇒ **扩展注册同名宏可覆盖内置**。",
+    "必带副作用的宏（复刻要单列清单）": [
+      "变量类全部写操作（9 个 local 写 + 7 个 global 写）",
+      "`banned`（推进外部数组）",
+      "`original`（一次性消费）",
+      "`pick`（读聊天元数据、回写缓存）",
+      "`lastGenerationType`（注册期挂监听，非求值期）",
+      "变量简写（`{{.名 = }}` 等）直接改变量"
+    ],
+    "只读 DOM 的宏（无浏览器环境必须给替代）": "`input`（读输入框）、`firstDisplayedMessageId`（读聊天区消息节点的 id 属性）。",
+    "Kedai 覆盖对账（现状：`server-rs/src/parsing/macros.rs` 一棵硬编码 match 树）": [
+      { "类": "名字类", "有": "char / character_name / user / user_name", "缺": "group / groupNotMuted / notChar（及其别名）" },
+      { "类": "卡字段类", "有": "personality / scenario / character_description / firstmessage", "缺": "charPrompt / charInstruction / persona / mesExamplesRaw / mesExamples / charDepthPrompt / charCreatorNotes / charVersion / model / original" },
+      { "类": "聊天类", "有": "lastMessage(mes) / lastUserMessage / lastCharMessage", "缺": "lastMessageId / firstIncludedMessageId / firstDisplayedMessageId / lastSwipeId / currentSwipeId / allChatRange" },
+      { "类": "时间类", "有": "time / datetime(date)", "缺": "weekday / isotime / isodate / datetimeformat / idleDuration / timeDiff；且 time 返回的是 24 小时制秒级字符串、与上游的本地化短格式不同" },
+      { "类": "随机类", "有": "random（0..1000）/ roll（默认 1d20，支持 `roll:公式`）", "缺": "pick（确定性种子）" },
+      { "类": "工具类", "有": "newline(lf) / trim / reverse / //注释 / id le / pipe（后两者返回空串占位）", "缺": "space / noop / banned / outlet" },
+      { "类": "条件类", "有": "**无**", "缺": "if / else 全套" },
+      { "类": "变量类", "有": "getvar / setvar / addvar / var（简易取值）", "缺": "incvar / decvar / hasvar / deletevar / setvarkey / getvarkey + **整套 9 个 global 宏**" },
+      { "类": "指令模式类", "有": "**无**", "缺": "19 条全部（Kedai 无指令模式）" },
+      { "类": "上限类", "有": "**无**", "缺": "maxPrompt / maxContext / maxResponse" },
+      { "类": "额外有（上游没有的）", "有": "`var::` / 7 作用域宏族（get|format × chat/character/preset/global）/ get_message_variable / format_message_variable / 其它裸全局", "缺": "—", "说明": "Kedai 的服务端侧自建了一套作用域宏族（8 个前缀配对），上游宏表里没有这些名字。" }
+    ],
+    "易错点": [
+      "用 grep 的 76 当宏条数：实际主宏 93",
+      "把 28（帮助函数数组里的名字总数）当主宏数：实际是 18 主 + 10 别名",
+      "把 124 当主宏数：那是查找条目数（含别名）",
+      "以为同名注册会报错：上游只告警并覆盖",
+      "漏掉「必带副作用」清单：复刻时把 setvar 当纯函数，时序全错",
+      "把 pick 做成真随机：它是确定性（同位置同内容同聊天结果稳定）"
+    ],
+    "pseudocode": "宏总数 = 93(主) + 31(别名) = 124(查找项)\n注册顺序 = core → env → state → chat → time → variable → instruct\n同名重复注册 → 告警并覆盖(后者赢)\n\n# 复刻时的最小集合建议(按卡实际使用频率):\n# 名字类/卡字段类/聊天类/时间类/随机类/工具类/变量类 = 必做\n# 条件类 = 必做(但独立成 macro.conditional)\n# 指令模式类 = Kedai 无指令模式时可暂缓,但需在缺口清单里显式标注\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:97-131",
+      "server-rs/src/parsing/macros.rs:132-241",
+      "server-rs/src/parsing/macros.rs:247-266",
+      "server-rs/src/parsing/macros.rs:33-81"
+    ],
+    "note": "Kedai 的宏是 `expand_one` 里一棵硬编码 match 树 + 8 个 `strip_prefix`（random: / roll: / getvar:: / setvar:: / addvar:: / var:: / format_message_variable:: / get_message_variable::）外加 8 个作用域前缀，实装约 20 个名字。**缺整类**：条件类（if/else）、指令模式类（19 条）、上限类（3 条）、global 变量族（9 条）、inc/dec/has/delete（4 条）、pick、mesExamples、group 三件套、outlet、weekday/isotime/isodate。另两处语义偏移：time 返回 24 小时制秒级（上游是本地化短格式），roll 恒默认 1d20。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 core-macros.js（17 条核心宏：工具/条件/上限/随机/工具类）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/core-macros.js#L32-L465"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 env-macros.js（20 条名字与卡字段宏）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/env-macros.js#L16-L198"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 chat-macros.js（9 条聊天会话宏）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/chat-macros.js#L9-L70"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 time-macros.js（8 条时间宏）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/time-macros.js#L11-L151"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 instruct-macros.js（帮助函数展开 18 主宏 + 10 别名，及直接注册的 systemPrompt）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/instruct-macros.js#L18-L76"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 macro-system.js（七组注册顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/macro-system.js#L66-L85"
+    }
+  ],
+  "related": ["macro.variable.family", "macro.conditional", "macro.alias.rules"],
+  "updated": "2026-10-31"
+}
