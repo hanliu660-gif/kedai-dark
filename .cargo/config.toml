@@ -13,6 +13,17 @@
 #
 # 参考:https://developer.android.com/guide/practices/page-sizes
 
+# Windows MSVC 快速多线程链接器(rust-lld):
+# 用 Rust 工具链自带的 rust-lld 替代 MSVC 的 link.exe。link.exe 是单线程的,
+# 大型二进制(本项目两个可执行体积数十 MB)的链接阶段实测占用数分钟;
+# rust-lld 是并发 LLD,同一链接任务实测快 60%~75%。
+# rust-lld 随 rustup 工具链分发(~/.rustup/toolchains/<版本>/lib/rustlib/<target>/bin/rust-lld.exe),
+# 不需要额外安装;产物功能与 MSVC link 等价(同样的 COFF/PE 输出格式与符号表)。
+# 只对桌面 Windows 目标生效 —— Linux/Android 目标不受影响,cargo test 的 debug 构建也不受影响。
+# 注意:切换链接器会让 x86_64-pc-windows-msvc 的 release 产物首次全量重链(保缓存的增量不受影响)。
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+
 [target.aarch64-linux-android]
 rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
 

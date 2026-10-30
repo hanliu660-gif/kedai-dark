@@ -121,3 +121,18 @@ kedai-server = { path = ".", features = ["test-support"] }
 [profile.release]
 lto = true
 strip = true
+
+# MSVC 本地化链接进度消息的告警抑制(与 src-tauri/Cargo.toml 同一理由,见该文件同段注释)。
+#
+# 启用 rust-lld(见仓库根 .cargo/config.toml)后,链接器会向输出通道打印进度与符号导入信息;
+# 而 Rust 1.97 起 `linker_messages` lint 默认 warn、只把白名单（英文字面串）外的内容转发为告警。
+# MSVC 本地化环境的中文进度消息匹配不上白名单,故每次 release 链接会刷一批
+# "unrecognized linker output" 告警。src-tauri 侧已按同一理由处理(5b26505),本处补齐
+# server-rs 侧:两个 crate 的 release 产物都经 rust-lld 链接,只压制一边会剩一半噪声。
+#
+# 代价(与 src-tauri 同口径,勿误以为「只静默进度消息」):linker_messages 是链接器输出
+# 的唯一通道,allow 之后白名单外的**警告**也不再上报;但链接**出错**导致构建失败时
+# 仍走 `error: linking with ... failed` 路径正常报出,**不影响故障发现**。
+# 参考 rust-lang/rust#159133 与 #136096;Rust >= 1.99 后本段可移除。
+[lints.rust]
+linker_messages = "allow"
