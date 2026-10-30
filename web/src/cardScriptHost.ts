@@ -230,6 +230,32 @@ export function makeCardScriptRpcExtensions(
       case 'floors-get': {
         return { handled: true, value: await readFloorSummaries() };
       }
+      case 'st-context': {
+        // 卡里的 SillyTavern.getContext() 数据面:只给「卡作者可感知」的只读字段,
+        // 不含宿主私有状态或密钥。chat 取最近 8 条摘要(正文截断 200 字),
+        // 与 getChatMessages 同源,保证两条通道数据一致。
+        const msgs = opts.readMessages();
+        const recent = msgs.slice(-8).map((m) => {
+          const role = String((m as { role?: string }).role ?? '');
+          return {
+            name: role,
+            role,
+            is_user: role === 'user',
+            is_system: role === 'system',
+            message: String((m as { content?: string }).content ?? '').slice(0, 200),
+          };
+        });
+        return {
+          handled: true as const,
+          value: {
+            name1: 'user',
+            characters: [],
+            chat: recent,
+            extensionSettings: {},
+            chatMetadata: {},
+          },
+        };
+      }
       case 'floors-set-enabled': {
         const id = String(args[0] ?? '');
         if (!id) {

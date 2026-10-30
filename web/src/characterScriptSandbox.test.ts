@@ -206,7 +206,7 @@ describe('sandboxScript(wuwa 状态栏兼容面)', () => {
     for (const marker of [
       'globalThis.eventOn=eventOn', 'globalThis.Mvu=Mvu',
       'globalThis.getVariables=getVariables', 'globalThis.replaceVariables=replaceVariables',
-      "VARIABLE_UPDATE_ENDED:'mag_variable_updated'",
+      "VARIABLE_UPDATE_ENDED:'mag_variable_update_ended'",
     ]) {
       expect(out).toContain(marker);
     }
@@ -243,7 +243,7 @@ describe('sandboxScript(wuwa 状态栏兼容面)', () => {
           channel: 'kedai-character-script-v1',
           nonce,
           type: 'mvu-event',
-          event: 'mag_variable_updated',
+          event: 'mag_variable_update_ended',
           payload: { stat_data: { 新值: 42 }, display_data: {} },
           variables: { stat_data: { 新值: 42 }, display_data: {} },
         },

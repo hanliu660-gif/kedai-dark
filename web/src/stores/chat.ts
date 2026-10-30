@@ -240,7 +240,7 @@ export const useChatStore = defineStore('app.chat', () => {
       parsed.initvar,
     );
     // 兼容原版 MagVarUpdate:变量更新后触发 mag_variable_updated 事件
-    emitMvuEvent('mag_variable_updated', {
+    emitMvuEvent('mag_variable_update_ended', {
       stat_data: mvuVariables.value.stat_data,
       display_data: mvuVariables.value.display_data,
     });
@@ -678,7 +678,7 @@ export const useChatStore = defineStore('app.chat', () => {
       stat_data: wrappedStat,
       display_data: wrappedDisp,
     };
-    emitMvuEvent('mag_variable_updated', {
+    emitMvuEvent('mag_variable_update_ended', {
       stat_data: mvuVariables.value.stat_data,
       display_data: mvuVariables.value.display_data,
     });

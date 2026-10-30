@@ -119,7 +119,7 @@ export function installMvuGlobals(): void {
       activeContext.variables.stat_data = stat;
       activeContext.variables.display_data =
         data.display_data && typeof data.display_data === 'object' ? data.display_data : stat;
-      emit('mag_variable_updated', { stat_data: stat, display_data: activeContext.variables.display_data });
+      emit('mag_variable_update_ended', { stat_data: stat, display_data: activeContext.variables.display_data });
     },
     /** 解析消息中的 <UpdateVariable> 块,返回 { cleaned, commands }(kedai 解析器) */
     parseMessage: (text: unknown) => {

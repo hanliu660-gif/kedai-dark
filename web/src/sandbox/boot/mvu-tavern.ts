@@ -71,7 +71,7 @@ const Mvu=Object.freeze({
   parseMessage:(text)=>{try{const raw=String(text??'');let cleaned=raw;const m=/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/gi.exec(cleaned);if(m)cleaned=cleaned.slice(0,m.index)+cleaned.slice(m.index+m[0].length);return{cleaned,commands:[]};}catch{return{cleaned:String(text??''),commands:[]};}},
   isDuringExtraAnalysis:false,
   // 事件名常量(对齐 MagVarUpdate 生态)+ 订阅 API(wuwa 状态栏检查 window.eventOn && window.Mvu 后订阅)
-  events:Object.freeze({VARIABLE_UPDATE_ENDED:'mag_variable_updated',VARIABLE_UPDATE_STARTED:'mag_variable_update_started'}),
+  events:Object.freeze({VARIABLE_UPDATE_ENDED:'mag_variable_update_ended',VARIABLE_UPDATE_STARTED:'mag_variable_update_started'}),
   on:eventOn,
   off:eventOff,
   emit:eventEmit,
@@ -174,8 +174,32 @@ globalThis.getChatMessages=function(id,opts){
 // 给个 identity 至少不产生 ReferenceError 噪音,宏文本由卡自己兜底)。
 globalThis.substitudeMacros=function(text){return typeof text==='string'?text:String(text??'');};
 // SillyTavern:卡级脚本常读 extensionSettings 做插件协作开关。酒馆里是宿主对象;
-// 这里给最小可写对象,避免 ReferenceError 连锁(写入只落在沙箱内存,不产生副作用)。
-globalThis.SillyTavern=globalThis.SillyTavern||{extensionSettings:{},chat:[],characters:[],name1:'user'};
+// **整页卡/前端卡的标准入口是 SillyTavern.getContext()**(真卡实测 6 处调用)⇒ 必须是
+// 「带 getContext() 的对象」,不能是静态空壳(否则 TypeError)。
+// 取值策略:**首次真正调用才发一次 RPC**(惰性),此后读缓存;启动不预拉,免得每次 boot
+// 白耗一次跨进程往返,也避免干扰「启动期 RPC 计数」类断言。
+// RPC 不可用 / 宿主未实现该 op 时,静默回退静态形状,**绝不抛错**(卡普遍不做 try/catch)。
+globalThis.SillyTavern=globalThis.SillyTavern||(function(){
+  var __stCtx={extensionSettings:{},chat:[],characters:[],name1:'user'};
+  var __stFetching=false;
+  function __stEnsure(){
+    if(__stFetching)return;
+    __stFetching=true;
+    try{ rpc('st-context',{}).then(function(v){
+      if(v&&typeof v==='object'){
+        __stCtx=Object.assign({},__stCtx,v);
+        if(!__stCtx.extensionSettings)__stCtx.extensionSettings={};
+        if(!Array.isArray(__stCtx.chat))__stCtx.chat=[];
+        if(!Array.isArray(__stCtx.characters))__stCtx.characters=[];
+      }
+    }).catch(function(){}); }catch(e){ /* rpc 不可用时静默,保持静态形状 */ }
+  }
+  __stCtx.getContext=function(){ __stEnsure(); return __stCtx; };
+  __stCtx.getContextAsync=function(){ return rpc('st-context',{}).then(function(v){
+    return (v&&typeof v==='object')?Object.assign({},__stCtx,v):__stCtx;
+  }).catch(function(){return __stCtx;}); };
+  return __stCtx;
+})();
 const Dom=Object.freeze({setText:(selector,text)=>rpc('setText',selector,text),setHtml:(selector,html)=>rpc('setHtml',selector,html),setAttribute:(selector,name,value)=>rpc('setAttribute',selector,name,value)});
 const fetch=undefined,XMLHttpRequest=undefined,WebSocket=undefined,EventSource=undefined,indexedDB=undefined,caches=undefined,localStorage=__kdMemoryStorage,sessionStorage=__kdSessionStorage;
 // ---- 酒馆事件常量(对齐酒馆助手 tavern_events;值即事件总线键) ----
@@ -189,7 +213,7 @@ const tavern_events=Object.freeze({
   MESSAGE_DELETED:'message_deleted',
   GENERATION_STARTED:'generation_started',
   GENERATION_ENDED:'generation_ended',
-  CHAT_CHANGED:'chat_changed',
+  CHAT_CHANGED:'chat_id_changed',
 });
 // ---- TavernHelper 音频 API(阶段五 5a):8 个方法对齐酒馆 @types/function/audio.d.ts ----
 // 沙箱 CSP 断掉媒体加载(media-src 'none'),播放必须经宿主 <audio> 元素;故 setter 类

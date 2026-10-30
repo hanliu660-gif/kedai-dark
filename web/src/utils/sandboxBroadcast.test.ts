@@ -55,7 +55,7 @@ describe('sandboxBroadcast', () => {
       channel: 'kedai-character-script-v1',
       nonce: 'n-a',
       type: 'mvu-event',
-      event: 'mag_variable_updated',
+      event: 'mag_variable_update_ended',
     });
     expect(message.payload).toEqual({ stat_data: { hp: 5 }, display_data: { label: '雨' } });
     // variables 与 payload 同值（沙箱内两套字段名兼容）

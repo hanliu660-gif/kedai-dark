@@ -47,7 +47,7 @@ export function broadcastMvuUpdate(variables: MvuVariables): void {
   for (const [nonce, win] of liveSandboxes) {
     try {
       win.postMessage(
-        { channel: CHANNEL, nonce, type: 'mvu-event', event: 'mag_variable_updated', payload, variables: payload },
+        { channel: CHANNEL, nonce, type: 'mvu-event', event: 'mag_variable_update_ended', payload, variables: payload },
         '*',
       );
     } catch {
