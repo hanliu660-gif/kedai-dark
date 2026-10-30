@@ -65,8 +65,8 @@ describe('沙箱 boot 模块化组件与组装测试', () => {
       display_data: {},
     });
     const hashX = crypto.createHash('sha256').update(codeX, 'utf8').digest('hex').slice(0, 16);
-    expect(codeX.length).toBe(86762);
-    expect(hashX).toBe('59ed841e447f2da0');
+    expect(codeX.length).toBe(88150);
+    expect(hashX).toBe('7ec43313977cb63c');
 
     // 3. 多段基准长度与 SHA-256 前 16 位锚点
     const multiCode = sandboxScript(
@@ -78,7 +78,7 @@ describe('沙箱 boot 模块化组件与组装测试', () => {
       { stat_data: {} } as MvuVariables,
     );
     const multiHash = crypto.createHash('sha256').update(multiCode, 'utf8').digest('hex').slice(0, 16);
-    expect(multiCode.length).toBe(88017);
-    expect(multiHash).toBe('92a8b6ea0f9d6740');
+    expect(multiCode.length).toBe(89405);
+    expect(multiHash).toBe('1484ba4ab68dea6f');
   });
 });

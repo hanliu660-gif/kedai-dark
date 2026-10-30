@@ -16,6 +16,29 @@ const __kdUnwrap=function(v){
   return v;
 };
 const __kdStatView=()=>__kdUnwrap(structuredClone(variables.stat_data));
+// 消息级变量写回宿主(2026-10-30 变量落库批):
+// 此前 replaceVariables / insertOrAssignVariables / Mvu.replaceMvuData 只改沙箱内存副本,
+// 刷新即丢(「悬浮球里买东西刷新就没了」)。现统一经 mvu-replace 上送宿主落库。
+// 上送的是**裸值树**(作者脚本看到的形状),宿主侧 store.replaceMvuVariables 用
+// wrapStatTree 按旧树同路径包回 [值,原因] —— 与整页卡链路(useResourceFrames)同一落库通道。
+// 只送 stat_data/display_data:全局级(isGlobal)走原 global-save RPC,不进消息变量树。
+// 定义位置必须在 Mvu 之前:replaceMvuData 是 Object.freeze 的对象字面量方法,调用时才求值,
+// 但 const 声明期的 TDZ 仍会挡住 — 提前到这里最稳。
+const __kdPushVars=function(){
+  try{
+    // 归一化(既有缺陷防御):酒馆 replaceVariables 语义是「整树替换」,作者脚本常写成
+    // replaceVariables({hp:5}) —— 直接按裸树替换后 variables.stat_data 就不存在了,
+    // 此时 __kdStatView() 会 structuredClone(undefined) 抛错,且随后 getVariables() 也崩。
+    // 这里按 MVU 约定补救:stat_data 缺失时把当前 variables 自身当 stat_data(裸值树),
+    // display_data 缺失时回落到 stat_data —— 保证上送载荷永远是可序列化对象。
+    const raw = variables;
+    const stat = raw && typeof raw.stat_data === 'object' && raw.stat_data !== null ? raw.stat_data : raw;
+    const disp = raw && typeof raw.display_data === 'object' && raw.display_data !== null ? raw.display_data : stat;
+    send('mvu-replace',{data:{stat_data:__kdUnwrap(structuredClone(stat||{})),display_data:structuredClone(disp||{})}});
+  }catch(e){/* 宿主未就绪时丢弃,下次读取自会补;调试时经 warn 上报真实原因 */
+    try{warn('变量写回上送失败: '+(e&&e.message?e.message:e));}catch(_e){}
+  }
+};
 // ---- 事件总线(状态栏经 eventOn(Mvu.events.VARIABLE_UPDATE_ENDED,…) 订阅变量更新;
 //      宿主在应用 UpdateVariable 后广播 mvu-event,此处合并变量树并触发订阅) ----
 const __kdEventBus=new Map();
@@ -27,7 +50,7 @@ const Mvu=Object.freeze({
   getVariables:()=>({stat_data:__kdStatView(),display_data:structuredClone(variables.display_data)}),
   getMvuData:()=>({stat_data:__kdStatView(),display_data:structuredClone(variables.display_data)}),
   waitGlobalInitialized,
-  replaceMvuData:(data)=>{if(!data||typeof data!=='object')return;const stat=data.stat_data&&typeof data.stat_data==='object'?data.stat_data:{};variables.stat_data=stat;variables.display_data=(data.display_data&&typeof data.display_data==='object')?data.display_data:stat;},
+  replaceMvuData:(data)=>{if(!data||typeof data!=='object')return;const stat=data.stat_data&&typeof data.stat_data==='object'?data.stat_data:{};variables.stat_data=stat;variables.display_data=(data.display_data&&typeof data.display_data==='object')?data.display_data:stat;__kdPushVars();},
   parseMessage:(text)=>{try{const raw=String(text??'');let cleaned=raw;const m=/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/gi.exec(cleaned);if(m)cleaned=cleaned.slice(0,m.index)+cleaned.slice(m.index+m[0].length);return{cleaned,commands:[]};}catch{return{cleaned:String(text??''),commands:[]};}},
   isDuringExtraAnalysis:false,
   // 事件名常量(对齐 MagVarUpdate 生态)+ 订阅 API(wuwa 状态栏检查 window.eventOn && window.Mvu 后订阅)
@@ -47,6 +70,7 @@ const replaceVariables=function(vars,opts){
     for(const k of Object.keys(vars))t[k]=vars[k];
   }
   if(isGlobal)rpc('global-save',__kdGlobals).catch(function(){});
+  else __kdPushVars();
   return Promise.resolve();
 };
 const insertOrAssignVariables=function(vars,opts){
@@ -54,6 +78,7 @@ const insertOrAssignVariables=function(vars,opts){
   const t=isGlobal?__kdGlobals:variables.stat_data;
   if(vars&&typeof vars==='object')for(const k of Object.keys(vars))t[k]=vars[k];
   if(isGlobal)rpc('global-save',__kdGlobals).catch(function(){});
+  else __kdPushVars();
   return Promise.resolve();
 };
 // 挂到 window:作者脚本大量检查 window.eventOn / window.Mvu / typeof getVariables(const 不产生 window 属性)

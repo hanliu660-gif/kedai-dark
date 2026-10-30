@@ -59,6 +59,13 @@ export interface CardScriptHostOptions {
    * 没有它关掉悬浮窗就只能刷新页面。点击经 `clickCardScriptButton(name)` 回投沙箱。
    */
   onScriptButtons?: (buttons: SandboxScriptButton[]) => void;
+  /**
+   * 卡级脚本写回消息级变量(可选,2026-10-30 变量落库批):脚本调
+   * `replaceVariables` / `insertOrAssignVariables` / `Mvu.replaceMvuData` 后,
+   * 沙箱经 `mvu-replace` 上送**裸值树**,这里把它交给 chat store 落库。
+   * 不传时保持旧行为(改动只留沙箱内存,刷新即丢)。
+   */
+  onMvuReplace?: (data: { stat_data?: unknown; display_data?: unknown }) => void;
 }
 
 // ---- 世界书条目形态映射:kedai WorldBookEntry → 酒馆助手条目 ----
@@ -349,6 +356,10 @@ async function ensureInner(opts: CardScriptHostOptions): Promise<void> {
     lorebookName: opts.lorebookName,
     rpcExtensions,
     onScriptButtons: opts.onScriptButtons,
+    // 卡级脚本写回消息级变量(2026-10-30 变量落库批):沙箱改动经 mvu-replace 回到
+    // 同一 store 落库通道(与整页卡 useResourceFrames 的 onMvuReplace 一致),
+    // 修「悬浮球里买东西刷新就没了」。
+    onMvuReplace: opts.onMvuReplace,
   };
   active = { key, cleanups, container: opts.container, context };
   // 全部可运行脚本合并进单个沙箱 realm(逐 <script> 注入,共享 window):

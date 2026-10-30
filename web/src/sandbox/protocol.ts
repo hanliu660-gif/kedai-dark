@@ -64,7 +64,7 @@ interface SandboxRequest {
   nonce: string;
   // shared-publish:沙箱 diff 上报 window 新增/变更的纯数据全局(跨 realm 共享桥,见 shared-globals.ts);
   // 反向「宿主→沙箱」对应 type:'shared-update'(globals 全量快照,字面量 postMessage,与 mvu-event 同风格)
-  type: 'ready' | 'rpc' | 'batch' | 'done' | 'error' | 'warn' | 'jq-event' | 'audio' | 'local-storage' | 'shared-publish' | 'script-buttons';
+  type: 'ready' | 'rpc' | 'batch' | 'done' | 'error' | 'warn' | 'jq-event' | 'audio' | 'local-storage' | 'shared-publish' | 'script-buttons' | 'mvu-replace';
   id?: number;
   op?: string;
   args?: unknown[];
@@ -142,6 +142,14 @@ export interface SandboxExecutionContext {
    * 登记后上送一份全量列表,宿主据此渲染按钮栏(见 ChatWindow.vue 的 sv-script-bar)。
    */
   onScriptButtons?: (buttons: SandboxScriptButton[]) => void;
+  /**
+   * 卡级脚本写回消息级变量(可选,2026-10-30 变量落库批):沙箱里
+   * `replaceVariables` / `insertOrAssignVariables` / `Mvu.replaceMvuData` 改完内存副本后
+   * 经 `mvu-replace` 上送**裸值树**,宿主据此落库(与整页卡链路同一 store 通道:
+   * `store.replaceMvuVariables` → `wrapStatTree` 按旧树同路径包回 `[值,原因]`)。
+   * 未传时沙箱改动只留内存(旧行为,刷新即丢)。
+   */
+  onMvuReplace?: (data: { stat_data?: unknown; display_data?: unknown }) => void;
   /**
    * 宿主→沙箱投递入口(执行器写入,调用方不要预设):目前用于 script-button-click。
    * 由 iframe-lifecycle 在 iframe 就绪后填充,cardScriptHost 通过它把按钮点击送回沙箱。

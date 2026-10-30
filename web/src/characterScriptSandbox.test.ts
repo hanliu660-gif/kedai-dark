@@ -297,6 +297,54 @@ describe('sandboxScript(wuwa 状态栏兼容面)', () => {
     expect(messages.some((m) => m.type === 'rpc' && m.op === 'global-save')).toBe(true);
   });
 
+  it('消息级 replaceVariables / insertOrAssignVariables 上送 mvu-replace 落库(2026-10-30 变量落库批)', async () => {
+    // 此前这三条只改沙箱内存副本,刷新即丢(「悬浮球里买东西就没了」)。
+    // 现要求:消息级(默认)写回必须 send('mvu-replace'),且载荷是**裸值树**;
+    // 全局级(opts.type==='global')仍走 global-save,不进消息变量树。
+    //
+    // 注意:酒馆 replaceVariables 的语义是「整树替换」,与 insertOrAssignVariables(合并)
+    // 不同。既有实现里 replaceVariables({hp:5}) 会把 variables 自身替换成 {hp:5},
+    // stat_data 层级随之消失(这是 R2.2 之前就存在的语义,不在本批改动范围)。
+    // 故此处分开验证两条 API,不叠在一次脚本里互相污染。
+    const user = [
+      "insertOrAssignVariables({mp:3}).then(()=>warn('r2'));",
+      "Mvu.replaceMvuData({stat_data:{gold:100}});warn('r3');",
+      "replaceVariables({theme:'x'},{type:'global'}).then(()=>warn('g1'));",
+    ].join('\n');
+    const nonce = 'nonce-mvu-replace';
+    const script = sandboxScript(user, nonce, { stat_data: {}, display_data: {} }, { theme: 'y' });
+    const messages: Array<Record<string, unknown>> = [];
+    const listeners: Array<(ev: { data: unknown }) => void> = [];
+    const sandboxGlobal = {
+      parent: { postMessage: (m: Record<string, unknown>) => void messages.push(m) },
+      addEventListener: (_type: string, fn: (ev: { data: unknown }) => void) => void listeners.push(fn),
+      console,
+      structuredClone: (v: unknown) => JSON.parse(JSON.stringify(v)),
+      queueMicrotask,
+      Promise,
+      setTimeout,
+      window: {},
+    };
+    vm.createContext(sandboxGlobal);
+    new vm.Script(script).runInContext(sandboxGlobal);
+    await new Promise((r) => setTimeout(r, 30));
+
+    const replaced = messages.filter((m) => m.type === 'mvu-replace');
+    // insertOrAssignVariables 一次 + Mvu.replaceMvuData 一次 = 至少两条
+    expect(replaced.length).toBeGreaterThanOrEqual(2);
+    // 载荷形状:裸值树,且写进去的值确实在里面
+    const withMp = replaced
+      .map((m) => m.data as { stat_data?: Record<string, unknown> })
+      .find((d) => d?.stat_data && d.stat_data.mp === 3);
+    expect(withMp, 'insertOrAssignVariables 写回的 mp 应在载荷里').toBeTruthy();
+    const withGold = replaced
+      .map((m) => m.data as { stat_data?: Record<string, unknown> })
+      .find((d) => d?.stat_data && d.stat_data.gold === 100);
+    expect(withGold, 'replaceMvuData 写回的 gold 应在载荷里').toBeTruthy();
+    // 全局级不误送消息变量
+    expect(replaced.some((m) => (m.data as { stat_data?: Record<string, unknown> })?.stat_data?.theme === 'x')).toBe(false);
+  });
+
   it('事件回调异常仅告警,不再拆沙箱(此前 send(error) 会触发宿主拆除)', () => {
     // jq-event 分支的 catch 须 send warn 而非 error
     const jqBranch = out.slice(out.indexOf("m.type==='jq-event'"), out.indexOf("m.type==='mvu-event'"));

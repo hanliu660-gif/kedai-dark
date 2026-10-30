@@ -300,6 +300,10 @@ async function syncCardScriptSandbox(force = false): Promise<void> {
     onScriptButtons: (list) => {
       scriptButtons.value = list;
     },
+    // 卡级脚本写回消息级变量(2026-10-30 变量落库批):与整页卡 onMvuReplace 同一落库通道
+    // (store.replaceMvuVariables → wrapStatTree 按旧树路径包回 [值,原因])。
+    // 修「悬浮球里买东西/换装,刷新就没了」——沙箱改动不再只留内存。
+    onMvuReplace: (data) => void store.replaceMvuVariables(data),
     force,
   });
 }

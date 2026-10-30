@@ -444,6 +444,15 @@ export async function executeSandboxedCharacterScript(
           }, '*');
         } else if (message.type === 'warn') {
           console.warn('[kedai-mvu]', message.message ?? '');
+        } else if (message.type === 'mvu-replace') {
+          // 沙箱写回消息级变量(2026-10-30 变量落库批):作者脚本调
+          // replaceVariables / insertOrAssignVariables / Mvu.replaceMvuData 后上送裸值树。
+          // 变量真身在宿主 chat store,与整页卡链路(useResourceFrames)走同一落库通道;
+          // 未注入回调时保持旧行为(只留沙箱内存,不报错)。
+          const data = (message as { data?: unknown }).data;
+          if (data && typeof data === 'object') {
+            context.onMvuReplace?.(data as { stat_data?: unknown; display_data?: unknown });
+          }
         } else if (message.type === 'done') {
           // 脚本运行中注入的节点(append/setHtml)可能带 data-kd-on*,收尾补绑一轮
           bindInlineHandlers();
