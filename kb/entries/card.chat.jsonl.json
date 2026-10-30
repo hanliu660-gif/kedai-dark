@@ -49,6 +49,9 @@
       "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/chats.js#L2160-L2172"
     }
   ],
-  "related": ["card.png.tEXt", "card.frontend.detect"],
+  "related": [
+    "card.png.text",
+    "card.frontend.detect"
+  ],
   "updated": "2026-10-31"
 }

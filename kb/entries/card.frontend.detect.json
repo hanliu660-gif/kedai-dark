@@ -53,6 +53,10 @@
       "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/util/is_frontend.ts#L5-L17"
     }
   ],
-  "related": ["card.png.tEXt", "sandbox.jquery.two_hosts", "sandbox.predefine.injection"],
+  "related": [
+    "card.png.text",
+    "sandbox.jquery.two_hosts",
+    "sandbox.predefine.injection"
+  ],
   "updated": "2026-10-31"
 }

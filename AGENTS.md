@@ -21,7 +21,7 @@
 ## 酒馆兼容知识库(kb/,2026-10-31 起)
 
 **动卡层 / 世界书 / 宏 / 正则 / 变量 / 沙箱之前,先查 `kb/` —— 它是 Kedai 与酒馆(SillyTavern)生态
-差异的结构化契约库(33 条 / 8 域,**当前工作区未提交,尚未入 git;收口项见 `../交接文档.md` §8.1 末表**),
+差异的结构化契约库(33 条 / 8 域,**已提交 `5fd6b58` 并入 git**;遗留收口项见 `../交接文档.md` §8.1 末表),
 每条都带 `kedai.evidence`(本仓路径:行号)。**
 
 ```bash
@@ -83,15 +83,15 @@ cargo build --manifest-path server-rs/Cargo.toml
 - **provider(固定)**:commandcode 网关 `https://api.commandcode.ai/provider/v1`(设置页可整段粘贴含 `/chat/completions` 的完整 URL,后端自动剥后缀),模型 `deepseek/deepseek-v4.1-flash`。该模型带推理(`reasoning_tokens`):探针 `max_tokens` 给太小会出现「HTTP 200 但 `content` 为空」——连通性判据看状态码与 `usage`,取可见回复把 `max_tokens` 抬到 ≥256。
 - **凭据**:只存本机**仓外**(`D:\kedai-bench-run\realmodel.env` 与各隔离实例 DATA_DIR 的 `settings.json`)。本仓为公开仓:**禁止**把 key 写进仓库任何文件、提交正文或文档值。注意配置回退链——**目标 DATA_DIR 已有 `settings.json` 时,`.env` 的 `OPENAI_*` 不生效**(机制见 `docs/经验.md` E76)。
 - **流程(隔离实例,前置纪律见 `docs/经验.md` E75)**:环境变量前缀启动
-  `MSYS_NO_PATHCONV=1 DATA_DIR=D:/kedai-bench-run/data-<批次> PORT=30xx LOG_DIR=... server-rs/target/debug/kedai-server.exe`,
+  `MSYS_NO_PATHCONV=1 DATA_DIR=<基准目录>/data-<批次> PORT=30xx LOG_DIR=... server-rs/target/debug/kedai-server.exe`（`<基准目录>` 自制；历史值为 `D:/kedai-bench-run`，**本机已无 D 盘**）,
   启动后**先核对日志 `"data_dir":"..."` 行**再做任何写操作;连接经 `PUT /api/settings` 配置(base_url / key / model)。探针:角色扮演 `node tools/bench/e2e-probe.mjs`、任务 `node tools/bench/task-probe.mjs`、最小连通 `POST /api/chat/generate-raw`(或直连上游 `D:\kedai-bench-run\probe-provider.mjs`)。
-- **证据**:命令与关键输出(JSON / 日志)落 `D:\kedai-bench-run\<批次>-evidence\`;提交正文写「真实模型实测通过 + 证据路径 + 关键结论」。
+- **证据**:命令与关键输出(JSON / 日志)落 `<基准目录>\<批次>-evidence\`（历史为 `D:\kedai-bench-run\`，本机无 D 盘）;提交正文写「真实模型实测通过 + 证据路径 + 关键结论」。
 - **豁免**:纯文档 / 样式批次至少跑一次最小连通冒烟并在提交正文说明;确实不可测时(如离线)显式说明理由。
 
 ## 构建提醒(后续模型必读)
 
 - **改完任何前后端代码后,`dist\` 下的 exe 与项目根 `Kedai.exe` 不会自动更新。** 用 `target\debug\` 二进制验证通过后,交付/试用 exe 版前必须跑一次 `.\build.ps1`(默认双端同步:前端 + release + 便携版 + 构建指纹 sidecar;详见 MAINTENANCE.md §4)。只改了代码只跑过 debug,不等于 exe 版已更新。
-- 快速迭代优先用 `.\build.ps1 -Fast -TestOnly`（2026-10-30 接入 rust-lld 快速链接器并跳过全局 LTO，单端热重编仅需 1m53s；若前端未动带 `-NoWeb` 仅需 3.1 秒）或 `.\build.ps1 -Dev`（debug profile + 不打包便携版，热 28s），产物 `kedai-server.exe` 可直接跑。日常全量双端同步打包用 `.\build.ps1 -Fast`（实测 5m46s，比无 `-Fast` 省近 5 分钟）。注意 `-Dev` 与 `-TestOnly` **不能同时用**(脚本主动抛错:语义重叠)，`-Dev` 与 `-WithPortable` 也互斥。交付前若要出包，补一次完整的 `.\build.ps1`。
+- 快速迭代优先用 `.\build.ps1 -Fast -TestOnly`（2026-10-30 接入 rust-lld 快速链接器并跳过全局 LTO，单端热重编仅需 1m45s；若前端未动带 `-NoWeb` 仅需 3.1 秒）或 `.\build.ps1 -Dev`（debug profile + 不打包便携版，热 28s），产物 `kedai-server.exe` 可直接跑。日常全量双端同步打包用 `.\build.ps1 -Fast`（**双端**实测 **5m46s~5m52s**（含 `-SkipChecks`；同日另一轮 07:21→07:26 复测约 5m），比无 `-Fast` 省近 5 分钟）。注意 `-Dev` 与 `-TestOnly` **不能同时用**(脚本主动抛错:语义重叠)，`-Dev` 与 `-WithPortable` 也互斥。交付前若要出包，补一次完整的 `.\build.ps1`。
 - **本机环境**:裸 PowerShell/cmd/Git Bash 里可能没有 cargo 环境(MSVC toolchain 未注入)。构建/测试前先执行
   `call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"`,
   或在已加载 vcvars64 的 shell 里再调用 build.ps1 / cargo;Git Bash 中可用 `cmd //c "<bat 包装>"` 形式嵌套。

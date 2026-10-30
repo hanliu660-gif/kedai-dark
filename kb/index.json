@@ -75,7 +75,7 @@
       "label": "角色卡载体",
       "upstream": "SillyTavern 内建",
       "entries": [
-        "card.png.tEXt",
+        "card.png.text",
         "card.chat.jsonl",
         "card.frontend.detect",
         "card.lodash.shared"

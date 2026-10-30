@@ -39,14 +39,16 @@
 ```
 kb/
 ├── README.md            ← 本文件：规范与用法
-├── schema.json          ← 条目字段规范（JSON Schema 风格，供 tools/check-kb.mjs 校验）
+├── schema.json          ← 条目字段规范（JSON Schema 风格，由 tools/check-kb.mjs 逐条求值）
 ├── index.json           ← 总索引：按域分组的条目清单 + 统计口径
-├── entries/
-│   ├── <domain>-<id>.json   ← 一条契约一个文件
-│   └── ...
-└── state/
-    └── kedai-gaps.json  ← 「Kedai 现状 vs 契约」的对账结果（缺口清单，可复跑刷新）
+└── entries/
+    ├── <id>.json        ← 一条契约一个文件（文件名 = id）
+    └── ...
 ```
+
+> **没有 `state/` 目录**：缺口清单是**即时算出来的**，不落盘缓存——用
+> `node tools/kb.mjs gaps`（全部）或 `gaps --domain <域>` 现查现出，数据永远与 `entries/` 同步，
+> 不存在「缓存过期」的问题。
 
 **为什么一条一个文件**：便于 `git diff` 精确到条目、便于按域检索、避免单文件膨胀到不可读。
 
@@ -58,7 +60,7 @@ kb/
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 唯一 ID，格式 `<domain>.<子域>.<名>`，如 `worldinfo.field.selective_logic` |
+| `id` | string | 唯一 ID，格式 `<domain>.<子域>.<名>`（**全小写**），如 `worldinfo.field.schema` |
 | `domain` | enum | `worldinfo` / `macro` / `regex` / `prompt` / `variable` / `card` / `sandbox` / `mvu` / `stscript` |
 | `title` | string | 一句话标题（中文） |
 | `priority` | enum | `P0` 违反会导致卡行为错乱 / `P1` 明显功能缺失 / `P2` 边缘差异 |
@@ -83,7 +85,7 @@ kb/
 node tools/kb.mjs query --domain worldinfo      # 按域列出
 node tools/kb.mjs query --kedai differs         # 只看与 Kedai 不一致的
 node tools/kb.mjs query --priority P0           # 只看高危
-node tools/kb.mjs show worldinfo.field.selective_logic   # 单条详情
+node tools/kb.mjs show worldinfo.field.schema           # 单条详情
 ```
 
 ### 4.2 动手改代码前

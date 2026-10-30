@@ -1,12 +1,14 @@
 // Kedai 酒馆兼容知识库 —— 校验器
 // 规则:
 //   K1 kb/ 必需文件齐备(README.md / schema.json / index.json)
-//   K2 每个 entries/*.json 符合 kb/schema.json 的必填项与枚举(手写轻量校验,不引外部依赖)
+//   K2 每个 entries/*.json 符合 kb/schema.json(手写轻量 JSON Schema 求值器:type/enum/pattern/
+//      minLength/maxLength/minItems/required/additionalProperties/properties/items,不引外部依赖)
 //   K3 条目 id 全局唯一且与文件名前缀域一致
 //   K4 index.json 与 entries/ 双向一致(索引里列了必须存在;存在必须列)
 //   K5 sources.ref 必须形如「绝对路径:行号」或 https URL(指路指针,不允许空)
 //   K6 许可红线:条目内不得出现上游源码片段(启发式:检测过长的代码状字符串)
 //   K7 kedai.evidence 必须能在本仓定位到文件(行号存在性)
+//   K8 related 数组里引用的 id 必须都真实存在于 entries/(否则索引图会出现悬空边)
 // 退出码:0 全过 / 1 有 FAIL
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -40,6 +42,61 @@ try { index = readJson(path.join(KB, 'index.json')); } catch (e) { fail('K3', `i
 const REQUIRED = schema?.required ?? [];
 const props = schema?.properties ?? {};
 const DOMAINS = props.domain?.enum ?? [];
+
+// ---- 轻量 JSON Schema 求值器（只实现 kb/schema.json 实际用到的关键字）----
+// 支持: type / enum / pattern / minLength / maxLength / minItems / required / additionalProperties / properties / items
+// 目的:让 K2 真正按 schema 校验,而不是只查必填与三个枚举(此前 pattern 写了却没人跑 ⇒ 门禁「弱绿」)
+const TYPE_CHECKS = {
+  object: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  array: (v) => Array.isArray(v),
+  string: (v) => typeof v === 'string',
+};
+
+function validate(node, sch, at) {
+  if (!sch || typeof sch !== 'object') return;
+  const t = sch.type;
+  if (t && TYPE_CHECKS[t] && !TYPE_CHECKS[t](node)) {
+    fail('K2', `${at}: 期望类型 ${t},实际 ${Array.isArray(node) ? 'array' : node === null ? 'null' : typeof node}`);
+    return;
+  }
+  if (Array.isArray(sch.enum)) {
+    const vals = sch.enum;
+    const okEnum = vals.some((x) => JSON.stringify(x) === JSON.stringify(node));
+    if (!okEnum) fail('K2', `${at}: 取值不在枚举 ${JSON.stringify(vals)} → ${JSON.stringify(node)}`);
+  }
+  if (typeof node === 'string') {
+    if (typeof sch.minLength === 'number' && node.length < sch.minLength) {
+      fail('K2', `${at}: 长度 ${node.length} < minLength ${sch.minLength}`);
+    }
+    if (typeof sch.maxLength === 'number' && node.length > sch.maxLength) {
+      fail('K2', `${at}: 长度 ${node.length} > maxLength ${sch.maxLength}`);
+    }
+    if (typeof sch.pattern === 'string') {
+      let re;
+      try { re = new RegExp(sch.pattern); } catch (e) { fail('K2', `${at}: schema.pattern 无法编译 ${sch.pattern}`); return; }
+      if (!re.test(node)) fail('K2', `${at}: 不匹配 pattern ${sch.pattern} → ${JSON.stringify(node)}`);
+    }
+  }
+  if (Array.isArray(node)) {
+    if (typeof sch.minItems === 'number' && node.length < sch.minItems) {
+      fail('K2', `${at}: 数组长度 ${node.length} < minItems ${sch.minItems}`);
+    }
+    if (sch.items) node.forEach((v, i) => validate(v, sch.items, `${at}[${i}]`));
+  }
+  if (node !== null && typeof node === 'object' && !Array.isArray(node)) {
+    for (const k of sch.required ?? []) {
+      if (node[k] === undefined) fail('K2', `${at}: 缺必填字段 ${k}`);
+    }
+    if (sch.additionalProperties === false && sch.properties) {
+      for (const k of Object.keys(node)) {
+        if (!(k in sch.properties)) fail('K2', `${at}: 出现 schema 未定义字段 ${k}`);
+      }
+    }
+    for (const [k, sub] of Object.entries(sch.properties ?? {})) {
+      if (node[k] !== undefined) validate(node[k], sub, `${at}.${k}`);
+    }
+  }
+}
 
 // ---------- 遍历条目 ----------
 const files = existsSync(ENTRIES)
@@ -81,6 +138,9 @@ for (const f of files) {
   if (!e.sources?.length) fail('K2', `${f}: sources 至少一条`);
   if (!e.kedai?.evidence?.length) fail('K2', `${f}: kedai.evidence 至少一条`);
 
+  // K2-full 逐条按 schema.json 求值(pattern/minLength/maxLength/enum/additionalProperties/嵌套)
+  if (schema) validate(e, schema, f);
+
   // K3 id 唯一 + 域前缀一致
   if (e.id) {
     if (ids.has(e.id)) fail('K3', `${f}: id 重复 ${e.id}(已用于 ${ids.get(e.id)})`);
@@ -119,6 +179,20 @@ for (const f of files) {
       if (ln < 1 || ln > lines) fail('K7', `${f}: evidence 行号越界 ${ev}(文件仅 ${lines} 行)`);
     }
   }
+}
+
+// ---------- K8 related 引用必须都真实存在(需全部 id 收齐后再查) ----------
+{
+  const dangling = [];
+  for (const f of files) {
+    let e;
+    try { e = readJson(path.join(ENTRIES, f)); } catch { continue; }
+    for (const r of e.related ?? []) {
+      if (!ids.has(r)) dangling.push(`${f}: related 指向不存在的条目 ${r}`);
+    }
+  }
+  if (dangling.length) dangling.forEach((m) => fail('K8', m));
+  else ok('K8', 'related 引用全部存在');
 }
 
 // ---------- K4 双向一致 ----------

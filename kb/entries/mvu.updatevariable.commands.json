@@ -6,9 +6,21 @@
   "authority": "src",
   "spec": {
     "两种块": [
-      { "块": "更新块", "别名": "updatevariable / variableupdate / update（大小写不敏感，允许标签内有空白与任意属性）", "作用": "包裹命令序列" },
-      { "块": "补丁块", "别名": "jsonpatch / json_patch（下划线可选）", "作用": "包裹 JSON 补丁数组" },
-      { "块": "思考区（被屏蔽）", "别名": "think / thinking / reasoning / analysis / analyze", "作用": "内容整体屏蔽，不做解析" }
+      {
+        "块": "更新块",
+        "别名": "updatevariable / variableupdate / update（大小写不敏感，允许标签内有空白与任意属性）",
+        "作用": "包裹命令序列"
+      },
+      {
+        "块": "补丁块",
+        "别名": "jsonpatch / json_patch（下划线可选）",
+        "作用": "包裹 JSON 补丁数组"
+      },
+      {
+        "块": "思考区（被屏蔽）",
+        "别名": "think / thinking / reasoning / analysis / analyze",
+        "作用": "内容整体屏蔽，不做解析"
+      }
     ],
     "块配对": [
       "同类标签**栈式配对**：开标签压栈，闭标签出栈并产出一个块。",
@@ -17,18 +29,42 @@
       "结果按起始位置升序。"
     ],
     "命令归一化": [
-      { "写出来的命令": "remove", "归一为": "delete" },
-      { "写出来的命令": "assign", "归一为": "insert" },
-      { "写出来的命令": "unset", "归一为": "delete" },
-      { "写出来的命令": "insert / delete / set / add", "归一为": "自身" }
+      {
+        "写出来的命令": "remove",
+        "归一为": "delete"
+      },
+      {
+        "写出来的命令": "assign",
+        "归一为": "insert"
+      },
+      {
+        "写出来的命令": "unset",
+        "归一为": "delete"
+      },
+      {
+        "写出来的命令": "insert / delete / set / add",
+        "归一为": "自身"
+      }
     ],
     "执行期只有四个分支": "set / insert（含 assign）/ delete（含 unset、remove）/ add。**没有「移动」分支、也没有兜底 default** ⇒ 「移动」命令被识别、被翻译，但执行时**静默什么都不做**（无报错、无展示记录）。",
     "文本形态的正则只认 7 个（不含 move）": "所以卡里手写「移动」调用**根本不会被解析**；「移动」只可能来自 JSON 补丁通道，而它到执行期又静默无效。**复刻必须做决策**（建议落到「删除 + 插入」组合），不要照抄成「静默忽略」。",
     "参数个数校验": [
-      { "命令": "set", "最少参数": 2 },
-      { "命令": "insert / assign", "最少参数": 2 },
-      { "命令": "remove / unset / delete", "最少参数": 1 },
-      { "命令": "add", "恰好参数": "2（不是 ≥2）" }
+      {
+        "命令": "set",
+        "最少参数": 2
+      },
+      {
+        "命令": "insert / assign",
+        "最少参数": 2
+      },
+      {
+        "命令": "remove / unset / delete",
+        "最少参数": 1
+      },
+      {
+        "命令": "add",
+        "恰好参数": "2（不是 ≥2）"
+      }
     ],
     "每个命令的语义要点": {
       "赋值": "路径必须已存在（根路径是合法的特例）；值解析走专用解析链；旧值是数字而新值是字符串时先转数字；见 mvu.vwd.pair 的保留描述规则。不做 schema 校验。",
@@ -37,11 +73,29 @@
       "增量": "**只有 2 参**；路径必须存在；两种语义——日期（旧值是日期或可被日期解析且非纯数字的字符串，增量必须是毫秒数）与数字（相加后清浮点误差）；都不是 → 报「不支持的值」。"
     },
     "JSON 补丁的 op 映射": [
-      { "op": "replace", "翻译成": "赋值", "备注": "「set」也归到这里" },
-      { "op": "delta（MVU 方言，非标准）", "翻译成": "增量" },
-      { "op": "add / insert", "翻译成": "插入", "备注": "末段纯数字 → 裸数字下标；`-` 保留为字符串表示末尾" },
-      { "op": "remove", "翻译成": "删除" },
-      { "op": "move", "翻译成": "移动", "备注": "**执行期无分支 ⇒ 静默无操作**" }
+      {
+        "op": "replace",
+        "翻译成": "赋值",
+        "备注": "「set」也归到这里"
+      },
+      {
+        "op": "delta（MVU 方言，非标准）",
+        "翻译成": "增量"
+      },
+      {
+        "op": "add / insert",
+        "翻译成": "插入",
+        "备注": "末段纯数字 → 裸数字下标；`-` 保留为字符串表示末尾"
+      },
+      {
+        "op": "remove",
+        "翻译成": "删除"
+      },
+      {
+        "op": "move",
+        "翻译成": "移动",
+        "备注": "**执行期无分支 ⇒ 静默无操作**"
+      }
     ],
     "路径转换": "补丁路径先去掉前导斜杠，按斜杠分段，再把 `~1` 还原成 `/`、`~0` 还原成 `~`，最后拼成「带方括号的点路径」。这类命令带固定标记，后续的路径修复环节会**跳过**它们，避免二次破坏方括号里的字面点或方括号。",
     "注释 → 原因": "命令闭括号后必须先有分号，分号之后再出现行注释（允许跨行空白）→ 注释内容成为该命令的「原因」，拼进展示串。补丁类命令的原因恒为固定值。",
@@ -63,7 +117,7 @@
       "server-rs/src/parsing/assistant/patch.rs:75-83",
       "server-rs/src/parsing/assistant/patch.rs:105-124"
     ],
-    "note": "Kedai 的 `<UpdateVariable>` 提取是**非贪婪正则**（`([\\s\\S]*?)`），不是括号配对栈；且只认标签名 `UpdateVariable`（正文注释里提到过为了容忍空白而放宽了尖括号内的空白），**不认 updatevariable / variableupdate / update 三个别名，也不认 json_patch 下划线变体**。块内两条通道：优先找 `<JSONPatch>` 走 serde_json 严格解析（解析失败则整块回落），否则走 `_.set(...)` 语句扫描。补丁 op 映射上，Kedai 把 `replace`/`set`/`insert` 全部归成 Replace，`delta`/`add` 归成 Delta（值非数字**整条跳过**），`remove` → Remove，**没有 move**（`from` 字段被当成 path 兜底）。"
+    "note": "Kedai 的 `<UpdateVariable>` 提取是**非贪婪正则**（`([\\s\\S]*?)`），不是括号配对栈；且只认标签名 `UpdateVariable`（仅放宽尖括号内空白），**不认 updatevariable / variableupdate / update 别名，也不认 json_patch 下划线变体**。块内两条通道：优先找 `<JSONPatch>` 走 serde_json 严格解析（解析失败则整块回落），否则走 `_.set(...)` 语句扫描。补丁 op 映射上，Kedai 把 `replace`/`set`/`insert` 全部归成 Replace，`delta`/`add` 归成 Delta（值非数字**整条跳过**），`remove` → Remove，**没有 move**（`from` 字段被当成 path 兜底）。"
   },
   "sources": [
     {
@@ -87,6 +141,10 @@
       "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L361-L427"
     }
   ],
-  "related": ["mvu.vwd.pair", "mvu.initvar.merge", "mvu.block.scalar"],
+  "related": [
+    "mvu.vwd.pair",
+    "mvu.initvar.merge",
+    "mvu.block.scalar"
+  ],
   "updated": "2026-10-31"
 }
