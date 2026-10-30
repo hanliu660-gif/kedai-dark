@@ -13,6 +13,7 @@ import type { WorkspaceProfile } from '../../api';
 import TaskModeSelect from '../TaskModeSelect.vue';
 import TaskFlowSelect from '../TaskFlowSelect.vue';
 import TaskConnectionSelect from '../TaskConnectionSelect.vue';
+import { alertAction } from '../../composables/useConfirm';
 
 const store = useAppStore();
 const { appMode, executors } = storeToRefs(store);
@@ -81,7 +82,7 @@ async function pickWorkspace(): Promise<void> {
     const picked = await open({ directory: true, multiple: false, title: '选择任务工作区' });
     if (typeof picked === 'string') workspacePath.value = picked;
   } catch (err) {
-    alert(`选择目录失败:${(err as Error).message}`);
+    void alertAction(`选择目录失败:${(err as Error).message}`);
   }
 }
 
@@ -146,7 +147,7 @@ async function createAndRun(): Promise<void> {
     taskTitle.value = '';
     await store.runTask(task.id);
   } catch (err) {
-    alert(`创建任务失败:${(err as Error).message}`);
+    void alertAction(`创建任务失败:${(err as Error).message}`);
   } finally {
     creatingTask.value = false;
   }

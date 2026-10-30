@@ -6,6 +6,7 @@ import { ref, computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
 import { computeHitRate } from '../contextStats';
+import { confirmAction } from '../composables/useConfirm';
 import { hasRenderableScripts as cardHasRenderableScripts, shouldShowJsAuthHint, shouldShowRenderHint } from '../renderHints';
 
 const emit = defineEmits<{
@@ -77,39 +78,32 @@ async function onSessionChange(e: Event): Promise<void> {
   if (id) await store.switchSession(id);
 }
 
-function confirmScriptAuthorization(): void {
+/**
+ * 脚本授权的确认（撤销 / 授予两条路径）。
+ *
+ * 2026-10-30 起改用 `confirmAction` 统一入口，原先那套「探测返回值是否为 Promise」
+ * 的 Promise-safe 补丁已删除——它只在 Tauri 注入异步覆写时才生效，且每个调用点都要
+ * 复制一遍同样的分支；现在桌面端由应用内对话框结算，浏览器端走原生同步 confirm，
+ * 调用点只写 `await` 一条路径即可（详见 composables/useConfirm.ts 头注释）。
+ * 模板 @click 不关心返回值，故改 async 无影响。
+ */
+async function confirmScriptAuthorization(): Promise<void> {
   if (currentScriptAuthorized.value) {
-    try {
-      const ok: unknown = confirm(`撤销“${currentCharacterName.value}”当前脚本版本的执行授权？\n\n安全 HTML 仍可显示，但角色卡 JavaScript 将停止执行。`);
-      if (ok instanceof Promise) {
-        void ok.then((ans: unknown) => {
-          if (ans) store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
-        }).catch((err: unknown) => console.warn('撤销脚本授权确认失败', err));
-        return;
-      }
-      if (ok) store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
-    } catch (e) {
-      console.warn('撤销确认弹窗异常', e);
-    }
+    const ok = await confirmAction(
+      `撤销“${currentCharacterName.value}”当前脚本版本的执行授权？\n\n安全 HTML 仍可显示，但角色卡 JavaScript 将停止执行。`,
+      { danger: true, confirmLabel: '撤销授权' },
+    );
+    if (ok) store.revokeCharacterScripts(currentCharacter.value?.id ?? '');
     return;
   }
-  try {
-    const accepted: unknown = confirm(
-      `允许“${currentCharacterName.value}”执行角色卡 JavaScript？\n\n` +
+  const accepted = await confirmAction(
+    `允许“${currentCharacterName.value}”执行角色卡 JavaScript？\n\n` +
       '脚本可能修改消息卡片并读取当前会话变量。Kedai 会隔离宿主 window/document,并遮蔽网络、存储与 API token，' +
       '但兼容执行器不是浏览器级安全沙箱。仅在信任角色卡来源时开启。\n\n' +
       '授权仅适用于此角色与当前脚本内容；脚本变化后会自动失效。',
-    );
-    if (accepted instanceof Promise) {
-      void accepted.then((ans: unknown) => {
-        if (ans) store.authorizeCurrentCharacterScripts();
-      }).catch((err: unknown) => console.warn('脚本授权确认失败', err));
-      return;
-    }
-    if (accepted) store.authorizeCurrentCharacterScripts();
-  } catch (e) {
-    console.warn('确认弹窗异常', e);
-  }
+    { confirmLabel: '允许执行' },
+  );
+  if (accepted) store.authorizeCurrentCharacterScripts();
 }
 
 /** 当前请求的 prompt 缓存命中率:命中率计算抽到 contextStats.ts(computeHitRate,与优化面板共用) */
@@ -135,8 +129,9 @@ const budgetOver = computed(() => budgetLimit.value > 0 && budgetUsed.value >= b
     </span>
 
     <span class="sv-topbar-right">
-      <!-- 会话操作:会话切换 + 开场切换 -->
+      <!-- 会话操作:会话切换 + 新建 + 开场切换 -->
       <div class="sv-topbar-group">
+        <!-- 会话下拉**只在多会话时出现**:单会话没有可切换的对象,下拉是噪音 -->
         <template v-if="sessions.length > 1">
           <label class="sv-topbar-sub" for="session-select">会话</label>
           <select
@@ -149,12 +144,19 @@ const budgetOver = computed(() => budgetLimit.value > 0 && budgetUsed.value >= b
               {{ s.title }} · {{ new Date(s.updated_at).toLocaleString('zh-CN', { hour12: false }) }}
             </option>
           </select>
-          <button
-            class="sv-icon-btn"
-            title="新建会话(多开场角色可先选开场)"
-            @click="currentGreetings.length > 1 ? emit('open-greeting-picker', 'new') : store.newSession()"
-          >＋</button>
         </template>
+        <!--
+          新建会话按钮**常显**,不受 sessions.length 影响(2026-10-30 修正)。
+          此前它和下拉一起被包在 `v-if="sessions.length > 1"` 里 —— 只有一个会话时
+          整个区块不渲染,恰好是最需要新建的时候按钮却消失;用户只能在「聊天记录」
+          弹窗里找到新建入口。只把下拉留在条件内,按钮移出来常显。
+        -->
+        <button
+          v-if="currentCharacterId"
+          class="sv-icon-btn"
+          title="新建会话(多开场角色可先选开场)"
+          @click="currentGreetings.length > 1 ? emit('open-greeting-picker', 'new') : store.newSession()"
+        >＋</button>
         <!-- 开场切换(多开场角色:重置当前会话并以所选开场重新开始) -->
         <button
           v-if="currentGreetings.length > 1"

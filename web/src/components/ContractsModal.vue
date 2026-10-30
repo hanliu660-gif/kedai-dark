@@ -4,6 +4,7 @@
 // 422 错误原样回显。无契约时提供「从模板新建」。
 import { computed, onMounted, ref, watch } from 'vue';
 import { useAppStore } from '../store';
+import { confirmAction } from '../composables/useConfirm';
 import {
   deleteCharacterContract,
   getCharacterContract,
@@ -141,7 +142,7 @@ function onTemplate(): void {
 
 async function onRemove(): Promise<void> {
   if (!characterId.value) return;
-  if (!confirm('确定移除角色卡内嵌契约?角色卡其余内容保留。')) return;
+  if (!(await confirmAction('确定移除角色卡内嵌契约?角色卡其余内容保留。', { danger: true, confirmLabel: '移除' }))) return;
   busy.value = true;
   msg.value = null;
   try {
@@ -204,7 +205,7 @@ function formatTime(iso: string): string {
 /** 回滚到指定历史版本:确认后调后端,成功后刷新历史与编辑基准 */
 async function onRollback(entry: ContractChangeEntry): Promise<void> {
   if (!characterId.value || !entry.after) return;
-  if (!confirm('恢复后当前契约将被该版本覆盖,可在历史中回滚')) return;
+  if (!(await confirmAction('恢复后当前契约将被该版本覆盖,可在历史中回滚', { confirmLabel: '恢复' }))) return;
   // 回滚期间同时锁编辑 tab 的保存/移除,避免与写卡交错
   historyLoading.value = true;
   busy.value = true;

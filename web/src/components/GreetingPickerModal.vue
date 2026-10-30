@@ -4,6 +4,7 @@
 // 选择动作直落 store,失败 alert 提示;开关状态由父组件持有(v-if 控制挂载)。
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
+import { alertAction } from '../composables/useConfirm';
 
 const props = defineProps<{
   /** new=新建会话时选择开场;switch=当前会话内重置开场 */
@@ -24,7 +25,7 @@ async function pickGreeting(index: number): Promise<void> {
       await store.switchGreeting(index);
     }
   } catch (err) {
-    alert(`开场切换失败:${(err as Error).message}`);
+    void alertAction(`开场切换失败:${(err as Error).message}`);
   }
 }
 </script>

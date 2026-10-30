@@ -4,6 +4,7 @@ import { ref, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
 import * as api from '../api';
+import { confirmAction } from '../composables/useConfirm';
 import { saveExportFile } from '../exportFile';
 import SkeletonBlock from './SkeletonBlock.vue';
 
@@ -91,7 +92,7 @@ async function newSession(): Promise<void> {
 
 async function removeSession(s: api.SessionWithCharacter): Promise<void> {
   if (busy.value) return;
-  if (!confirm(`确定删除会话「${s.title}」?其全部消息将一并删除,不可恢复。`)) return;
+  if (!(await confirmAction(`确定删除会话「${s.title}」?其全部消息将一并删除,不可恢复。`, { danger: true, confirmLabel: '删除' }))) return;
   busy.value = true;
   try {
     await api.deleteSession(s.id);

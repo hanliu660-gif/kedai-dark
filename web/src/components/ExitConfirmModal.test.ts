@@ -152,14 +152,22 @@ describe('ExitConfirmModal 行为', () => {
 });
 
 describe('退出确认的注册表与壳事件接线(源码级契约)', () => {
-  it('exitConfirmOpen 已进弹窗注册表,且声明在末尾(叠在最上层)', () => {
+  it('exitConfirmOpen 已进弹窗注册表', () => {
     expect(MODAL_FLAGS).toContain('exitConfirmOpen');
     const decl = must(
       MODALS.find((m) => m.flag === 'exitConfirmOpen'),
       'exitConfirmOpen 应在 MODALS 中',
     );
     expect(decl.label).toBe('退出确认');
-    expect(MODAL_FLAGS[MODAL_FLAGS.length - 1]).toBe('exitConfirmOpen');
+  });
+
+  it('通用确认对话框声明在所有弹窗之后(2026-10-30 起它才是叠在最上层)', () => {
+    // 2026-10-30 对话框结构性修复新增 confirmDialogOpen（应用内 confirm/alert 入口）。
+    // 它可能在任何面板操作中弹出（删除条目/清空会话），必须盖住底下所有弹窗，
+    // 故「最上层」由它接管；exitConfirmOpen 退居倒数第二。
+    expect(MODAL_FLAGS).toContain('confirmDialogOpen');
+    expect(MODAL_FLAGS[MODAL_FLAGS.length - 1]).toBe('confirmDialogOpen');
+    expect(MODAL_FLAGS[MODAL_FLAGS.length - 2]).toBe('exitConfirmOpen');
   });
 
   it('App.vue 监听壳下发的关闭请求并在卸载时注销监听', () => {

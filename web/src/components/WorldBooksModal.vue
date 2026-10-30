@@ -6,6 +6,7 @@ import { ref, computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
 import * as api from '../api';
+import { confirmAction } from '../composables/useConfirm';
 import SkeletonBlock from './SkeletonBlock.vue';
 
 const store = useAppStore();
@@ -231,7 +232,7 @@ async function onBindChange(e: Event, b: api.WorldBookRecord): Promise<void> {
 }
 
 async function removeBook(b: api.WorldBookRecord): Promise<void> {
-  if (!confirm(`确定删除世界书「${b.name}」?删除后不再注入。`)) return;
+  if (!(await confirmAction(`确定删除世界书「${b.name}」?删除后不再注入。`, { danger: true, confirmLabel: '删除' }))) return;
   try {
     listOpError.value = '';
     await store.deleteWorldBook(b.id);

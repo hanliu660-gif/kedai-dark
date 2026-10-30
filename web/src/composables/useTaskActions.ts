@@ -6,6 +6,7 @@
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
 import type { TaskRecord } from '../api';
+import { alertAction, confirmAction } from './useConfirm';
 
 export function useTaskActions() {
   const store = useAppStore();
@@ -18,7 +19,7 @@ export function useTaskActions() {
     try {
       await store.runTask(id);
     } catch (err) {
-      alert(`执行失败:${(err as Error).message}`);
+      void alertAction(`执行失败:${(err as Error).message}`);
     }
   }
 
@@ -29,17 +30,17 @@ export function useTaskActions() {
     try {
       await store.stopTask(id);
     } catch (err) {
-      alert(`停止失败:${(err as Error).message}`);
+      void alertAction(`停止失败:${(err as Error).message}`);
     }
   }
 
   /** 删除任务（确认文案与原两处实现逐字一致） */
   async function removeTask(task: TaskRecord): Promise<void> {
-    if (!confirm(`确定删除任务「${task.title}」?其子任务将一并删除。`)) return;
+    if (!(await confirmAction(`确定删除任务「${task.title}」?其子任务将一并删除。`, { danger: true, confirmLabel: '删除' }))) return;
     try {
       await store.deleteTask(task.id);
     } catch (err) {
-      alert(`删除失败:${(err as Error).message}`);
+      void alertAction(`删除失败:${(err as Error).message}`);
     }
   }
 

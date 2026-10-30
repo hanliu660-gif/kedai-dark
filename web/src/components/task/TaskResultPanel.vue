@@ -11,6 +11,7 @@ import FileChangesPanel from '../FileChangesPanel.vue';
 import TaskDeliveryPanel from '../TaskDeliveryPanel.vue';
 import { messageKindLabel } from '../../api/labels';
 import type { TaskDetail, TaskRunMode } from '../../api';
+import { alertAction } from '../../composables/useConfirm';
 
 const props = defineProps<{
   detail: TaskDetail;
@@ -118,7 +119,7 @@ async function sendFollowup(): Promise<void> {
     followupDraft.value = '';
     followupMode.value = 'append';
   } catch (err) {
-    alert(`追加失败:${(err as Error).message}`);
+    void alertAction(`追加失败:${(err as Error).message}`);
   } finally {
     followupSending.value = false;
   }

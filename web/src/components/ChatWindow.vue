@@ -19,6 +19,7 @@ import ChatMessageItem from './ChatMessageItem.vue';
 import ChatTopbar from './ChatTopbar.vue';
 import GreetingPickerModal from './GreetingPickerModal.vue';
 import RenderPanelHost from './RenderPanelHost.vue';
+import { alertAction } from '../composables/useConfirm';
 
 const store = useAppStore();
 const {
@@ -366,7 +367,7 @@ async function saveEdit(payload: { id: number; text: string; resend: boolean }):
       await store.updateMessage(payload.id, payload.text);
     }
   } catch (err) {
-    alert(`编辑失败:${(err as Error).message}`);
+    void alertAction(`编辑失败:${(err as Error).message}`);
     return;
   }
   editingId.value = null;

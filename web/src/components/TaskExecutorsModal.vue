@@ -10,6 +10,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../store';
+import { confirmAction } from '../composables/useConfirm';
 import type { TaskExecutor } from '../api';
 import SkeletonBlock from './SkeletonBlock.vue';
 
@@ -119,7 +120,7 @@ async function save(): Promise<void> {
 async function remove(): Promise<void> {
   if (isNew.value || deleting.value) return;
   const name = draft.value.name || '该执行者';
-  if (!confirm(`确定删除执行者「${name}」?已引用它的任务不受影响,执行时会回退为通用执行者。`)) {
+  if (!(await confirmAction(`确定删除执行者「${name}」?已引用它的任务不受影响,执行时会回退为通用执行者。`, { danger: true, confirmLabel: '删除' }))) {
     return;
   }
   deleting.value = true;

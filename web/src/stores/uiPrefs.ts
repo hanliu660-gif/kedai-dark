@@ -71,6 +71,13 @@ export const useUiPrefsStore = defineStore('app.uiPrefs', () => {
    * 取消则发 kedai://close-cancelled 让壳复位二次关闭兜底标记。
    */
   const exitConfirmOpen = ref(false);
+  /**
+   * 应用内确认对话框开关（2026-10-30 对话框结构性修复）。
+   * 由 `components/ConfirmDialog.vue` 的 watch 跟随 `composables/useConfirm` 的队首自动开合，
+   * 调用方**不需要**手动置位——只需 `await confirmAction(...)`。
+   * 保留为 flag 是为了复用 modals.ts 注册表那套挂载/懒加载/Android 返回键机制。
+   */
+  const confirmDialogOpen = ref(false);
   /** 启动动画是否完成 */
   const splashDone = ref(false);
   /** 弹窗懒加载失败提示(defineAsyncComponent onError 写入;flag 为重试所需的面板开关键) */
@@ -331,6 +338,7 @@ export const useUiPrefsStore = defineStore('app.uiPrefs', () => {
     taskExecutorsOpen,
     onboardingOpen,
     exitConfirmOpen,
+    confirmDialogOpen,
     splashDone,
     modalLoadError,
     dataLoadError,

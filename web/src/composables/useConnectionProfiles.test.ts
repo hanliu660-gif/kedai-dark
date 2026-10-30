@@ -5,6 +5,13 @@ import type { ConnectionProfile, RuntimeSettings, RuntimeSettingsPatch } from '.
 import { useConnectionProfiles } from './useConnectionProfiles';
 import { useTaskStore } from '../stores/task';
 
+// 2026-10-30 对话框结构性修复：删除二次确认改走 useConfirm（Promise 化）。
+vi.mock('./useConfirm', () => ({
+  confirmAction: vi.fn(() => Promise.resolve(true)),
+  alertAction: vi.fn(() => Promise.resolve()),
+}));
+import { confirmAction } from './useConfirm';
+
 // 多套连接配置 composable 测试(批次 4)。
 // 这里直接调用 composable(不经 SSR):保存/删除等交互在 SSR 下点不到,而契约的核心
 // ——「patch 组装规则」与「删除二次确认」—— 正是必须锁住的部分。
@@ -147,9 +154,9 @@ describe('useConnectionProfiles 删除二次确认', () => {
     installServer(makeSettings([connection(), connection({ id: 'c2', name: '备用' })], 'c1'));
     const state = useConnectionProfiles();
     await state.load();
-    const confirmMock = vi.fn(() => false);
-    vi.stubGlobal('confirm', confirmMock);
-    state.requestRemove(0);
+    const confirmMock = vi.mocked(confirmAction);
+    confirmMock.mockResolvedValue(false);
+    await state.requestRemove(0);
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(state.drafts.value.map((d) => d.name)).toEqual(['主连接', '备用']);
   });
@@ -158,9 +165,9 @@ describe('useConnectionProfiles 删除二次确认', () => {
     installServer(makeSettings([connection(), connection({ id: 'c2', name: '备用' })], 'c2'));
     const state = useConnectionProfiles();
     await state.load();
-    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.mocked(confirmAction).mockResolvedValue(true);
     expect(state.activeIndex.value).toBe(1);
-    state.requestRemove(0);
+    await state.requestRemove(0);
     expect(state.drafts.value.map((d) => d.name)).toEqual(['备用']);
     expect(state.activeIndex.value).toBe(0);
   });
@@ -336,8 +343,7 @@ describe('useConnectionProfiles 逐连接探测与 clear_api_key(2026-10-03)', (
     testConnectMock.mockResolvedValue({ ok: true, message: '', models: [] });
     await state.testConnection(0);
     expect(state.testFeedback.value['c1']).not.toBeNull();
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    state.requestRemove(0);
+    await state.requestRemove(0);
     expect(state.testFeedback.value['c1']).toBeUndefined();
   });
 });

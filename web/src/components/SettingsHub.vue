@@ -5,6 +5,7 @@
 // 压平列表改为「5 功能域 → 二级项」两层结构,降低视觉密度。
 import { ref, computed, watch, onMounted } from 'vue';
 import { useAppStore } from '../store';
+import { confirmAction } from '../composables/useConfirm';
 import { health, type HealthInfo } from '../api/health';
 // 独立面板 flag 的类型取弹窗注册表(web/src/modals.ts 单点定义,新增弹窗此处零改动)
 import type { ModalFlag } from '../modals';
@@ -127,7 +128,7 @@ const domains: Domain[] = [
       { type: 'action', key: 'events', label: '事件监控', run: openPanel('eventsOpen') },
       { type: 'action', key: 'optimize', label: '优化面板', run: openPanel('optimizeOpen') },
       { type: 'action', key: 'repoIndex', label: '仓库索引', run: openPanel('repoIndexOpen') },
-      { type: 'action', key: 'clear', label: '清空会话', run: () => { if (confirm('确定清空当前会话?')) void store.clearCurrentChat(); close(); } },
+      { type: 'action', key: 'clear', label: '清空会话', run: () => { void (async () => { if (await confirmAction('确定清空当前会话?', { danger: true, confirmLabel: '清空' })) void store.clearCurrentChat(); close(); })(); } },
     ],
   },
   {

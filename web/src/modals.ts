@@ -62,6 +62,10 @@ export const MODALS = [
   // 退出确认(桌面:壳下发 kedai://close-requested;Android:返回键无处可退)。
   // 声明在**末尾** = 渲染在最上层:Android 返回键按 MODAL_FLAGS 逆序关闭,先关它。
   modal('exitConfirmOpen', '退出确认', () => import('./components/ExitConfirmModal.vue')),
+  // 应用内确认对话框(2026-10-30 对话框结构性修复):替代被 Tauri 异步覆写的
+  // window.confirm/alert。声明在**最末** = 渲染在最上层:它可能在任何面板操作中弹出
+  // (删除条目/清空会话等),必须盖住底下所有弹窗;Android 返回键逆序关闭时也先关它。
+  modal('confirmDialogOpen', '确认', () => import('./components/ConfirmDialog.vue')),
 ] as const;
 
 /** 弹窗 flag 字面量联合(设置 Hub 的 openPanel 等参数类型直接取用)。 */

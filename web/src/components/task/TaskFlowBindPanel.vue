@@ -6,6 +6,7 @@
 import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../../store';
+import { confirmAction } from '../../composables/useConfirm';
 import { flowCandidates, staleMembers, type FlowCandidate } from '../../utils/flowCandidates';
 import type { TaskDetail, TaskRunMode } from '../../api';
 
@@ -115,7 +116,7 @@ function bindConfirmText(): string {
 async function saveBind(): Promise<void> {
   const id = currentTaskId.value;
   if (!id || bindSaving.value) return;
-  if (!confirm(bindConfirmText())) return;
+  if (!(await confirmAction(bindConfirmText()))) return;
   bindSaving.value = true;
   bindError.value = '';
   try {

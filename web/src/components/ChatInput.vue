@@ -8,6 +8,7 @@ import { storeToRefs } from 'pinia';
 import * as api from '../api';
 import type { AgentMode } from '../api';
 import { filterCommands, wordBeforeCursor } from './slashSuggest';
+import { alertAction } from '../composables/useConfirm';
 
 const store = useAppStore();
 const { generating, stopping, currentCharacterId, agentMode, authorizationMode, model, models } = storeToRefs(store);
@@ -55,7 +56,7 @@ function onFilePicked(e: Event): void {
   if (!files?.length) return;
   for (const f of files) {
     if (f.size > 10 * 1024 * 1024) {
-      alert(`文件「${f.name}」超过 10MB 限制`);
+      void alertAction(`文件「${f.name}」超过 10MB 限制`);
       continue;
     }
     attachments.value.push(f);
@@ -145,7 +146,7 @@ async function send(): Promise<void> {
         data_url: await readImageDataUrl(f),
       });
     } catch {
-      alert(`读取图片「${f.name}」失败,已跳过该附件`);
+      void alertAction(`读取图片「${f.name}」失败,已跳过该附件`);
     }
   }
 
@@ -274,7 +275,7 @@ async function onModelChange(e: Event): Promise<void> {
   try {
     await store.switchModel(value);
   } catch (err) {
-    alert(`切换模型失败:${(err as Error).message}`);
+    void alertAction(`切换模型失败:${(err as Error).message}`);
   } finally {
     switchingModel.value = false;
   }

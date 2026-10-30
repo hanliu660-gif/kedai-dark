@@ -5,6 +5,7 @@
 import { computed, ref } from 'vue';
 import { useAppStore } from '../store';
 import * as api from '../api';
+import { confirmAction } from './useConfirm';
 import type {
   ConnectionProfile,
   ConnectionProfilePatch,
@@ -119,10 +120,11 @@ export function useConnectionProfiles() {
   }
 
   /** 删除(带二次确认);草稿层移除,保存时才落库 */
-  function requestRemove(index: number): void {
+  // async:确认走 Promise 化入口（Tauri 覆写 window.confirm 后同步语义不可保）。
+  async function requestRemove(index: number): Promise<void> {
     const d = drafts.value[index];
     if (!d) return;
-    if (!confirm(`确定删除连接「${d.name}」?其 API 密钥会一并删除,不可恢复。`)) return;
+    if (!(await confirmAction(`确定删除连接「${d.name}」?其 API 密钥会一并删除,不可恢复。`, { danger: true, confirmLabel: '删除' }))) return;
     removeDraft(index);
   }
 

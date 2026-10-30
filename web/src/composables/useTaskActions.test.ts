@@ -3,6 +3,14 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useAppStore } from '../store';
 import { useTaskActions } from './useTaskActions';
 import type { TaskRecord } from '../api';
+// 2026-10-30 对话框结构性修复：确认/提示改走 useConfirm 的 Promise 化入口，
+// 不再走 window.confirm/alert（桌面端 Tauri 覆写后同步语义不可保）。
+// 测试按模块级 mock 注入结果，断言对象也随之为这两个 vi.fn。
+vi.mock('./useConfirm', () => ({
+  confirmAction: vi.fn(() => Promise.resolve(true)),
+  alertAction: vi.fn(() => Promise.resolve()),
+}));
+import { alertAction, confirmAction } from './useConfirm';
 
 const memStorage = new Map<string, string>();
 vi.stubGlobal('localStorage', {
@@ -36,8 +44,8 @@ describe('useTaskActions（C-2A 删除/执行/停止单一出口）', () => {
     store.runTask = vi.fn().mockResolvedValue(undefined);
     store.stopTask = vi.fn().mockResolvedValue(undefined);
     store.deleteTask = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('alert', vi.fn());
+    vi.mocked(confirmAction).mockReset().mockResolvedValue(true);
+    vi.mocked(alertAction).mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -66,11 +74,11 @@ describe('useTaskActions（C-2A 删除/执行/停止单一出口）', () => {
   it('removeTask 确认后删除；取消确认不发请求', async () => {
     const { removeTask } = useTaskActions();
     await removeTask(task);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('测试任务'));
+    expect(vi.mocked(confirmAction).mock.calls[0]?.[0]).toEqual(expect.stringContaining('测试任务'));
     expect(store.deleteTask).toHaveBeenCalledWith('t1');
 
     vi.mocked(store.deleteTask).mockClear();
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.mocked(confirmAction).mockResolvedValue(false);
     await removeTask(task);
     expect(store.deleteTask).not.toHaveBeenCalled();
   });
@@ -83,8 +91,8 @@ describe('useTaskActions（C-2A 删除/执行/停止单一出口）', () => {
     await runCurrent();
     await stopCurrent();
     await removeTask(task);
-    expect(alert).toHaveBeenCalledWith('执行失败:网络错误');
-    expect(alert).toHaveBeenCalledWith('停止失败:已结束');
-    expect(alert).toHaveBeenCalledWith('删除失败:不存在');
+    expect(alertAction).toHaveBeenCalledWith('执行失败:网络错误');
+    expect(alertAction).toHaveBeenCalledWith('停止失败:已结束');
+    expect(alertAction).toHaveBeenCalledWith('删除失败:不存在');
   });
 });

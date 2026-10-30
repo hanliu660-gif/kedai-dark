@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useAppStore } from '../store';
 import { storeToRefs } from 'pinia';
 import * as api from '../api';
+import { alertAction, confirmAction } from './useConfirm';
 
 export function useDataManager() {
   const store = useAppStore();
@@ -36,8 +37,10 @@ export function useDataManager() {
     return character?.chara_name ?? character?.name ?? `角色 ${id.slice(0, 8)}`;
   }
 
-  function confirmRevokeScriptAuthorization(characterId: string): void {
-    if (confirm(`撤销“${characterLabel(characterId)}”的角色卡 JavaScript 授权？\n\n安全 HTML 渲染不受影响。`)) {
+  // async:确认走 Promise 化入口（Tauri 覆写 window.confirm 后同步语义不可保）。
+  // 模板 @click 不关心返回值，故改 async 对调用点无影响。
+  async function confirmRevokeScriptAuthorization(characterId: string): Promise<void> {
+    if (await confirmAction(`撤销“${characterLabel(characterId)}”的角色卡 JavaScript 授权？\n\n安全 HTML 渲染不受影响。`, { confirmLabel: '撤销授权' })) {
       store.revokeCharacterScripts(characterId);
     }
   }
@@ -58,7 +61,7 @@ export function useDataManager() {
       }
       await api.importChat(sid, messages);
       await store.loadHistory(sid);
-      alert(`导入成功,共 ${messages.length} 条消息`);
+      void alertAction(`导入成功,共 ${messages.length} 条消息`);
     } catch (err) {
       importError.value = (err as Error).message;
     }
@@ -66,7 +69,7 @@ export function useDataManager() {
 
   async function clearAllData(): Promise<void> {
     if (!currentSessionId.value) return;
-    if (!confirm('确定清空当前会话全部消息?(角色定义保留)')) return;
+    if (!(await confirmAction('确定清空当前会话全部消息?(角色定义保留)', { danger: true, confirmLabel: '清空' }))) return;
     try {
       await store.clearCurrentChat();
       clearMsg.value = '已清空当前会话';

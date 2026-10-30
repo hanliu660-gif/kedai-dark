@@ -6,6 +6,7 @@
 import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../../store';
+import { alertAction, confirmAction } from '../../composables/useConfirm';
 import { useTaskActions } from '../../composables/useTaskActions';
 import { renderMarkdownCached } from '../../utils/markdownCache';
 import MarkdownBlock from './MarkdownBlock.vue';
@@ -82,7 +83,7 @@ async function approveCurrent(plan?: TaskStep[]): Promise<void> {
     planEditing.value = false;
     editedPlan.value = [];
   } catch (err) {
-    alert(`批准失败:${(err as Error).message}`);
+    void alertAction(`批准失败:${(err as Error).message}`);
   } finally {
     approving.value = false;
   }
@@ -90,7 +91,7 @@ async function approveCurrent(plan?: TaskStep[]): Promise<void> {
 
 /** 放弃计划:复用既有停止接口(任务进入已停止终态) */
 async function discardPlan(): Promise<void> {
-  if (!confirm('确定放弃该计划?任务将停止,不再执行。')) return;
+  if (!(await confirmAction('确定放弃该计划?任务将停止,不再执行。', { danger: true, confirmLabel: '放弃计划' }))) return;
   await stopCurrent();
 }
 
@@ -104,7 +105,7 @@ async function sendPlanChat(): Promise<void> {
     await store.planChatTask(id, content);
     planChatDraft.value = '';
   } catch (err) {
-    alert(`修订失败:${(err as Error).message}`);
+    void alertAction(`修订失败:${(err as Error).message}`);
   } finally {
     planChatting.value = false;
   }

@@ -11,6 +11,7 @@ import {
   CONNECTOR_TYPE_ORDER,
 } from '../../api/labels';
 import type { useConnectionProfiles, ConnectionDraft } from '../../composables/useConnectionProfiles';
+import { confirmAction } from '../../composables/useConfirm';
 import SkeletonBlock from '../SkeletonBlock.vue';
 
 const props = withDefaults(
@@ -61,15 +62,16 @@ const keyPlaceholder = (d: ConnectionDraft): string => {
 
 /** 清除已保存密钥(二次确认,与删除连接同款 confirm);再点一次撤销。
  *  置位后仍需点「保存连接配置」才真正生效 —— 与其它草稿字段同生命周期。 */
-function requestClearKey(d: ConnectionDraft): void {
+async function requestClearKey(d: ConnectionDraft): Promise<void> {
   if (d.clearApiKey) {
     d.clearApiKey = false;
     return;
   }
   if (
-    !confirm(
+    !(await confirmAction(
       `确定清除连接「${d.name}」已保存的 API 密钥?该连接将无法鉴权;若它是默认连接,保存后立即影响聊天与任务。`,
-    )
+      { danger: true, confirmLabel: '清除密钥' },
+    ))
   ) {
     return;
   }

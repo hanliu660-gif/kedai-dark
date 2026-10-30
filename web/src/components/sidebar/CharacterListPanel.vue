@@ -4,6 +4,7 @@
 import { ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAppStore } from '../../store';
+import { confirmAction } from '../../composables/useConfirm';
 import CharacterPromptEditor from './CharacterPromptEditor.vue';
 import type { CharacterRecord } from '../../api';
 
@@ -113,9 +114,11 @@ function openPromptEditor(c: CharacterRecord): void {
 }
 
 // ===== 删除角色 =====
-function deleteChar(c: CharacterRecord): void {
+// async:确认走 useConfirm 的 Promise 化入口（桌面端 Tauri 覆写了 window.confirm，
+// 同步语义无法保持，详见 composables/useConfirm.ts 头注释）。模板 @click 不关心返回值。
+async function deleteChar(c: CharacterRecord): Promise<void> {
   closeCtx();
-  if (!confirm(`确定删除角色「${c.chara_name}」?其会话与消息将一并删除。`)) return;
+  if (!(await confirmAction(`确定删除角色「${c.chara_name}」?其会话与消息将一并删除。`, { danger: true, confirmLabel: '删除' }))) return;
   void store.deleteCharacter(c.id);
 }
 </script>
