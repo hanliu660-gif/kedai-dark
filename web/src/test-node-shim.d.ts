@@ -23,3 +23,21 @@ declare module 'node:crypto' {
   }
   export function createHash(algorithm: string): Hash;
 }
+
+/**
+ * 测试用 vm（2026-10-30 变量落库守卫批补齐）。
+ *
+ * 仓库里已有 4 个测试文件用 `import vm from 'node:vm'` + `vm.runInContext(...)`,
+ * 各自带一行 `@ts-expect-error` 压错（共 4 处）。补齐这个最小声明后这些压错全部作废
+ * ⇒ 类型护栏的「显式压错」计数**下降**（ratchet 只降不升，方向正确）。
+ * 只声明测试实际用到的成员，仍不装 @types/node。
+ */
+declare module 'node:vm' {
+  /** 在给定上下文里执行源码并返回结果（测试主要用它取内置构造器/跑内联脚本）。 */
+  export function runInContext(code: string, contextObject: object): unknown;
+  export function createContext(contextObject: object): object;
+  export class Script {
+    constructor(code: string);
+    runInContext(contextObject: object): unknown;
+  }
+}

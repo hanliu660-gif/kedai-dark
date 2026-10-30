@@ -5,7 +5,6 @@
 //   css 对象形式/字符串 getter/is(':hidden')/toggle/animate 并存。
 // 真实浏览器布局与拖拽手感仍需实卡复验,此处只保证脚本调用链不中断、参数不丢。
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- node:vm 缺少类型声明
 import vm from 'node:vm';
 import { sandboxScript } from '../characterScriptSandbox';
 

@@ -35,6 +35,22 @@ export interface DialogTarget {
   alert?: unknown;
 }
 
+/**
+ * 兜底实现的身份标记（2026-10-30 实机回归修复）。
+ *
+ * 为什么必须有它：`useConfirm.hasSyncNativeConfirm()` 靠 `constructor.name` 区分
+ * 「原生同步」与「Tauri 异步覆写」——但**兜底函数是普通函数**（constructor.name
+ * 也是 'Function'），会被误判成「同步原生可用」，于是 confirmAction 走原生直通分支，
+ * 拿到兜底恒返回的 false ⇒ **删除类操作永远按取消**（不报错、但点了没反应）。
+ * 故给兜底函数打一个标记，判据同时检查该标记即可识别。
+ *
+ * 性能/类型说明：用 `Reflect.set` / `Reflect.get` 而非 `as unknown as` 断言——
+ * 类型护栏是 ratchet 只降不升，不能为打标记抬高 `as unknown as` 基线。
+ *
+ * @internal 仅本模块与其判据使用
+ */
+const FALLBACK_MARK = '__kedaiFallbackDialog';
+
 /** 兜底 confirm：同步返回 false（保守按「取消」处理，不擅自执行破坏性操作）。 */
 function fallbackConfirm(message?: string): boolean {
   try {
@@ -44,6 +60,7 @@ function fallbackConfirm(message?: string): boolean {
   }
   return false;
 }
+Reflect.set(fallbackConfirm, FALLBACK_MARK, true);
 
 /** 兜底 alert：同步返回，不阻塞；仅记录日志。 */
 function fallbackAlert(message?: string): void {
@@ -52,6 +69,12 @@ function fallbackAlert(message?: string): void {
   } catch {
     /* 忽略 */
   }
+}
+Reflect.set(fallbackAlert, FALLBACK_MARK, true);
+
+/** 判断某个 confirm/alert 是否为本模块安装的兜底实现（供 useConfirm 识别）。 */
+export function isFallbackDialog(fn: unknown): boolean {
+  return typeof fn === 'function' && Reflect.get(fn, FALLBACK_MARK) === true;
 }
 
 /**

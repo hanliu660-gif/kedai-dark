@@ -60,7 +60,12 @@ const BASELINE = {
   // 新增 2 处(测试里的 fetch/Blob 捕获桩),净 −1。ratchet 只降不升,顺势收紧。
   // TM-SET-2(2026-10-01)再下调 69 → 68:退役 R3a 测试删掉 1 处 `undefined as unknown as`。
   asUnknownAs: 68,
-  tsExpectError: 5,
+  // 2026-10-30 下调 5 → 3（变量落库守卫批）：`test-node-shim.d.ts` 补齐 `node:vm`
+  // 最小声明后，`characterScriptSandbox.test.ts` / `sandbox/uma-creation.test.ts` /
+  // `sandbox/wuwa-sim.test.ts` 三处 `@ts-expect-error -- node:vm` 全部作废并删除。
+  // 这正是本文件上方 UIP-10 批留的预案（「将来补装 @types/node 就删」）的兑现方式：
+  // 补最小 shim 而非装依赖，压错面随之收窄。余下 3 处为 node:url ×2 / node:path ×1。
+  tsExpectError: 3,
   nonNull: 33,
 };
 

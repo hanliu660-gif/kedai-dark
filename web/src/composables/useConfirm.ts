@@ -25,6 +25,7 @@
 //   · 取消/关闭（含 Android 返回键）一律按 `false` 结算，避免调用方永远挂起。
 
 import { computed, readonly, ref } from 'vue';
+import { isFallbackDialog } from '../nativeDialogs';
 
 /** 一个待结算的确认请求。 */
 export interface ConfirmRequest {
@@ -56,11 +57,19 @@ export const confirmQueueSize = readonly(computed(() => queue.value.length));
 
 /**
  * 判断当前环境的原生 confirm 是否为**同步**可用的（浏览器 / 非 Tauri）。
- * 异步覆写的特征是「函数存在但返回 Promise」——不能只看 typeof。
+ *
+ * 三层判据（2026-10-30 实机回归后补第 3 层）：
+ *  ① 必须是函数；
+ *  ② 不能是 Tauri 注入的 async 覆写（constructor.name === 'AsyncFunction'）；
+ *  ③ **不能是本项目的兜底实现** —— nativeDialogs 装的 fallbackConfirm 是普通函数
+ *     （constructor.name 也是 'Function'），只看 ② 会把它误判成「原生可用」，
+ *     于是 confirmAction 走原生直通拿到恒为 false，删除类操作**永远按取消**。
  */
 export function hasSyncNativeConfirm(): boolean {
   if (typeof window === 'undefined' || typeof window.confirm !== 'function') return false;
   try {
+    // 兜底实现 → 等同「不可用」，必须走应用内对话框
+    if (isFallbackDialog(window.confirm)) return false;
     // 不实际弹窗：只探测函数是否被标注 async。原生 confirm 是 native code，
     // `constructor.name` 为 'Function'；被 async 覆写的是 'AsyncFunction'。
     const kind = (window.confirm as { constructor?: { name?: string } }).constructor?.name;
@@ -127,14 +136,17 @@ export function confirmAction(
  */
 export function alertAction(message: string, opts: { confirmLabel?: string } = {}): Promise<void> {
   const text = String(message ?? '');
-  if (typeof window !== 'undefined') {
-    const kind = (window.alert as { constructor?: { name?: string } } | undefined)?.constructor?.name;
-    if (typeof window.alert === 'function' && kind !== 'AsyncFunction') {
-      try {
-        window.alert(text);
-        return Promise.resolve();
-      } catch {
-        /* 落到底下的应用内对话框 */
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    // 与 confirm 同一套判据：兜底实现等同不可用（它只写日志，用户看不到任何提示）
+    if (!isFallbackDialog(window.alert)) {
+      const kind = (window.alert as { constructor?: { name?: string } }).constructor?.name;
+      if (kind !== 'AsyncFunction') {
+        try {
+          window.alert(text);
+          return Promise.resolve();
+        } catch {
+          /* 落到底下的应用内对话框 */
+        }
       }
     }
   }

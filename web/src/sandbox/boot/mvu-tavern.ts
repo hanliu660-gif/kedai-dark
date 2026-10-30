@@ -16,25 +16,42 @@ const __kdUnwrap=function(v){
   return v;
 };
 const __kdStatView=()=>__kdUnwrap(structuredClone(variables.stat_data));
-// 消息级变量写回宿主(2026-10-30 变量落库批):
+// ---- 消息级变量写回宿主(2026-10-30 变量落库批;2026-10-30 修:根键守卫) ----
 // 此前 replaceVariables / insertOrAssignVariables / Mvu.replaceMvuData 只改沙箱内存副本,
-// 刷新即丢(「悬浮球里买东西刷新就没了」)。现统一经 mvu-replace 上送宿主落库。
-// 上送的是**裸值树**(作者脚本看到的形状),宿主侧 store.replaceMvuVariables 用
-// wrapStatTree 按旧树同路径包回 [值,原因] —— 与整页卡链路(useResourceFrames)同一落库通道。
-// 只送 stat_data/display_data:全局级(isGlobal)走原 global-save RPC,不进消息变量树。
-// 定义位置必须在 Mvu 之前:replaceMvuData 是 Object.freeze 的对象字面量方法,调用时才求值,
-// 但 const 声明期的 TDZ 仍会挡住 — 提前到这里最稳。
+// 刷新即丢(「悬浮球里买东西刷新就没了」)。现经 mvu-replace 上送宿主落库,上送**裸值树**,
+// 宿主侧 store.replaceMvuVariables 用 wrapStatTree 按旧树同路径包回 [值,原因]。
+//
+// ⚠️ 为什么必须有 __kdBootStatKeys 守卫(实机回归,勿删):
+//   wrapStatTree 只遍历**新树**的键(for(const k of Object.keys(src))),**不保留旧树
+//   其它键** —— 它按「整树替换」设计(帧模板链路每次发的就是完整快照)。
+//   而酒馆 replaceVariables 的语义是「整树替换」:卡脚本 boot 时调
+//   replaceVariables({...}) 后 variables.stat_data 这层结构本身就没了(见下方归一化),
+//   若把这种残缺树直接上送,宿主那棵**完整变量树会被整棵覆盖成残缺内容** ——
+//   实测后果:整页卡的「行为选项」全部变空、按钮点不动(露出日记等多张卡同时中招)。
+//   守卫规则(有原则,不是补丁):MVU 的 stat_data **根键=变量组,正常玩法不会消失**,
+//   故「本次上送会丢掉 boot 快照里的任一根键」即判定为不该同步的整树替换,直接跳过。
+//   根键集合在模板求值处捕获(boot 快照下发时就是完整树)。
+const __kdBootStatKeys=(function(){
+  try{
+    const s=variables&&variables.stat_data;
+    return (s&&typeof s==='object'&&!Array.isArray(s))?Object.keys(s):[];
+  }catch(_e){return [];}
+})();
 const __kdPushVars=function(){
   try{
-    // 归一化(既有缺陷防御):酒馆 replaceVariables 语义是「整树替换」,作者脚本常写成
-    // replaceVariables({hp:5}) —— 直接按裸树替换后 variables.stat_data 就不存在了,
-    // 此时 __kdStatView() 会 structuredClone(undefined) 抛错,且随后 getVariables() 也崩。
-    // 这里按 MVU 约定补救:stat_data 缺失时把当前 variables 自身当 stat_data(裸值树),
-    // display_data 缺失时回落到 stat_data —— 保证上送载荷永远是可序列化对象。
-    const raw = variables;
-    const stat = raw && typeof raw.stat_data === 'object' && raw.stat_data !== null ? raw.stat_data : raw;
-    const disp = raw && typeof raw.display_data === 'object' && raw.display_data !== null ? raw.display_data : stat;
-    send('mvu-replace',{data:{stat_data:__kdUnwrap(structuredClone(stat||{})),display_data:structuredClone(disp||{})}});
+    const raw=variables;
+    const stat=(raw&&typeof raw.stat_data==='object'&&raw.stat_data!==null)?raw.stat_data:raw;
+    // 守卫:上送后会让宿主丢根键 ⇒ 这是「整树替换」而非增量,跳过(否则会冲毁宿主变量树)
+    if(__kdBootStatKeys.length>0){
+      if(!stat||typeof stat!=='object'||Array.isArray(stat))return;
+      for(let i=0;i<__kdBootStatKeys.length;i++){
+        if(!( __kdBootStatKeys[i] in stat )) return;
+      }
+      // 再守一道:空树同样会清空宿主,跳过
+      if(Object.keys(stat).length===0)return;
+    }
+    const disp=(raw&&typeof raw.display_data==='object'&&raw.display_data!==null)?raw.display_data:stat;
+    send('mvu-replace',{data:{stat_data:__kdUnwrap(structuredClone(stat)),display_data:structuredClone(disp)}});
   }catch(e){/* 宿主未就绪时丢弃,下次读取自会补;调试时经 warn 上报真实原因 */
     try{warn('变量写回上送失败: '+(e&&e.message?e.message:e));}catch(_e){}
   }

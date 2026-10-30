@@ -9,7 +9,6 @@
 //   2) 卡函数体内裸 document.getElementById 指向沙箱空文档 → null,读值/写 innerHTML 全落空。
 // 本测试用卡内真实脚本正文在 vm 沙箱复刻:选身份 → 更新描述 → 提交 → 剪贴板 RPC → alert。
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- node:vm 缺少类型声明
 import vm from 'node:vm';
 import { sandboxScript } from '../characterScriptSandbox';
 
