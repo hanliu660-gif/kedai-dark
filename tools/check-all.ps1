@@ -276,6 +276,11 @@ if (-not $SkipWeb -and -not $AuditOnly) {
         # 全局域(style.css + styles/*.css)逐文件行数与 !important 只降不升 + 组件 scoped
         # !important 合计 + animation/transition 裸时长归零(动效令牌 --dur-*/--stagger-step)。
         Invoke-Stage 'web: css-discipline'      { node tools/check-css-discipline.mjs }
+        # 主题令牌同源校验(2026-10-30 R3.1 新增):styles/tokens.css 的
+        # :root[data-theme='dark'] 块由 web/src/theme/darkTokens.ts 机器同源生成
+        # (@generated:dark-tokens 段)。此前只靠 darkContrast.test.ts 的逐键逐值断言兜底,
+        # 门禁侧无守护——手改 CSS 而不改 SSOT 时无人拦截。--check 只比对不改写。
+        Invoke-Stage 'web: tokens-sync'         { node tools/generate-tokens.mjs --check }
         # 前端代码质量(ESLint flat config + eslint-plugin-vue):0 error 硬门禁。
         # 与上面 type-ratchet 目的不同(ratchet 管类型逃逸、此管代码质量),两者并存。
         # 规则集首轮克制:存量问题降级为 warn(见 web/eslint.config.js),故 0 error 可过;
