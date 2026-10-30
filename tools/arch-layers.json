@@ -236,6 +236,20 @@
       "class": "wiring",
       "reason": "插件管理 API 路由直接暴露插件解析器(列出/重载/导入),注册动作由本层执行。属 HTTP 面暴露青层能力 + 组合根装配。",
       "remediation": "无(暴露面)"
+    },
+    {
+      "from": "agents",
+      "to": "scripts",
+      "class": "wiring",
+      "reason": "2026-10-30 补登记(check-arch 规则 J 升级为全文 crate:: 扫描后首次暴露,此前因只扫行首 use 而漏检):引擎执行角色卡脚本时必须调用 L3 的沙箱桥与求值器(GenerateHandler/ImportHandler/EvalBridge/eval_with_bridge)与脚本装载(collect_enabled_scripts)。语义是「骨干层驱动隔离执行器」——L3 的隔离能力本就由 L2 触发,属设计上接受的接线,非能力反向渗透。共 12 处,均在 agents/engine/run_scripts.rs 生产代码段。",
+      "remediation": "如需彻底解耦,可把脚本执行器抽象为 EngineExt 注入的执行闭包(引擎只持 trait object、不引用 crate::scripts);工作量另估,不在本批范围。"
+    },
+    {
+      "from": "api",
+      "to": "scripts",
+      "class": "wiring",
+      "reason": "2026-10-30 补登记(同上,规则 J 升级后首次暴露):user_scripts 端点需要把角色的脚本树归一化为 LoadedScript 列表回给前端/引擎,此处仅调用 L3 loader 的纯归一化函数 collect_enabled_scripts。注:LoadedScript 本身已定义在 L1 models/types.rs:1135,越代的是这个纯函数,不是类型。共 2 处(api/user_scripts.rs:110,112)。",
+      "remediation": "把纯函数 collect_enabled_scripts 下沉到 L1(parsing/ 或 models/),api 层即不再引用 scripts;随后删除本条目。属阶段二候选。"
     }
   ],
 

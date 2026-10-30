@@ -13,6 +13,7 @@ import {
   hasFileArchAllow,
   resolveFrontendSpecifier,
   storeBindings,
+  stripRustCommentsAndStrings,
 } from './lib/arch-scan.mjs';
 
 const VUE_FIXTURE = `
@@ -93,4 +94,51 @@ const x = 1;`;
   assert.equal(hasFileArchAllow(header21), false, '第 21 行的文件级豁免不应生效');
 
   assert.equal(hasFileArchAllow('// arch-allow-file:\nconst x = 1;'), false, '空理由不算');
+});
+
+// ===== 规则 J「全文 crate:: 扫描」的剥离逻辑自测（2026-10-30）=====
+//
+// 背景：规则 J 原先只匹配行首 `use crate::`，Rust 允许在类型标注/表达式/结构体字段里
+// 写内联全路径（如 `risk: crate::tools::permissions::ToolRisk`），这类写法完全绕过门禁。
+// 升级为全文扫描后，必须先剥离注释与字符串字面量，否则注释里的 crate:: 会被误判成依赖。
+// 这组用例锁两件事：①剥离正确（注释/字符串里的 crate:: 不残留）；②行数严格保持
+// （报出的「文件:行号」依赖它，错位会让定位失效）。
+
+test('剥离行注释：注释内的 crate:: 不残留，行数保持', () => {
+  const src = '// crate::tools::foo\nlet x = 1;';
+  const out = stripRustCommentsAndStrings(src);
+  assert.equal(out.includes('crate::'), false, '行注释里的 crate:: 应被剥离');
+  assert.equal(src.split('\n').length, out.split('\n').length, '行数必须保持');
+});
+
+test('剥离块注释（跨行）：crate:: 不残留且换行符全部保留', () => {
+  const src = '/* crate::tools::foo\n   second line */\nlet y = 2;';
+  const out = stripRustCommentsAndStrings(src);
+  assert.equal(out.includes('crate::'), false);
+  assert.equal(src.split('\n').length, out.split('\n').length, '块注释内含换行，行数仍须一致');
+});
+
+test('剥离普通字符串与原始字符串：内部的 crate:: 不残留', () => {
+  const plain = 'let s = "crate::tools::foo";';
+  const raw = 'let t = r#"crate::tools::bar"#;';
+  assert.equal(stripRustCommentsAndStrings(plain).includes('crate::'), false, '普通字符串应剥离');
+  assert.equal(stripRustCommentsAndStrings(raw).includes('crate::'), false, '原始字符串应剥离');
+});
+
+test('真实代码里的 crate:: 必须保留（否则门禁会漏检）', () => {
+  const src = 'risk: crate::tools::permissions::ToolRisk,';
+  const out = stripRustCommentsAndStrings(src);
+  assert.equal(out.includes('crate::tools'), true, '真实依赖不能被剥掉');
+});
+
+test('生命周期标注不被误判为字符字面量', () => {
+  const src = "fn f<'a>(x: &'a str) -> &'a str { x }";
+  const out = stripRustCommentsAndStrings(src);
+  assert.equal(out.includes("'a"), true, "生命周期 'a 应原样保留");
+});
+
+test('未闭合字符串止损：不吞掉后续行', () => {
+  const src = 'let s = "oops\nlet z = 9;';
+  const out = stripRustCommentsAndStrings(src);
+  assert.equal(out.includes('let z = 9;'), true, '未闭合字符串遇到换行应止损，后续代码保留');
 });

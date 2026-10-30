@@ -117,3 +117,92 @@ export function resolveFrontendSpecifier(relPath, spec) {
   }
   return to;
 }
+
+/**
+ * 剥离 Rust 注释与字符串/字符字面量,供 check-arch 规则 J 的全文 `crate::` 扫描使用。
+ *
+ * 背景(2026-10-30):规则 J 原先只匹配行首 `use crate::`,而 Rust 允许在类型标注、
+ * 表达式、结构体字段里写内联全路径(如 `risk: crate::tools::permissions::ToolRisk`),
+ * 这类写法完全绕过门禁。升级为全文扫描后必须先做词法剥离,否则注释里的 `crate::`
+ * (全仓 39 行)与字符串里的路径会被误判成真实依赖,产生假 FAIL。
+ *
+ * 契约:**输出行数必须与输入完全一致**——报出的 `文件:行号` 依赖这一点。
+ * 实现上:注释与字面量的内容被替换为空(不产生字符),但其中的换行符逐一原样输出,
+ * 因此行数严格保持。
+ */
+
+/**
+ * 剥离 Rust 注释与字符串/字符字面量,供 check-arch 规则 J 的全文 `crate::` 扫描使用。
+ *
+ * 背景(2026-10-30):规则 J 原先只匹配行首 `use crate::`,而 Rust 允许在类型标注、
+ * 表达式、结构体字段里写内联全路径(如 `risk: crate::tools::permissions::ToolRisk`),
+ * 这类写法完全绕过门禁。升级为全文扫描后必须先做词法剥离,否则注释里的 `crate::`
+ * (全仓 39 行)与字符串里的路径会被误判成真实依赖,产生假 FAIL。
+ *
+ * 契约:**输出行数必须与输入完全一致**——报出的 `文件:行号` 依赖这一点。
+ * 实现上:注释与字面量的内容被替换为空(不产生字符),但其中的换行符逐一原样输出,
+ * 因此行数严格保持。
+ */
+export function stripRustCommentsAndStrings(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    const c2 = src[i + 1];
+    // 行注释:剥到行尾(换行符本身保留)
+    if (c === '/' && c2 === '/') {
+      let j = i;
+      while (j < n && src[j] !== '\n') j++;
+      i = j;
+      continue;
+    }
+    // 块注释:剥到 */,中间换行符须保留以维持行数
+    if (c === '/' && c2 === '*') {
+      let j = i + 2;
+      while (j < n && !(src[j] === '*' && src[j + 1] === '/')) {
+        if (src[j] === '\n') out += '\n';
+        j++;
+      }
+      i = Math.min(n, j + 2);
+      continue;
+    }
+    // 原始字符串 r"..." / r#"..."# / br"..." / br#"..."#"
+    if (c === 'r' || (c === 'b' && c2 === 'r')) {
+      const startR = c === 'b' ? i + 2 : i + 1;
+      let hash = 0;
+      let k = startR;
+      while (src[k] === '#') { hash++; k++; }
+      if (src[k] === '"') {
+        const close = '"' + '#'.repeat(hash);
+        let j = k + 1;
+        while (j < n && src.slice(j, j + close.length) !== close) {
+          if (src[j] === '\n') out += '\n';
+          j++;
+        }
+        i = Math.min(n, j + close.length);
+        continue;
+      }
+    }
+    // 普通字符串
+    if (c === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (src[j] === '\\') { j += 2; continue; }
+        if (src[j] === '"') { j++; break; }
+        if (src[j] === '\n') break; // 未闭合:止损,避免吞掉后文
+        j++;
+      }
+      i = j;
+      continue;
+    }
+    // 字符字面量(只认 'x' / '\n' 形态,避免误伤生命周期 'a)
+    if (c === "'") {
+      const m = /^'(?:\\.|[^'\\\n])'/.exec(src.slice(i, i + 6));
+      if (m) { i += m[0].length; continue; }
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}

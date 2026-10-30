@@ -54,6 +54,7 @@ import {
   hasFileArchAllow,
   resolveFrontendSpecifier,
   storeBindings,
+  stripRustCommentsAndStrings,
 } from './lib/arch-scan.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -896,6 +897,8 @@ const backendWarnings = [];
       return i === -1 ? src : src.slice(0, i);
     };
 
+
+
     // --- 规则 I:归属完整性 ---
     let unregistered = 0;
     for (const name of readdirSync(SERVER)) {
@@ -957,19 +960,38 @@ const backendWarnings = [];
       const from = parts.length === 1 ? 'entry' : parts[0];
       if (from === 'entry') continue;
       const src = readFileSync(f, 'utf8');
-      productionSource(src)
-        .split('\n')
-        .forEach((line, i) => {
-          const m = /^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+crate::([a-z_]+)/.exec(line);
-          if (!m) return;
+      // --- 规则 J:跨代依赖方向 ---
+      //
+      // 2026-10-30 修:此前只匹配**行首 `use crate::`**,而 Rust 允许在类型标注、表达式、
+      // 结构体字段里直接写内联全路径(如 `risk: crate::tools::permissions::ToolRisk`),
+      // 这类写法完全绕过门禁。
+      //
+      // 实测漏检(升级前门禁只报 3 条已登记边,升级后额外暴露 2 条未登记边):
+      //   · models(L1) → tools(L2)      1 处(types.rs 内联路径;已在本提交一并真修)
+      //   · agents(L2) → scripts(L3)   12 处(run_scripts.rs,生产代码)
+      //   · api(L2)    → scripts(L3)    2 处(user_scripts.rs,生产代码)
+      //
+      // 现改为**全文扫描** `\bcrate::([a-z_]+)\b`。为免注释/字符串字面量里的
+      // `crate::` 造成误报(全仓注释里就有 39 行提到 crate::),必须先做词法剥离:
+      // 去行注释、块注释、字符串/字符字面量,并把剥离后的文本按**相同行数**对齐
+      // (保留换行符本身),这样报出的行号仍与源码一致。
+      // 另:仍以 `productionSource` 先截 `#[cfg(test)]`,测试代码里的跨模块引用不算架构依赖。
+      const cleaned = stripRustCommentsAndStrings(productionSource(src));
+      cleaned.split('\n').forEach((line, i) => {
+        const re = /\bcrate::([a-z_]+)\b/g;
+        let m;
+        while ((m = re.exec(line)) !== null) {
           const to = m[1];
-          if (to === from || to === 'entry') return;
-          if (!genOf(from) || !genOf(to)) return; // 未登记模块由规则 I 单独报错
+          if (to === from || to === 'entry') continue;
+          if (!genOf(from) || !genOf(to)) continue; // 未登记模块由规则 I 单独报错
           const key = `${from}->${to}`;
           if (!backendEdges.has(key)) backendEdges.set(key, { from, to, samples: [] });
           const rec = backendEdges.get(key);
-          if (rec.samples.length < 3) rec.samples.push(`${relative(ROOT, f)}:${i + 1}`);
-        });
+          const sample = `${relative(ROOT, f)}:${i + 1}`;
+          // 同一文件同一行可能多次出现,去重避免样本重复
+          if (rec.samples.length < 3 && !rec.samples.includes(sample)) rec.samples.push(sample);
+        }
+      });
     }
     let backendCrossGen = 0;
     let backendRegistered = 0;

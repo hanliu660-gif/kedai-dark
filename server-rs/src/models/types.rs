@@ -780,7 +780,7 @@ pub enum SseEvent {
     /// 工具未获授权，因此没有执行；前端可据此提供会话/角色授权入口。
     ToolAuthorizationRequired {
         name: String,
-        risk: crate::tools::permissions::ToolRisk,
+        risk: crate::models::tool_policy::ToolRisk,
         reason: String,
         run_id: String,
         call_id: String,
