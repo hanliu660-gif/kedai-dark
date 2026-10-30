@@ -1,0 +1,51 @@
+{
+  "id": "card.lodash.shared",
+  "domain": "card",
+  "title": "iframe 里的 lodash 是**父窗同一实例**（不是拷贝），`window._` 必须先于一切注入",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "事实": "iframe 注入的第一行就是「把父窗的 lodash 直接赋给本帧的 `window._`」——是**同一个对象引用**，不是深拷贝、也不是重新打包一份 lite 版。",
+    "为什么必须是同一个实例": [
+      "它是后续所有注入动作的前提：白名单挑选、剔除私有键、合并、设编译标志，全靠 lodash 的链式 API。",
+      "共享同一实例意味着共享**记忆化缓存**与**模板配置**：卡改 `_.templateSettings` 会影响宿主侧；反过来宿主配置也作用于卡。",
+      "用自建 lite 版会缺方法：卡的 `_.get` / `_.set` / `_.merge` / `_.isPlainObject` 一旦某个缺，报错点往往在很深的回调里，极难定位。"
+    ],
+    "注入顺序约束": [
+      "1. lodash 引用（**必须先于一切**）",
+      "2. iframe 身份（取 frameElement 的 id，回退 window.name；并双写缓存，因为某些浏览器在 srcdoc 导航后 frameElement 会变 null）",
+      "3. 六项第三方对象的白名单注入（模板引擎 / 宿主 API 本体 / YAML / markdown 渲染器 / 提示气泡 / schema 校验库）",
+      "4. 宿主 API 本体（剔除内部容器）",
+      "5. 内部容器逐项去首下划线 + 绑定 window",
+      "6. 若用惰性链则必须显式求值（不求值 = 前五步全没执行）"
+    ],
+    "为什么白名单而不是整体摊开": "把父窗所有对象都灌进来会把 `document` / `location` 等一起带进 iframe，直接毁掉沙箱隔离。⇒ 必须**逐个列名**。",
+    "与 `$` 的关系": "lodash 与 jQuery 是两条独立注入路径：lodash 走 `window._`，jQuery 走宿主 HTML 的 script 引入或单独的注入脚本（见 sandbox.jquery.two_hosts）。不要把两者混在一次注入里。",
+    "易错点": [
+      "自建 lodash-lite 替代真 lodash：缺方法的报错点极深",
+      "深拷贝一份 lodash：记忆化缓存与配置不再共享（行为漂移）",
+      "注入顺序把 lodash 放到后面：前面的合并动作直接抛错",
+      "用 `Object.assign(window, parent)` 整体摊开：把 document/location 带进来",
+      "用惰性链但忘了求值"
+    ],
+    "pseudocode": "注入顺序:\n  window._ = 父窗._                      # 同一实例,不拷贝\n  身份 = frameElement?.id 或 window.name\n  若 身份 非空: window.__IFRAME_ID = 身份; window.name ??= 身份\n  合并(window, 父窗[ 模板引擎, 宿主API, YAML, markdown, 提示气泡, schema库 ])   # 逐个列名\n  合并(window, 父窗.宿主API 去掉 内部容器)\n  for (内部名, 函数) in 父窗.宿主API.内部容器:\n    合并(window, { 去首个下划线(内部名): 函数.bind(window) })\n  若 链式惰性: 值 = 链.求值()\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/api/resource_frame_template.html:553-562",
+      "server-rs/src/api/resource_frame_template.html:1150-1156",
+      "web/src/sandbox/boot/mvu-tavern.ts:102"
+    ],
+    "note": "Kedai 沙箱 boot 里 `globalThis._=_`（`_` 是垫片内自建的一份），整页卡的隔离文档侧同样自带 lodash 垫片，**都不是父窗实例**（Kedai 的 iframe 是不透明源、没有 allow-same-origin，物理上也拿不到父窗引用）。⇒ 这是**被迫的妥协**：共享实例这条在本架构下不可实现，只能靠「把卡用到的 lodash 方法逐个补齐」来逼近。风险点：卡若依赖 `_.memoize` 的跨调用缓存或改 `_.templateSettings`，行为会与酒馆不同。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 predefine.js（首行把父窗 lodash 赋给 window._ + 后续白名单注入顺序）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/predefine.js#L1-L20"
+    }
+  ],
+  "related": ["sandbox.predefine.injection", "sandbox.jquery.two_hosts"],
+  "updated": "2026-10-31"
+}

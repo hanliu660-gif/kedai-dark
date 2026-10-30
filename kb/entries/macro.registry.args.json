@@ -1,0 +1,88 @@
+{
+  "id": "macro.registry.args",
+  "domain": "macro",
+  "title": "宏注册项的参数契约：strictArgs 默认 true（不符就原样保留），defaultValue 只是文档字段",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "官方文档只讲怎么写宏、怎么用宏，不写「参数个数不符时会怎样」「默认值是否会被填充」。这两条直接决定卡片里的兼容宏会不会变成文本，必须读源码。",
+    "注册项字段": [
+      { "字段": "处理器", "必填": "是", "默认": "—", "语义": "返回值会经规范化转成字符串" },
+      { "字段": "别名", "必填": "否", "默认": "空", "语义": "每项建一个独立查找条目指向同一定义；带可见性开关，隐藏别名的只不出现在文档/补全" },
+      { "字段": "分类", "必填": "否", "默认": "未分类", "语义": "仅用于文档分组与排序" },
+      { "字段": "无名参数", "必填": "否", "默认": "0", "语义": "写数字 = 全部必填；写数组可对每个参数声明类型与 optional" },
+      { "字段": "列表参数", "必填": "否", "默认": "无", "语义": "排在无名参数之后；可给上下限。声明它等于允许不定个数的尾部参数" },
+      { "字段": "严格参数", "必填": "否", "默认": "**true**", "语义": "参数个数或类型不符时抛运行期错误 → 该宏**原样保留文本**；关掉则只告警并继续" },
+      { "字段": "描述 / 返回值说明 / 返回类型 / 签名覆盖 / 用法示例", "必填": "否", "默认": "空或 string", "语义": "**纯文档字段**，引擎不参与任何运行时校验或取值" },
+      { "字段": "延迟参数解析", "必填": "否", "默认": "false", "语义": "置真时参数与 scoped 内容都不预解析，由 handler 自行解析" }
+    ],
+    "参数个数校验规则": {
+      "无名参数上限": "数组长度（写了数字则等长全必填）",
+      "无名参数下限": "第一个标记 optional 的位置；若没有 optional 则等于上限。⇒ **optional 必须是连续后缀**，否则注册期就抛错",
+      "无列表参数": "实际参数个数必须落在 [下限, 上限]",
+      "有列表参数": "要求个数 ≥ 下限 + 列表下限，且超出上限的部分 ≤ 列表上限（上限为空表示不限）"
+    },
+    "参数类型校验": [
+      { "类型": "string", "判定": "永真" },
+      { "类型": "integer", "判定": "整数形态（可带负号）" },
+      { "类型": "number", "判定": "可转有限数值" },
+      { "类型": "boolean", "判定": "真值集合 `on`/`true`/`1` 或假值集合 `off`/`false`/`0`，比较前先 trim + 转小写" },
+      { "类型": "其他", "判定": "视为非法" }
+    ],
+    "⚠️ defaultValue 不是运行时默认值": "注册时只是把它存进定义供文档展示；**求值时从不使用**。真正的兜底写在 handler 里。⇒ 复刻若把「声明即填充默认值」实现出来，那些原本依赖 handler 兜底的宏（数量类、时间偏移类、问候语序号类）行为都会变。",
+    "别名继承": "别名条目继承主宏的全部行为（参数契约、处理器都一样），只多记「我别名于谁」；文档展示依赖这个回溯关系。",
+    "名称与查找": [
+      "注册名统一 trim；**查找键全部转小写** ⇒ 宏名大小写不敏感。",
+      "重复注册不抛错：只告警并**覆盖**。⇒ 注册顺序有意义，后注册的赢；扩展注册同名宏可覆盖内置。",
+      "宏标识符合法性：字母开头 + 词字符/连字符/下划线；特例是注释宏的标识符（`//` 形式）被显式允许。"
+    ],
+    "运行期错误的上层处理": "运行期错误带一个显式标记（类型名 + 布尔位），引擎据此判定「这个宏要原样保留」，而不是把错误信息塞进输出。复刻时这个标记语义必须保留，否则出现「参数写错的宏被静默吃掉」。",
+    "上下文里没有命名参数": "调用上下文里的「命名参数」恒为空，是预留位。全部参数都走无名序列 + 列表尾部。",
+    "易错点": [
+      "把 defaultValue 当运行时默认值填进参数（行为面最广的错）",
+      "strictArgs 默认 false：参数个数错的宏不再原样保留，卡片里刻意的兼容写法会消失",
+      "允许 optional 出现在必填参数之前：ST 在注册期就拒绝",
+      "把列表参数当成「剩余参数之外还能再收」的独立通道（它只是无名参数之后的尾部）",
+      "别名当成新宏注册：参数契约会与主宏漂移"
+    ],
+    "pseudocode": "注册(名, 选项):\n  处理器 = 选项.处理器  # 非函数则抛\n  别名们 = 选项.别名 或 []\n  无名上限 = len(选项.无名参数) 或 0（数字形态取该数）\n  无名下限 = 第一个 optional 的位置; 无 optional 时 = 上限\n  严格 = 选项.严格参数 (缺省 true)\n  表[小写(名)] = 定义\n  for a in 别名们: 表[小写(a.名)] = 定义 ∪ {别名于: 名}\n\n执行(调用):\n  无名 = 参数[0 .. 无名上限]; 列表 = 参数[无名上限 ..] （无列表声明则不存在）\n  if 严格 且 不满足个数/类型区间: 抛出带标记的运行期错误 → 调用侧原样保留宏文本\n  return 规范化(处理器(上下文))\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:97-243",
+      "server-rs/src/parsing/macros.rs:239-241",
+      "server-rs/src/parsing/macros.rs:279-284"
+    ],
+    "note": "Kedai 没有注册表：宏是 `expand_one` 里的一棵硬编码 match 分支树 + 若干 `strip_prefix`，没有「注册项 / 别名 / 参数契约 / 类型校验 / 严格模式」这些概念，因此也不存在「参数个数不符就原样保留」的语义——`{{setvar::x}}` 这类单参调用会被 `split_key_value` 静默当成「键 x、值空串」写入，卡片里刻意的兼容写法行为会与 ST 不同。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（注册项 schema 与逐字段校验）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L63-L76"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（无名参数上下限推导与 optional 连续性校验）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L528-L602"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（个数/类型校验与严格模式分支）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L405-L461"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroRegistry.js（defaultValue 只在注册时被存下）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroRegistry.js#L540-L560"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（运行期错误标记 → 原样保留宏文本）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L216-L238"
+    }
+  ],
+  "related": ["macro.eval.order", "macro.syntax.argspec", "macro.flags"],
+  "updated": "2026-10-31"
+}

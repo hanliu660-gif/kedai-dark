@@ -1,0 +1,81 @@
+{
+  "id": "worldinfo.position.slots",
+  "domain": "worldinfo",
+  "title": "注入位置八档（position 0..7）：落点、排序方向与消费点",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "取值域": "0..7 共八档。数值顺序与文档的列举顺序不同，不可按文档次序推断枚举值。",
+    "八档表": [
+      { "值": 0, "名": "before", "文档名": "Before Char Defs", "落点": "角色定义（描述 + 场景）之前", "排序动作": "unshift", "最终顺序": "order 升序（低 order 在前）", "消费点": "worldInfoBefore 段；Chat Completion 模式下是位于 main 之前的独立 system 消息" },
+      { "值": 1, "名": "after", "文档名": "After Char Defs", "落点": "角色定义之后", "排序动作": "unshift", "最终顺序": "order 升序", "消费点": "worldInfoAfter 段；位于 main 之后的独立消息" },
+      { "值": 2, "名": "ANTop", "文档名": "Top of AN", "落点": "Author's Note 内容顶部", "排序动作": "unshift", "最终顺序": "order 升序", "消费点": "仅当 A/N 本轮被注入时并入 AN 前部；否则整档条目**不进任何 prompt**" },
+      { "值": 3, "名": "ANBottom", "文档名": "Bottom of AN", "落点": "Author's Note 内容底部", "排序动作": "unshift", "最终顺序": "order 升序", "消费点": "同上，并入 AN 后部；A/N 禁用时同样被忽略" },
+      { "值": 4, "名": "atDepth", "文档名": "@ D", "落点": "聊天中段指定深度（深度 0 = prompt 最底部）", "排序动作": "同 (depth, role) 桶内 unshift，异桶 push 新桶", "最终顺序": "同桶内 order 升序", "消费点": "按深度插入聊天消息；同一深度同角色多条合并为一条注入，不同角色按 system → user → assistant 顺序依次插入同一位置" },
+      { "值": 5, "名": "EMTop", "文档名": "Before Example Messages", "落点": "示例对话块之前", "排序动作": "unshift", "最终顺序": "order 升序", "消费点": "作为示例消息分流到示例数组最前；桶自身的顺序不决定最终文本顺序" },
+      { "值": 6, "名": "EMBottom", "文档名": "After Example Messages", "落点": "示例对话块之后", "排序动作": "unshift", "最终顺序": "order 升序", "消费点": "分流到示例数组末尾" },
+      { "值": 7, "名": "outlet", "文档名": "Outlet", "落点": "不自动注入，存进以 outletName 命名的桶", "排序动作": "push（八档中唯一用 push 的）", "最终顺序": "order **降序**（高 order 在前，方向与其余七档相反）", "消费点": "由任意 prompt 文本里的取用宏按名字取出，多个同名条目按 order 降序换行拼接" }
+    ],
+    "排序总则": "组装阶段先按 order **降序**遍历所有已激活条目，逐档落桶。因为七档用前插（unshift），最终呈现顺序反转成 order 升序；outlet 用后插（push）于是保持降序。实测（八档混排 + 多级别 order）验证了该方向。",
+    "outlet 语义": {
+      "名字匹配": "大小写敏感；名字首尾空格被忽略（调用侧 trim），因此带空格存的名字取不到。",
+      "缺名字": "空 outletName 的 outlet 条目在组装期被丢弃（跳过，不是报错）。",
+      "取用宏": "在任意 prompt 字段里按 outlet 名取内容；未挂内容的 outlet 取到空串。",
+      "禁止": "outlet 宏不能写在世界书条目正文内，也不能嵌套 outlet（求值顺序冲突，会产生无限递归）。",
+      "角色卡字段": "角色描述 / 性格 / 场景等字段不能展开 outlet（它们被提前解析，用于作为额外匹配源）。",
+      "AN 编辑器": "AN 编辑器也不能解析 outlet；需要围在 AN 周围时改用 ANTop / ANBottom 两个位置。"
+    },
+    "门控": [
+      "ANTop / ANBottom 只在「本轮 A/N 会被注入」时生效：A/N 插入频率为 0 时，这两档条目实际不进任何 prompt（返回的 anBefore/anAfter 无消费者）。",
+      "atDepth 的 role 取值 0/1/2 = system/user/assistant；system 那条在部分实现里带叙述者类型标记。",
+      "regex 扩展对世界书正文的替换发生在**组装期**（按档落桶之前），不在扫描期；depth 参数只对 atDepth 条目非空。"
+    ],
+    "易错点": [
+      "把八档顺序当成文档列举顺序：文档顺序是 before/after/EM/AN/@D/outlet，枚举值是 before=0/after=1/AN=2,3/@D=4/EM=5,6/outlet=7",
+      "把 outlet 也改成前插：会静默反转 outlet 内的条目顺序",
+      "以为 ANTop/ANBottom 总会注入：A/N 关掉时它们静默消失",
+      "atDepth 桶的 depth 与 role 都是全等分桶键；只有一个维度不同就是另一个桶"
+    ],
+    "pseudocode": "for 条目 in 已激活集合(按 order 降序):\n  正文 = 正则扩展替换(正文)   # 空串则丢弃\n  switch 位置:\n    0..1,2..3,5..6 → 该桶前插\n    4 → 桶键=(depth, role);同键前插,异键新建桶后插入\n    7 → 该名字桶后插\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:81",
+      "server-rs/src/parsing/world_book.rs:305-311",
+      "server-rs/src/parsing/world_book.rs:451-468",
+      "server-rs/src/agents/engine/messages/build.rs:38",
+      "web/src/components/WorldBooksModal.vue:359-364"
+    ],
+    "note": "Kedai 的 position 只是 0..4 的排序键（collect_entries 按 position 升序 → order 升序 → id 升序排），注入时统一分成「常态（system 段）」与「激发（用户消息尾部）」两组，没有八档落点；读取兼容 before_char/top/normal/bottom/after_char 五个字符串（其中 top/normal/bottom 是 ST 运行期枚举里不存在的名字），未知字符串回退 0。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Insertion Position",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L141-L153"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Outlet Name 与限制",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L159-L175"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（position 枚举定义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L855-L864"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（组装期八档落桶与排序动作）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5189-L5262"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 script.js（atDepth 深度插入与 outlet 取用链）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/script.js#L5628-L5687"
+    }
+  ],
+  "related": ["worldinfo.field.schema", "worldinfo.depth.atdepth"],
+  "updated": "2026-10-31"
+}

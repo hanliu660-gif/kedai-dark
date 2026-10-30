@@ -1,0 +1,67 @@
+{
+  "id": "macro.flags",
+  "domain": "macro",
+  "title": "六个宏标志位：只有「保留空白」真的改变行为，管道/过滤器整段被禁用",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "六个符号": [
+      { "符号": "!", "名": "立即解析", "实现状态": "未实现（v1 明确 TBD）", "对解析的影响": "无；只被解析并传给 handler" },
+      { "符号": "?", "名": "延迟解析", "实现状态": "未实现", "对解析的影响": "无" },
+      { "符号": "~", "名": "重新求值", "实现状态": "未实现", "对解析的影响": "无" },
+      { "符号": ">", "名": "输出过滤器（管道）", "实现状态": "已解析、功能未实现；词法层整段被注释掉", "对解析的影响": "**有**（唯一影响语法结构的标志），但入口已封死" },
+      { "符号": "/", "名": "闭合块", "实现状态": "已实现", "对解析的影响": "无（它标记闭标签，内容作为最后一个参数）" },
+      { "符号": "#", "名": "保留空白", "实现状态": "已实现", "对解析的影响": "无语法影响，但**关掉 scoped 内容的自动修剪**" }
+    ],
+    "谁真的读了标志": {
+      "保留空白": "唯一被引擎消费的标志：作用在 scoped 内容的自动 trim/dedent 开关上，以及条件宏分支内容的 trim 开关上。",
+      "其余五个": "只被解析、放进一个原始符号数组传给 handler；引擎不做排序、短路、过滤。handler 能读到「按出现顺序排列的标志数组」。",
+      "对非 scoped 宏无副作用": "给普通宏加 `#` 不会改变输出（例如 `{{#user}}` 与 `{{user}}` 输出相同）。"
+    },
+    "管道/过滤器为什么不能用": {
+      "事实": "不是「还没写」，是**被主动禁用**：词法层的管道 token 与过滤器模式整段注释掉，对应测试整块跳过。",
+      "原因（源码注释原话意）": "启用后会让「参数值里正常出现竖线」的宏坏掉，例如写变量赋值时值本身以竖线开头。",
+      "后果": "竖线在参数里就是普通字符；复刻若顺手实现过滤器，反而会破坏真实卡片用法。"
+    },
+    "标志的书写位置": "标志紧跟在开括号之后、宏名之前：`{{!名}}`、`{{#名}}`、`{{/名}}`（闭标签）。多个标志可叠加，按出现顺序记录。",
+    "未实现标志的失败策略": "未知符号只告警，不影响求值。",
+    "易错点": [
+      "把 `!` / `?` / `~` 当作真的改变了求值时序（它们什么都没做，写卡的人可能误以为有作用）",
+      "实现管道过滤器：会破坏 `参数值含竖线` 的既有卡片",
+      "把 `#` 当成普通标志忽略：多行 scoped 内容的缩进会被改掉",
+      "以为 `{{#user}}` 有副作用"
+    ]
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:44-48",
+      "server-rs/src/parsing/macros.rs:64-69"
+    ],
+    "note": "Kedai 没有任何标志位解析：`{{trim}}` 被当成一个独立宏名做特殊处理（置起「修剪下一个宏输出」的标志），`{{!x}}` / `{{#x}}` / `{{>x}}` 这类写法会直接落进「未知宏原样保留」分支。`{{/名}}` 闭标签同样不被识别（无 scoped 机制）。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Macro Flags / Implemented / Planned / Preserve Whitespace",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L283-L341"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroFlags.js（六符号定义与实现状态注释）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroFlags.js#L27-L198"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroLexer.js（管道/过滤器入口被注释处）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroLexer.js#L213-L251"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（保留空白标志作用于 scoped 修剪）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L449-L458"
+    }
+  ],
+  "related": ["macro.eval.order", "macro.syntax.argspec"],
+  "updated": "2026-10-31"
+}

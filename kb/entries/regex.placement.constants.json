@@ -1,0 +1,65 @@
+{
+  "id": "regex.placement.constants",
+  "domain": "regex",
+  "title": "正则脚本的 placement（作用链路）：1/2/3/5/6 五个有效值，空数组 = 永不自动触发",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "作用": "placement 决定这条正则脚本挂在哪个处理链路上跑。它是**数组**，一条脚本可同时挂多条链路。",
+    "取值表": [
+      { "值": 0, "名": "MD_DISPLAY", "状态": "**已弃用**，不要用于新卡", "迁移处理": "旧数据里带 0 的会被迁移成「双 only 都置真」并从数组里剔除" },
+      { "值": 1, "名": "USER_INPUT", "状态": "有效", "语义": "用户输入链路" },
+      { "值": 2, "名": "AI_OUTPUT", "状态": "有效", "语义": "模型输出链路" },
+      { "值": 3, "名": "SLASH_COMMAND", "状态": "有效", "语义": "slash 命令链路（含叙述者消息）" },
+      { "值": 4, "名": "sendAs（历史）", "状态": "**空号**，枚举里没有定义", "迁移处理": "旧数据里带 4 的：若数组只剩它则改成 3（slash 命令），否则从数组剔除" },
+      { "值": 5, "名": "WORLD_INFO", "状态": "有效", "语义": "世界书条目正文（在组装期替换，不在扫描期）" },
+      { "值": 6, "名": "REASONING", "状态": "有效", "语义": "推理内容链路" }
+    ],
+    "空数组的语义": "**永不自动触发**（数组不含任何链路值 ⇒ 判定恒不通过），只能被用户手动执行的正则命令调用。编辑器在为空时只弹警告但仍会保存。",
+    "新建脚本的默认值": "新脚本默认勾选「用户输入」（即 `[1]`），同时默认勾上「显示面」与「编辑时运行」两个开关。",
+    "迁移规则（复刻必须照抄，否则老卡正则集体失效）": [
+      "数组含 0（已弃用）：把 0 从数组里剔除；若数组**只剩** 0，则铺满全部有效值。**同时**把两个 only 开关都置真。",
+      "数组含 4（历史 sendAs）：若数组**只剩** 4，改成 `[3]`（slash 命令）；否则把 4 剔除。"
+    ],
+    "判定形式": "是「数组里包含该数值」的比较，不是位掩码、不是位运算。",
+    "易错点": [
+      "写成位掩码（`placement & 位`）：数值 5/6 不是 2 的幂，语义全错",
+      "空数组当成「全部链路」：ST 是「全部都不跑」",
+      "把 4 留在枚举里当有效值：ST 里它只是历史注释，不是枚举成员",
+      "迁移时只剔除 0 忘了双 only 置真：老卡的显示行为会变"
+    ]
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/regex_script.rs:12",
+      "server-rs/src/parsing/regex_script.rs:104-120",
+      "web/src/api/types.ts:51"
+    ],
+    "note": "Kedai 的 RegexScript 只有 8 个字段（id / script_name / find_regex / replace_string / markdown_only / enabled / min_depth / max_depth），`grep placement|promptOnly` 在 server-rs 与 web 全仓为 0 命中。⇒ 无法表达「这条正则只作用于 AI 输出」：Kedai 的正则一律在消息渲染层按 markdown_only 分流，用户输入与世界书正文都不经过任何脚本。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · 正则扩展（作用位置选项）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/extensions/Regex.md#L1-L120"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（placement 常量表）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L281-L294"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 index.js（编辑器字段映射与新脚本默认值）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/index.js#L805-L812"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 index.js（老数据迁移：0 与 4 的处置）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/index.js#L1374-L1417"
+    }
+  ],
+  "related": ["regex.engine.chain", "regex.only.matrix"],
+  "updated": "2026-10-31"
+}

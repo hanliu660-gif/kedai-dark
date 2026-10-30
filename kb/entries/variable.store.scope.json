@@ -1,0 +1,102 @@
+{
+  "id": "variable.store.scope",
+  "domain": "variable",
+  "title": "变量的两套存储（local = 聊天元数据，global = 设置）与「不存在时返回空串」",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "官方文档讲宏与命令怎么用，不讲变量落在哪个结构、读取时会不会自动数字化、add 的三级降级顺序。这些都是卡作者能感知的行为。",
+    "两套存储": [
+      { "域": "local（聊天变量）", "落点": "聊天文件头元数据里的变量对象", "持久化时机": "防抖保存元数据（随聊天文件）", "作用范围": "当前聊天" },
+      { "域": "global（全局变量）", "落点": "扩展设置里的全局变量对象", "持久化时机": "防抖保存设置", "作用范围": "跨聊天、跨角色" },
+      { "域": "scope（脚本作用域变量）", "落点": "slash 命令作用域对象（内存）", "持久化时机": "**不落盘**", "作用范围": "当前命令闭包生命周期" }
+    ],
+    "读取语义（get）": [
+      "取值键优先用命名参数里的「键」，没有才用位置参数传的名字。",
+      "**自动数字化**：值非空且能转成数字 → 返回数字类型；否则返回字符串。⇒ 存 `\"5\"` 读出是数字 5，存 `\"5 apples\"` 读出是字符串。",
+      "**读取有副作用**：会懒初始化 local 的变量对象（不存在就建一个空的）。",
+      "带索引参数时（按数组下标或对象键取值）：先解析存储的 JSON，按下标/键取，若取到对象再序列化回字符串；解析失败静默退化成普通读取。",
+      "不存在时返回空串（local 未初始化时返回 undefined，经归一到空串），**不报错**。"
+    ],
+    "写入语义（set）": [
+      "名字为空直接抛错（这是写入侧唯一的校验）。",
+      "无索引：原样存，不做类型转换、不做 JSON 化。",
+      "有索引：把旧值解析成 JSON（解析失败按类型兜底成对象或数组），再按索引写入，写完后整体序列化回去。",
+      "可选类型转换：支持字符串/数字/整数/浮点/布尔（真值集合 on/true/1）、null、undefined、列表、对象/字典；不认识的目标类型或值是闭包时**原样返回**。"
+    ],
+    "add 的三级降级（最常写错）": [
+      "第 0 级：先走 get（所以当前值已被数字化），空值按 0 处理。",
+      "第 1 级：把当前值当 JSON 解析，**若是数组就 push 加数并写回，返回数组对象**（这一步**先于**数字判断）。注意 push **不做类型转换**，加数 `\"3\"` 就是字符串元素。",
+      "第 2 级：把加数转数字；**任一（当前值或加数）不是数 → 走字符串拼接**（不是忽略、不是 NaN、不报错）。",
+      "第 3 级：都是数 → 数字相加，存成数字类型（不是字符串）。"
+    ],
+    "inc / dec 的真身": "`inc` 就是 `add(名, +1)`、`dec` 就是 `add(名, -1)`。⇒ 对非数字值会变成字符串拼接：`\"abc\"` 自增得 `\"abc1\"`，自减得 `\"abc-1\"`；未定义自增得 `1`。",
+    "exists 与 delete": [
+      "存在判定用「值 !== undefined」⇒ **存了 null 也算存在**。",
+      "删除不存在时只告警、不抛错，返回空串（不是布尔、不是被删的值）。"
+    ],
+    "查找顺序（两处，不同！）": [
+      {
+        "场景": "通用变量解析",
+        "顺序": "脚本作用域 → local → global → **原样返回名字本身**（找不到不报错，把入参当字符串返回）",
+        "作用域继承": "作用域变量会沿父链上溯查找"
+      },
+      {
+        "场景": "布尔/数值操作数解析",
+        "顺序": "**数字字面量 → 脚本作用域 → local → global → 字符串字面量**",
+        "差别": "这里**多了一档「数字字面量在最前」** ⇒ 名为 `123` 的变量永远取不到（先被当数字）。通用解析没有数字档。"
+      }
+    ],
+    "变量名的合法性（重要澄清）": "**没有字符集正则**：写入侧只校验「非空」，任意非空字符串都能当键。网上常见的 `字母开头 + 词字符` 那条正则属于**宏标识符**；`不能以连字符/下划线结尾` 那条属于**变量简写语法**（`{{.名}}` / `{{$名}}`）。二者都不是变量名规则——简写不合法的名字**仍可用完整宏形式读写**，界面只给提示不阻止保存。",
+    "易错点": [
+      "给变量名加字符集限制：会把合法卡片键值挡掉",
+      "add 先判数字再判数组：数组 push 会退化成字符串拼接，数组语义丢失",
+      "add 任一非数就报错或返回空：ST 是字符串拼接",
+      "inc 实现成「数字 +1 否则不变」：非数字值应变成字符串尾追加",
+      "exists 把 null 当不存在：ST 算存在",
+      "删除返回布尔：ST 返回空串",
+      "通用解析里加了「数字字面量优先」档：会让名为数字的变量静默取不到"
+    ],
+    "pseudocode": "get(名, 索引?):\n  确保 local 容器存在\n  值 = 容器[名]\n  若 有索引: 试解析 JSON; 按下标或对象键取值; 取到对象则序列化\n  若 值 为空 或 不能转数: 输出 值(缺失折成空串)\n  否则: 输出 数字(值)\n\nset(名, 值, 索引?, 类型?):\n  若 名 为空: 抛错\n  若无索引: 容器[名] = 值\n  否则: 旧 = 解析(容器[名]); 按类型兜底; 旧[索引] = 按类型转换(值); 容器[名] = 序列化(旧)\n  防抖保存\n\nadd(名, 值):\n  旧 = get(名) 或 0\n  若 旧可解析成 数组: 数组.追加(值); set(名, 序列化(数组)); 输出 该数组\n  若 值非数 或 旧非数: 新 = 字符串(旧 或 空) + 字符串(值); set(名, 新); 输出 新\n  新 = 数字(旧) + 数字(值); set(名, 新); 输出 新\n\ninc = add(名, 加一);  dec = add(名, 减一)\nexists = 容器 存在 且 容器[名] 不是 未定义\ndelete = 若 不存在: 告警, 输出空串; 否则 删除, 输出空串\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/scopes.rs:1-14",
+      "server-rs/src/parsing/scopes.rs:227-262",
+      "server-rs/src/parsing/macros.rs:140-168",
+      "server-rs/src/agents/engine/messages/context.rs:511-523",
+      "server-rs/src/agents/engine/mod.rs:477-516"
+    ],
+    "note": "Kedai 有一套更宽的作用域模型（global/chat/character/preset/message/script/extension 七档，读链低→高：global < preset < character < chat扁平 < chat树 < message），比 ST 的 local/global/scope 三档更细；但**宏层的写入语义与 ST 不同**：setvar/addvar 在变量树里命中时走「推断类型 + 数值加」的专用路径，未命中才落扁平表做字符串拼接；且没有「自动数字化」——`getvar` 读到的永远是字符串，除非经 EJS/宏的数值比较路径。变量只持久化到会话表与 scope_variables 表，没有 ST 的「chat_metadata.variables / 全局设置」两处落点。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（local 的 get/set 与自动数字化）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L22-L81"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（add 三级降级与 inc/dec 即 add±1）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L136-L210"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（exists/delete 与 resolveVariable 顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L218-L236"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（布尔操作数的另一套查找顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L441-L477"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroLexer.js（变量简写正则 ≠ 变量名规则）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroLexer.js#L17-L28"
+    }
+  ],
+  "related": ["macro.variable.family", "variable.scope.bridge"],
+  "updated": "2026-10-31"
+}

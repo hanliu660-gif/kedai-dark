@@ -1,0 +1,63 @@
+{
+  "id": "macro.syntax.argspec",
+  "domain": "macro",
+  "title": "宏语法：三种参数分隔符、大小写不敏感、嵌套先解与未知宏原样保留",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "基本形态": "宏由双花括号包裹：`{{名}}`、`{{名 参数}}`、`{{名::参数}}`。",
+    "名大小写不敏感": "文档明确：`{{User}}`、`{{USER}}`、`{{user}}` 解析到同一宏。实现层是把查找键统一转小写后比对。",
+    "参数分隔三档": [
+      { "形式": "双冒号（推荐）", "语义": "多参数分隔符。出现它即进入多参数模式", "例": "`{{setvar::名::值}}`、`{{random::a::b::c}}`" },
+      { "形式": "空格分隔（推荐，仅单参数）", "语义": "宏名与唯一参数之间用空白", "例": "`{{getvar 我的变量}}`、`{{roll 1d20}}`、`{{reverse Hello World}}`" },
+      { "形式": "单冒号（legacy，不推荐但有效）", "语义": "引入参数；**不切分多参数**，后面整段算一个参数", "例": "`{{roll:1d20}}`、`{{reverse:abc::def}}` → 参数是 `abc::def` 一整段" }
+    ],
+    "参数分隔的边界语义（实现级）": [
+      "判断依据是「分隔符出现了没有」，不是「数了一下有几个参数」：只有单冒号或只有空白 → 整段就是一个参数，内部的冒号与双冒号都保留在参数值里。",
+      "引号不是语法：`\"` 只是普通字符，不做成对解析。需要去引号的宏由 handler 自己剥。",
+      "参数首尾空白在没有被显式保留时被丢弃，这一步发生在词法层（空白 token 被吞），不是事后 trim。",
+      "空参数合法：`{{名::}}` 会得到一个空串参数。",
+      "宏定义内部的空白（名与分隔符之间、分隔符与参数之间）一律忽略：`{{ 名 :: 参数 }}` 等价于紧凑写法。"
+    ],
+    "嵌套宏": "内层先解，外层拿到的是已解析的字符串。例：`{{getvar::{{char}}_心情}}` 先解 `{{char}}` 再按结果查变量。",
+    "未知宏": "原样保留（含原花括号），便于从预设直接搬运；但**内部嵌套宏已解析**——即保留的是「外壳未变、里层已求值」。",
+    "失败策略": "词法/语法错误只告警并继续；整串解析失败时原样返回原文；宏运行期错误（参数个数/类型不符）时该宏原样保留文本。**任何情况下都不吞文本**。",
+    "注释宏": "`{{//注释}}` 输出空串；且会吸收到行尾（连换行一起吃掉），避免留下空行。这是实现层的补充行为。",
+    "修饰宏 trim": "`{{trim}}` 不是普通宏：它是跨宏边界的「去空白」标记，效果靠后处理器（删除标记本身及其两侧换行）实现，而不是由 handler 返回内容。",
+    "转义": "反斜杠转义的花括号在**整串求值之后**才还原（`\\{` → `{`、`\\}` → `}`）；三连花括号 `{{{char}}}` 结果是「一个字面 `{` + 宏内容」。"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:33-81",
+      "server-rs/src/parsing/macros.rs:84-94",
+      "server-rs/src/parsing/macros.rs:97-243",
+      "server-rs/src/parsing/macros.rs:140-168"
+    ],
+    "note": "Kedai 是单遍字符扫描 + 前缀匹配：只用 `strip_prefix` 认 `getvar::` / `setvar::` / `addvar::` / `random:` / `roll:` / `var::` 等形式，**不支持空格分隔的单参数形式**（`{{getvar 我的变量}}` 会落进未知宏保留），也不支持单冒号 legacy 形式；名字转小写比对（大小写不敏感这条是符合的）；未知宏原样保留（符合），但**参数里的嵌套宏不会递归展开**（setvar 的注释明写「值部分不再递归展开」），与文档「内层先解」不符；`{{trim}}` 被实现成「修剪紧随其后那一个宏的输出」的修饰标志，与 ST 的后处理语义不同。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Basic Syntax / Arguments / Whitespace",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L40-L121"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Nested Macros",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L123-L145"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroParser.js（参数分隔与歧义处理）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroParser.js#L136-L184"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（预处理/后处理链与 trim 后处理器）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L273-L323"
+    }
+  ],
+  "related": ["macro.eval.order", "macro.registry.args"],
+  "updated": "2026-10-31"
+}

@@ -1,0 +1,65 @@
+{
+  "id": "sandbox.jquery.two_hosts",
+  "domain": "sandbox",
+  "title": "两个宿主的 jQuery 是两套东西：楼层 iframe 的 $ 操作自己，脚本 iframe 的 $ 操作酒馆主页面",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "两套宿主": [
+      {
+        "宿主": "消息（楼层）iframe",
+        "加载的资源": "FontAwesome + tailwind + **CDN 版 jQuery** + jQuery-UI（含主题与触摸补丁）+ Vue + VueRouter",
+        "`$` 的来源": "宿主页面里自己 `<script src>` 引入的 CDN jQuery（**用的是 latest 标签、不带版本号**）",
+        "`$(...)` 操作哪个 document": "**本 iframe 自己的 document**（自己的 DOM、自己的 window）",
+        "后果": "卡在楼层 iframe 里查到的元素是「渲染出来的那份 HTML」里的，不是宿主聊天区的真实节点"
+      },
+      {
+        "宿主": "脚本 iframe",
+        "加载的资源": "Vue + VueRouter（**无** FontAwesome / tailwind / jQuery / jQuery-UI）",
+        "`$` 的来源": "父窗口注入的 jQuery（宿主自带的固定版本），通过注入脚本提供",
+        "`$(...)` 操作哪个 document": "**酒馆主页面（父窗）的 document**",
+        "后果": "同一个 API 在两种宿主里作用域完全不同 —— 这是最容易做出「形似神不似」的一条"
+      }
+    ],
+    "为什么「版本不同」这个说法不够严重": "真正的差别不是版本号，而是**作用的 document 不同**。同一段卡代码 `$('#btn').on('click', ...)`：在楼层 iframe 里绑到卡自己渲染的按钮；在脚本 iframe 里绑到宿主页面里同 id 的元素（通常不存在，静默无效）。",
+    "对复刻的硬约束": "若沙箱用「不透明源」隔离（无 allow-same-origin），iframe 脚本**根本拿不到父窗 document**，因此「脚本 iframe 的 $ 操作主页面」这条**无法自动等价映射**，只能显式设计 RPC：给卡一个 `$` 的替身，把选择器与操作转发给宿主执行。逐 API 设计，不是整体桥接。",
+    "jQuery 版本的选择会决定兼容面": "楼层 iframe 用的是 latest 标签 ⇒ 上游行为会随 CDN 最新版漂移。复刻应**锁定版本**，但锁哪个版本直接决定哪些卡能用。不要为了「跟上游一致」去用 latest（不可复现）。",
+    "注入顺序的坑": "脚本 iframe 里父窗 jQuery 的注入顺序**早于**通用注入脚本，所以通用注入脚本里那段 `pagehide` 清理用的是**父窗 jQuery**（监听挂到主窗口的 jQuery 内部列表），与楼层 iframe 的 CDN jQuery（挂在自己的列表）不是同一套。",
+    "易错点": [
+      "以为「jQuery 版本对上就行」：作用域才是关键",
+      "给沙箱一个 jQuery-lite 就当兼容完成：脚本宿主需要的是「操作父 document」的能力，lite 做不到",
+      "用 latest 标签保证复现：上游本身都不可复现",
+      "忽略 jQuery-UI 与触摸补丁：楼层 iframe 有，脚本 iframe 没有，拖拽/对话框类卡行为不同"
+    ],
+    "pseudocode": "宿主判定:\n  if 消息楼层宿主:\n    $ = 本帧自带的 CDN jQuery（操作本帧 document）\n    附带 jQuery-UI / 触摸补丁 / tailwind / 图标库\n  else if 脚本宿主:\n    $ = 父窗 jQuery（操作父窗 document，经注入脚本提供）\n    无 jQuery-UI / 无 tailwind / 无图标库\n# 不透明源沙箱下第二支必须改成 RPC 转发，无法直接同源操作\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/api/resource_frame_template.html:553-562",
+      "server-rs/src/api/resource_frame_template.html:833-834",
+      "web/src/render.ts:520",
+      "web/src/render.ts:787"
+    ],
+    "note": "Kedai 只有**一个 jQuery 精简实现**（`installJQueryLite`，注释明写「只实现整页前端卡真正用到的子集：查询/事件/属性/样式/插入/ready，不做 ajax/animate」），且若作者页自带真 jQuery 则不覆盖。⇒ 两套宿主的差异在 Kedai 里被抹平成「单一 lite 实现 + 卡自带 jQuery 兜底」：脚本宿主「用 $ 操作酒馆主页面」这条完全做不到（iframe sandbox 无 allow-same-origin，opaque origin 拿不到父 document），且 jQuery-UI / tailwind / 图标库都缺。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 third_party_message.html（楼层宿主完整资源清单，含 CDN jQuery latest）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/third_party_message.html#L1-L8"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 third_party_script.html（脚本宿主资源清单：无 jQuery 等）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/third_party_script.html#L1-L2"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 iframe 装配（parent_jquery.js 注入位置早于 predefine.js）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/panel/script/iframe.ts#L11-L12"
+    }
+  ],
+  "related": ["sandbox.predefine.injection", "sandbox.iframe.pagehide", "card.frontend.detect"],
+  "updated": "2026-10-31"
+}

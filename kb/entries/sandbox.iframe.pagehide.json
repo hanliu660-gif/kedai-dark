@@ -1,0 +1,59 @@
+{
+  "id": "sandbox.iframe.pagehide",
+  "domain": "sandbox",
+  "title": "iframe 卸载触发 pagehide → 自动清空该 iframe 的全部事件监听",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "机制": "注入脚本在 window 上挂一个 `pagehide` 监听：iframe 被卸载时，把**本 iframe 注册过的全部事件监听**一次性清掉。",
+    "为什么需要": "事件总线是宿主侧的全局单例，监听器注册进去就带着 iframe 身份。iframe 被销毁后若不清理，会留下「僵尸监听」：回调里访问已销毁的 DOM 直接报错、或者按旧数据刷新造成闪烁。",
+    "对卡作者的可观测后果": "**楼层重渲染 / 切会话 / 关面板后，事件监听会全部丢失**。⇒ 卡必须在「渲染时重新注册」，不能假设「注册一次永久有效」。这是「事件丢了 / 界面不刷新」最常见的根因。",
+    "两条清理入口": [
+      "iframe 卸载（pagehide）→ 清空该 iframe 全部监听",
+      "显式调用「清空全部」API → 同样清全部"
+    ],
+    "清理的粒度": "清理按 **iframe 身份** 做，不是按事件类型或按单个监听器做。⇒ 多 iframe 并存时，一个 iframe 卸载不影响另一个的监听。",
+    "单条移除的已知缺陷（照抄须知道）": "`eventOn(...)` 返回的「取消订阅」句柄在**上游实现里实际无效**（传错了参数，内部查表用原始函数做键却传了包装函数 ⇒ 查不到 ⇒ 什么也没删）。真正有效的移除方式是：① iframe 卸载时的整体清理；② iframe 内暴露的「按事件类型 + 原始函数」移除 API。**另：同一函数重复订阅上游会重复注册，不会去重**（文档承诺的「no effect」不成立）。",
+    "对这些缺陷的处置建议": [
+      "若「照文档做」：自己把这两个 bug 修好（返回句柄真正能取消、同一函数真正去重）",
+      "若「照源码做」：文档里不要承诺这两条，并明确告知「要取消只能靠整体清理」",
+      "不要一半一半：句柄返回了却无效，会让卡作者写出「以为取消了其实还在」的逻辑"
+    ],
+    "易错点": [
+      "只清「当前事件类型」的监听：ST 是清该 iframe 全部",
+      "不按 iframe 身份隔离：多个卡互相清空对方监听",
+      "重渲染后不重新注册：事件全丢",
+      "把返回的取消句柄当成真的能取消",
+      "以为重复订阅会去重"
+    ],
+    "pseudocode": "注册(事件类型, 监听器):\n  包装 = 缓存[本iframe][事件类型][监听器] 或 新建(闭包住本 iframe 身份)\n  总线.on(事件类型, 包装)\n  返回 { 取消: ... }        # 注意:上游此句柄实际无效(见上)\n\n卸载时:\n  for 事件类型 in 本iframe表中的全部类型:\n    for (监听器, 包装) in 该类型表:\n      总线.移除(事件类型, 包装)\n  清空 本iframe 的表\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:59-64",
+      "web/src/sandbox/boot/mvu-tavern.ts:63",
+      "web/src/sandbox/boot/jquery-window.ts:203"
+    ],
+    "note": "Kedai 的事件总线是 iframe 内一个纯内存 Map（`__kdEventBus`），`eventOn` 返回一个删除闭包、`eventOff` 按事件类型 + 回调删除，**没有**「iframe 卸载自动清空」机制，也没有跨 iframe 的身份隔离（每个 iframe 自有一份 Map，卸载时随 iframe 一起消失，效果上「碰巧」等价于清理，但宿主侧无任何显式清理点与日志）。另 jQuery-lite 层有 `pagehide`/`unload` 的绑定记录（`jquery-window.ts`），那是 jQuery 事件而非 TavernHelper 事件总线。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 predefine.js（window 上挂 pagehide → eventClearAll）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/predefine.js#L46-L48"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（三层包装表 + 按 iframe 身份清理 + 单条移除的传参缺陷）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L9-L165"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 @types/iframe/event.d.ts（stop 与去重的文档承诺）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/@types/iframe/event.d.ts#L10-L20"
+    }
+  ],
+  "related": ["sandbox.event.chat_changed", "sandbox.predefine.injection"],
+  "updated": "2026-10-31"
+}

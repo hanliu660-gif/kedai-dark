@@ -1,0 +1,103 @@
+{
+  "id": "worldinfo.field.schema",
+  "domain": "worldinfo",
+  "title": "世界书条目字段全集（42 个定义字段）与默认值 / Kedai 覆盖度",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "权威定义源": "条目字段表以 newWorldInfoEntryDefinition 为唯一权威（每个字段都带 default 与 type）。编辑器另有补全函数，但只在编辑器展示路径调用；扫描热路径不补默认值，缺字段一律靠使用点的空值兜底。⇒ 手写或第三方导入的 JSON 缺字段时，行为可能与编辑器里看到的默认值不同。",
+    "主键": {
+      "uid": "条目真实主键，创建时补；扫描期取自书 JSON 的 entries 键。它不在定义字段表里。",
+      "world": "扫描期由来源书注入（角色书 / 全局书 / 聊天书 / Persona 书）。全局去重键是 world 与 uid 的二元组，不是纯 uid。"
+    },
+    "字段表": [
+      { "名": "key", "类型": "array", "默认": "[]", "语义": "主关键词数组，元素可为纯文本或 /regex/flags 形式的正则", "kedai": "有（keys）" },
+      { "名": "keysecondary", "类型": "array", "默认": "[]", "语义": "副关键词数组，仅在 selective ∧ 非空时参与判定", "kedai": "有字段但语义错（见 worldinfo.logic.selective）" },
+      { "名": "comment", "类型": "string", "默认": "空串", "语义": "编辑器标题，纯 UI，不参与扫描", "kedai": "有" },
+      { "名": "content", "类型": "string", "默认": "空串", "语义": "命中后注入的正文；激活时先做宏替换再注入", "kedai": "有" },
+      { "名": "constant", "类型": "boolean", "默认": "false", "语义": "无条件激活；仍需过 disable / triggers / 角色过滤 / 定时效果等关", "kedai": "有（常态桶）" },
+      { "名": "vectorized", "类型": "boolean", "默认": "false", "语义": "扫描路径完全不读，仅 UI 三态与存储", "kedai": "缺" },
+      { "名": "selective", "类型": "boolean", "默认": "true", "语义": "编辑器已强制为 true；为 false 时副关键词完全不参与（静默无视）", "kedai": "缺" },
+      { "名": "selectiveLogic", "类型": "enum 0..3", "默认": "0 = AND_ANY", "语义": "主副关键词组合逻辑，四档全部建立在主键命中之上", "kedai": "缺" },
+      { "名": "addMemo", "类型": "boolean", "默认": "false", "语义": "是否把 comment 显示为卡片标题，纯 UI", "kedai": "缺（UI 恒显示）" },
+      { "名": "order", "类型": "number", "默认": "100", "语义": "优先级；全局排序键，按降序处理，最终注入顺序另算", "kedai": "有" },
+      { "名": "position", "类型": "number 0..7", "默认": "0 = before", "语义": "落点，八档见 worldinfo.position.slots", "kedai": "有但只有 0..4 且仅作排序键" },
+      { "名": "disable", "类型": "boolean", "默认": "false", "语义": "为 true 直接跳过该条", "kedai": "有（以 enabled 反转承载）" },
+      { "名": "ignoreBudget", "类型": "boolean", "默认": "false", "语义": "不受 token 预算限制，溢出后仍放行", "kedai": "缺" },
+      { "名": "excludeRecursion", "类型": "boolean", "默认": "false", "语义": "仅在「递归轮 ∧ 全局开递归」时屏蔽", "kedai": "缺" },
+      { "名": "preventRecursion", "类型": "boolean", "默认": "false", "语义": "本条不计入递归种子", "kedai": "缺" },
+      { "名": "matchPersonaDescription", "类型": "boolean", "默认": "false", "语义": "把 Persona 描述拼进扫描缓冲", "kedai": "缺" },
+      { "名": "matchCharacterDescription", "类型": "boolean", "默认": "false", "语义": "把角色描述拼进扫描缓冲", "kedai": "缺" },
+      { "名": "matchCharacterPersonality", "类型": "boolean", "默认": "false", "语义": "把角色性格拼进扫描缓冲", "kedai": "缺" },
+      { "名": "matchCharacterDepthPrompt", "类型": "boolean", "默认": "false", "语义": "把角色深度提示拼进扫描缓冲", "kedai": "缺" },
+      { "名": "matchScenario", "类型": "boolean", "默认": "false", "语义": "把场景拼进扫描缓冲", "kedai": "缺" },
+      { "名": "matchCreatorNotes", "类型": "boolean", "默认": "false", "语义": "把作者注释拼进扫描缓冲", "kedai": "缺" },
+      { "名": "delayUntilRecursion", "类型": "number", "默认": "0", "语义": "0/false=不延迟；true 归一为等级 1；N=递归第 N 级才可激活", "kedai": "缺" },
+      { "名": "probability", "类型": "number", "默认": "100", "语义": "触发百分比；等于 100 时短路不摇", "kedai": "有（但比较用开区间，见 worldinfo.budget.sticky）" },
+      { "名": "useProbability", "类型": "boolean", "默认": "true", "语义": "是否摇概率", "kedai": "有" },
+      { "名": "depth", "类型": "number", "默认": "4", "语义": "仅 position = atDepth 生效；深度 0 = prompt 最底部。注意它与全局扫描深度不是同一个东西", "kedai": "有字段但被当成扫描窗口兜底，语义漂移" },
+      { "名": "outletName", "类型": "string", "默认": "空串", "语义": "仅 position = outlet 生效；空名条目在组装期被丢弃", "kedai": "缺" },
+      { "名": "group", "类型": "string", "默认": "空串", "语义": "包含组名，支持逗号分隔多组", "kedai": "缺" },
+      { "名": "groupOverride", "类型": "boolean", "默认": "false", "语义": "组内优先：最高 order 者直接胜出，不再加权随机", "kedai": "缺" },
+      { "名": "groupWeight", "类型": "number", "默认": "100", "语义": "组内加权随机权重", "kedai": "缺" },
+      { "名": "scanDepth", "类型": "number 或 null", "默认": "null", "语义": "null = 用全局扫描深度；非 null 覆盖。与 depth 是两个独立字段", "kedai": "有（含扩展布局兜底）" },
+      { "名": "caseSensitive", "类型": "boolean 或 null", "默认": "null", "语义": "null = 用全局大小写设置", "kedai": "有（缺省 false，不区分 null）" },
+      { "名": "matchWholeWords", "类型": "boolean 或 null", "默认": "null", "语义": "null = 用全局整词设置；正则关键字无视此设置", "kedai": "缺" },
+      { "名": "useGroupScoring", "类型": "boolean 或 null", "默认": "null", "语义": "null = 用全局组评分开关", "kedai": "缺" },
+      { "名": "automationId", "类型": "string", "默认": "空串", "语义": "扫描不读；仅用于激活后触发 QuickReply 自动化", "kedai": "缺" },
+      { "名": "role", "类型": "enum 0..2", "默认": "0 = SYSTEM", "语义": "仅 position = atDepth 生效：0 system / 1 user / 2 assistant", "kedai": "有但语义不同（作为注入角色全局生效）" },
+      { "名": "sticky", "类型": "number 或 null", "默认": "null", "语义": "粘性：激活后持续 N 条消息", "kedai": "有字段、只解析不消费" },
+      { "名": "cooldown", "类型": "number 或 null", "默认": "null", "语义": "冷却：激活后 N 条消息内不再触发", "kedai": "有字段、只解析不消费" },
+      { "名": "delay", "类型": "number 或 null", "默认": "null", "语义": "延迟：聊天消息不足 N 条时屏蔽", "kedai": "缺" },
+      { "名": "characterFilterNames", "类型": "array", "默认": "[]", "语义": "角色名过滤；不进模板（新建条目时需单独补）", "kedai": "缺" },
+      { "名": "characterFilterTags", "类型": "array", "默认": "[]", "语义": "角色标签过滤；不进模板", "kedai": "缺" },
+      { "名": "characterFilterExclude", "类型": "boolean", "默认": "false", "语义": "上述过滤是黑名单还是白名单；不进模板", "kedai": "缺" },
+      { "名": "triggers", "类型": "array", "默认": "[]", "语义": "生成类型白名单：normal / continue / impersonate / swipe / regenerate / quiet", "kedai": "缺" }
+    ],
+    "定义表里没有但运行期存在的字段": {
+      "decorators 与 hash": "排序阶段为每条计算：装饰器从正文开头的 @@ 行解出，hash 用于定时效果的条目身份",
+      "displayIndex": "不在定义里，但所有转换器都会写；编辑器的自定义排序用它",
+      "characterFilter": "对象形态（isExclude / names / tags），由补全逻辑拼出"
+    },
+    "书级字段": "卡内书的 name / description / scan_depth / token_budget / recursive_scanning 等书级元数据，扫描路径完全不读，复刻可安全忽略。",
+    "易错点": [
+      "扫描路径不补默认值：缺 position 会静默丢弃，缺用概率开关会让概率恒过，缺 enabled 会变禁用",
+      "全局扫描深度（代码默认 2）与 atDepth 的默认深度（4）名字相同、数值不同，不可互换",
+      "uid 不是全局唯一：去重必须用 world + uid 二元组"
+    ]
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:59-118",
+      "server-rs/src/parsing/world_book.rs:332-448",
+      "server-rs/src/parsing/world_book.rs:369-376",
+      "server-rs/src/parsing/world_book.rs:451-468"
+    ],
+    "note": "Kedai 的条目结构只有 20 个字段（id/comment/keys/keys_secondary/regex/use_regex/content/constant/enabled/position/depth/scan_depth/order/case_sensitive/sticky/cooldown/probability/use_probability/role/decorators），缺 selective、selectiveLogic、group 三件套、四类 match 开关、include/outlet、delayUntilRecursion 与 ignoreBudget 等；position 采用自造的 0..4 映射（含 ST 运行期枚举里不存在的 normal=2 / bottom=3），且仅作排序键。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · World Info Entry 各字段",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L85-L265"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（字段定义表与默认值）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4082-L4125"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（常量与默认深度/权重）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L96-L100"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（编辑器补全函数，唯一调用点在编辑器路径）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L2104-L2142"
+    }
+  ],
+  "related": ["worldinfo.logic.selective", "worldinfo.position.slots", "worldinfo.depth.atdepth"],
+  "updated": "2026-10-31"
+}

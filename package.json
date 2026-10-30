@@ -30,7 +30,9 @@
     "count:tests": "node tools/count-tests.mjs",
     "hooks:install": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/install-hooks.ps1",
     "perf": "node tools/perf-baseline.mjs",
-    "inspect:card": "node tools/inspect-card.mjs"
+    "inspect:card": "node tools/inspect-card.mjs",
+    "kb": "node tools/kb.mjs",
+    "kb:check": "node tools/check-kb.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

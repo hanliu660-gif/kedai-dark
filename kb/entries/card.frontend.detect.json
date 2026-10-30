@@ -1,0 +1,58 @@
+{
+  "id": "card.frontend.detect",
+  "domain": "card",
+  "title": "前端卡判定是三条子串（`html>` / `<head>` / `<body`），极宽松 —— 不要加严",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "判定式": "正文包含 `html>` **或** `<head>` **或** `<body` 三者之一，即判为前端卡。",
+    "三条子串的形态（决定宽松度）": [
+      "`html>` —— **没有左尖括号**：既能命中开标签 `<html>`，也能命中闭标签 `</html>`",
+      "`<head>` —— 完整开标签",
+      "`<body` —— **没有右尖括号**：既能命中 `<body>`，也能命中 `<body class=...>`"
+    ],
+    "为什么不能加严（复刻最常犯的错）": "很多人会顺手写成「必须有 DOCTYPE」或「必须标签配对」。那就与上游行为分叉：卡作者只要正文里出现 `<body` 就**期望**被当作前端卡渲染。实测有卡的开场页是 `<head>…</head><body>…` 片段、没有 `<html>` 外壳，还夹着近百 KB 内联脚本 —— 严格判定会直接漏掉这张卡。",
+    "但不能只看这个判定": "上游的完整链路是「**先过围栏代码块**，再判子串」：正文里的裸 HTML 不算前端卡（正文净化阶段已经把脚本去掉）。⇒ 判定是「围栏代码块 + 三条子串」两个条件。",
+    "渲染后的二次识别": [
+      "渲染完成后给元素打上「已渲染」的标记类。",
+      "「是否前端元素」 = 有这个标记类 **或**（是 `pre`（围栏代码块）且其文本命中三条子串）。",
+      "「是否含前端元素」 = 上述 **或** 内含带标记类的 div **或** 内含满足条件的 `pre`。"
+    ],
+    "复刻的自我保护策略": [
+      "不要为「更精确」而收紧子串集合",
+      "若担心误判（普通文本偶然含 `<body`），可在「围栏 + 子串」双层门里收紧**第一层**（要求围栏是 html 类围栏），而不是改子串",
+      "若沙箱判定自己的「整页壳」条件（更严格，还要求有脚本与文档壳标记），要注意那是**另一套判据**，与「前端卡」不是同一个东西，别合并"
+    ],
+    "易错点": [
+      "加 DOCTYPE 要求：漏掉片段式前端卡",
+      "要求标签配对：同样漏卡",
+      "把 `html>` 写成 `<html>`：漏掉只有闭标签的情形",
+      "把 `<body` 写成 `<body>`：漏掉带属性的 body",
+      "跳过围栏检查：裸 HTML 被误判成前端卡（净化后脚本已没了，渲染出来是空壳）",
+      "把「整页脚本卡」的判据（要求脚本 + 文档壳）与「前端卡」的宽松判据混为一谈"
+    ],
+    "pseudocode": "是前端卡(正文):\n  先确认内容来自围栏代码块（不是正文裸 HTML）\n  返回 包含('html>') 或 包含('<head>') 或 包含('<body')\n\n判定后的渲染:\n  渲染完成 → 元素.加标记类('已渲染')\n\n是否前端元素(元素) = 元素.有标记类 或 (元素 是 pre 且 是前端卡(元素.文本))\n是否含前端元素(元素) = 是否前端元素(元素) 或 含带标记类的div 或 含(满足条件的 pre)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "web/src/render.ts:460-472",
+      "web/src/render.ts:484-493"
+    ],
+    "note": "Kedai 的前端卡判定 `isScriptedPageDocument` **明显更严格**：要求正文里必须有 `<script\\b>`，且开头 4000 字符内要有 `<html` / `<!doctype html` / `<head` 三选一，并且先剥 markdown 围栏（`stripDocumentFence`，还处理了「围栏前带作者分隔符」这种真实情况）。⇒ 这是**性质差异**：上游的三子串判定宽松到「只含 `<body` 也算」，Kedai 要求「有脚本 + 有文档壳标记」。后果：只含 `<body>`/`</html>` 而没脚本或壳标记的卡在 Kedai 里不会被当作整页卡渲染，但上游会。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 is_frontend.ts（三子串判定原始实现）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/util/is_frontend.ts#L1-L18"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 is_frontend.ts（isFrontendElement / containsFrontendElement 变体）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/util/is_frontend.ts#L5-L17"
+    }
+  ],
+  "related": ["card.png.tEXt", "sandbox.jquery.two_hosts", "sandbox.predefine.injection"],
+  "updated": "2026-10-31"
+}

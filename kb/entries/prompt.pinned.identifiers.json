@@ -1,0 +1,85 @@
+{
+  "id": "prompt.pinned.identifiers",
+  "domain": "prompt",
+  "title": "12 个内建锚点 identifier：不可删、7 个写死调用序列、缺失会自动补回",
+  "priority": "P1",
+  "authority": "src",
+  "spec": {
+    "12 个内建锚点": [
+      { "identifier": "main", "可删": "否", "可编辑": "是", "特征": "主提示词，有默认正文；即使被禁用也保留空内容替身（供相对注入落点用）" },
+      { "identifier": "worldInfoBefore", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位（无正文），由世界书 before 档填充" },
+      { "identifier": "worldInfoAfter", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位，由世界书 after 档填充" },
+      { "identifier": "charDescription", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位，由角色描述填充" },
+      { "identifier": "charPersonality", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位" },
+      { "identifier": "scenario", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位" },
+      { "identifier": "personaDescription", "可删": "否", "可编辑": "**强制可编辑**", "特征": "标记位" },
+      { "identifier": "dialogueExamples", "可删": "否", "可编辑": "否", "特征": "标记位，示例对话" },
+      { "identifier": "chatHistory", "可删": "否", "可编辑": "否", "特征": "标记位，聊天历史" },
+      { "identifier": "nsfw", "可删": "否", "可编辑": "是", "特征": "默认正文为空" },
+      { "identifier": "jailbreak", "可删": "否", "可编辑": "是", "特征": "历史之后指令（Post-History Instructions）" },
+      { "identifier": "enhanceDefinitions", "可删": "否", "可编辑": "是", "特征": "唯一「是系统提示但不是标记位」的项" }
+    ],
+    "四张判定名单": [
+      "可删名单：只有「非系统提示」的项可删 ⇒ 上面 12 个**全部不可删**。用户自建提示词才可删。",
+      "可编辑名单：6 个固定项强制可编辑，外加所有非标记位项；其余标记位项不可编辑。",
+      "可开关名单：逻辑是「是标记位 且 不在豁免名单 → 不可开关」；默认 12 项全部落在可开关情形。",
+      "「从顺序里移除」与「真删除」是**两个不同的操作**：前者只从顺序数组摘掉（本体保留，可再挂回），后者只对非系统提示开放。"
+    ],
+    "7 个写死的调用序列（顺序数组无法改变它们之间的相对先后）": [
+      "世界书前 → 主提示词 → 世界书后 → 角色描述 → 角色性格 → 场景 → 人物设定描述",
+      "这 7 个的槽位先被占；不在启用清单里的自动跳过。",
+      "之后才按顺序数组追加「其它系统提示（固定为 nsfw 与 jailbreak 两项）+ 所有非系统且非绝对注入的项」。",
+      "另有写死 identifier 的两项：定义增强与偏置，按需最后追加。",
+      "控制类提示词（扮演指令 / 静默提示 / Continue 预填）**一律压到数组末尾**（不占槽位）。",
+      "已知的相对扩展提示词名单也写死：摘要 / 作者注 / 向量记忆 / 向量数据库 / 智能上下文 —— 逐个注入到「主提示词」的槽内。",
+      "聊天历史与示例对话的先后由「固定示例」开关决定（开则示例在前），但它们各自槽位仍由顺序决定；该开关只在预算吃紧时影响谁被裁掉。"
+    ],
+    "缺失自动补回": "每次加载都会把 12 个内建锚点与当前清单比对，缺哪个就补一个默认对象并记日志。另有清洗阶段：顺序数组里的提示词清单兜空数组、全局策略下顺序为空则塞入默认顺序、无 id 的提示词补 uuid、**删掉顺序数组里指向不存在提示词的引用**（于是界面顺序数组会静默变短）。",
+    "易错点": [
+      "以为顺序数组能调整那 7 个锚点之间的先后（不能，写死在代码里）",
+      "把「从顺序移除」实现成删除本体（会永久丢提示词）",
+      "允许删除内建锚点：ST 只允许删非系统提示",
+      "忘了补回逻辑：换一张卡后少一个锚点，后续装配整段缺块",
+      "顺序数组里引用了不存在的 id 却不清理：装配时静默少项"
+    ]
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/preset.rs:130-138",
+      "server-rs/src/parsing/preset.rs:1-25",
+      "server-rs/src/agents/engine/messages/context.rs:336",
+      "web/src/api/types.ts:789-830"
+    ],
+    "note": "Kedai 把 ST 预设解析成一串「楼层」，用 `prompt_order` 里的 identifier 只取启用顺序（禁用的跳过、重复 id 加后缀），并**不识别这 12 个内建锚点的特殊地位**：既没有「不可删/强制可编辑」名单，也没有 7 个写死调用序列，还没有缺失补回逻辑。⇒ 导入的 ST 预设若有锚点被删或被禁用，Kedai 不会自动补齐，靠自己的占位符渲染（`{{world_info}}` 等）兜底。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（12 个内建锚点定义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L2001-L2081"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（不可删 / 可编辑 / 可开关三张名单）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L1073-L1112"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（缺失补回与清洗）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L1006-L1059"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（7 个写死调用序列与固定系统提示名单）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L1212-L1292"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（默认顺序 12 项）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L2087-L2141"
+    }
+  ],
+  "related": ["prompt.slot.assignment", "prompt.injection.two_modes"],
+  "updated": "2026-10-31"
+}

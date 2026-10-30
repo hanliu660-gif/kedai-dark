@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kedai 酒馆兼容知识库条目",
+  "description": "一条契约一个文件。只存行为契约，不含上游源码片段（见 kb/README.md §1 许可红线）。",
+  "type": "object",
+  "required": ["id", "domain", "title", "priority", "authority", "spec", "kedai", "sources", "updated"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,15}\\.[a-z0-9_.]{1,60}$",
+      "description": "格式 <domain>.<子域>.<名>，全局唯一，小写，点分隔"
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["worldinfo", "macro", "regex", "prompt", "variable", "card", "sandbox", "mvu", "stscript"]
+    },
+    "title": { "type": "string", "minLength": 4, "maxLength": 80 },
+    "priority": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2"],
+      "description": "P0=违反会导致卡行为错乱；P1=明显功能缺失；P2=边缘差异"
+    },
+    "authority": {
+      "type": "string",
+      "enum": ["doc", "src", "community"],
+      "description": "doc=官方文档（最高，默认）；src=源码补的实现级细节；community=社区实践（最低）"
+    },
+    "spec": {
+      "type": "object",
+      "description": "契约正文。结构随 domain 而定，但禁止含上游源码片段。允许 pseudocode 字段用伪代码表达。",
+      "additionalProperties": true
+    },
+    "kedai": {
+      "type": "object",
+      "required": ["status", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["match", "partial", "missing", "differs"],
+          "description": "match=已一致；partial=部分实现；missing=完全未实现；differs=实现了但与契约不符"
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "description": "本仓代码位置，格式 相对仓库根/文件:行号 或 文件:行号（必须实际读过，不许猜）",
+          "items": { "type": "string", "pattern": "^[^:]+(:[0-9]+(\\s*[,\\-]\\s*[0-9]+)*)?$" }
+        },
+        "note": { "type": "string", "maxLength": 400 }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "依据清单。ref 是【指路指针】不是内容：上游路径+行号，指向 C:\\src-st\\ 或文档 URL。",
+      "items": {
+        "type": "object",
+        "required": ["kind", "name", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "type": "string", "enum": ["doc", "src", "community"] },
+          "name": { "type": "string", "description": "人类可读的来源名，如 ST 官方文档 worldinfo.md" },
+          "ref": {
+            "type": "string",
+            "description": "上游线上指针 https URL（形如 https://github.com/<owner>/<repo>/blob/<ref>/<path>#L<起>-L<止>）。禁止写本机绝对路径——本仓是公开仓"
+          }
+        }
+      }
+    },
+    "related": {
+      "type": "array",
+      "description": "相关条目 ID（可跨域）",
+      "items": { "type": "string" }
+    },
+    "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+  }
+}

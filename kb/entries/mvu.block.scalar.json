@@ -1,0 +1,79 @@
+{
+  "id": "mvu.block.scalar",
+  "domain": "mvu",
+  "title": "块标量屏蔽的必要性与中文键盲区：`\\w` 只认 ASCII，中文键的 `|` 不触发屏蔽",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "问题": "模型的补丁里经常把含标签字样的长文（剧情、示例、说明）塞进 YAML 块标量（`key: |` / `key: >-`）。块标量内容是**纯文本**，但扫描器只认字符不认语义 ⇒ 如果不屏蔽，数据里的标签字样会被当成真的块边界，导致外层块被提前截断、命令被误解析。",
+    "屏蔽实现的三层": [
+      "**等长空格屏蔽视图**：不改原文、保留偏移（把要屏蔽的区间里除换行外的字符全部替换成空格）。这样后续扫描只看「可见字符」，而所有偏移仍对应原文。",
+      "**块标量状态机**：在每行行首检测「是不是块标量声明行」；是则记录基准缩进，之后凡是「更深缩进」或「空行」的行都整行屏蔽；遇到缩进退回（≤ 基准）的非空行即退出标量区。",
+      "**普通标量屏蔽**：`键: 值` 形式的单行标量，冒号后的值整体屏蔽（值首字符不能是引号/方括号/花括号/`|`/`>`/`#`）。"
+    ],
+    "声明行正则应允许的形态": [
+      "行首可有空白",
+      "可有列表项前缀（`- `）",
+      "键名可含除 `#` 与换行外的任意字符（**包括中文**）",
+      "`|` 或 `>` 之后可跟可选的对齐/保留符号与数字，以及可选的行尾注释"
+    ],
+    "基准缩进的坑": "基准 = 行首缩进 + （若是列表项则再 +2）。为什么 +2：`- 键: |` 的值域缩进在语义上相对「键」而不是相对行首的 `-`。",
+    "**中文键盲区（本条最重要的发现）**": {
+      "事实": "上游的「块标量 mode 判定」用的正则里，键名字符类是 ASCII 的 `\\w` ⇒ **中文键（如 `角色:`、`好感度:`）不匹配该判定，mode 不会进入 YAML 状态，块标量分支整个不触发**。",
+      "实测后果": "中文键 + `好感度: |` 后面跟着含 `<JSONPatch>` 字样的文本 → 补丁块被当成真标签，出现多个 patch 标记、外层块「未闭合」。",
+      "为什么中文卡必踩": "中文卡片的变量键几乎必然是中文，且状态描述类内容极爱用块标量写长文。",
+      "复刻的正确做法": "照抄状态机与缩进感知，但把键名字符类改成 **Unicode 感知**（`字母/数字/下划线` 的 Unicode 类别 + 全局标志），否则中文卡同样中招。"
+    },
+    "其它同扫描器的屏蔽层（都要有）": [
+      "思考区（栈式：进入与退出都屏蔽，并且从「可见视图」里彻底抹掉）",
+      "字符串（双引号/单引号，含反斜杠转义与单引号双写）",
+      "块注释与行注释（JSON 态的行注释、YAML 态的井号注释）",
+      "代码围栏（遇到三反引号跳到行尾）",
+      "散文撇号保护：当存在显式更新块、且标签嵌套深度为 0、且撇号前一字符是字母或数字时，**不**进入字符串态，避免 `It's` 把后面的块整个吞掉"
+    ],
+    "命令级的括号配对（另一处，别混）": "标签配对之外，命令本身就有一层「括号配对」：`(` 加一、`)` 减一，计数归零才算命令结束；**引号内不计数**（所以参数里写右括号不会提前闭合）；找不到配对括号 → 放弃该条；此外命令必须跟分号才算完整。",
+    "易错点": [
+      "不做块标量屏蔽：长文里的标签字样会被误当命令",
+      "键名字符类用 ASCII：中文卡全盲",
+      "基准缩进不加列表项的 +2：`- 键: |` 的值域判定错位",
+      "屏蔽时改动原文（而不是等长空格）：所有偏移全错",
+      "块标量退出条件漏了「空行继续屏蔽」：中间空行的段落会被提前结束",
+      "命令括号配对时不过滤引号：参数字符串里的 `)` 会提前闭合"
+    ],
+    "pseudocode": "# 扫描(原文) → 可见视图 + 偏移\n可见 = 原文; 屏蔽栈 = []\nfor i 逐字符:\n  若 在思考区/字符串/注释/围栏: 继续屏蔽\n  若 行首 ∧ 处于 YAML 态 ∧ 不是引号 ∧ 不是屏蔽栈内:\n    行 = 当前行; 缩进 = 行首空白长度\n    若 已有块标量基准:\n       若 行 为空 或 缩进 > 基准: 整行屏蔽; 继续\n       否则: 退出块标量\n    若 行 匹配「键: | 或 >」声明（键名字符类为 Unicode 类别 + 全局标志）:\n       基准 = 缩进 + (是列表项 ? 2 : 0); 整行屏蔽; 继续\n  若 行内普通标量的冒号后有值: 屏蔽值段\n# 之后再做栈式配对与命令扫描\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/assistant/patch.rs:60",
+      "server-rs/src/parsing/assistant/patch.rs:78",
+      "server-rs/src/parsing/assistant/initvar.rs:116-128",
+      "web/src/mvu/variables.ts:1-10"
+    ],
+    "note": "Kedai **完全没有**「提取更新块时的块标量屏蔽」：`patch.rs` 用两处非贪婪正则直接扫 `<UpdateVariable>` / `<JSONPatch>`（`grep 块标量/block_scalar` 在 patch.rs = 0 命中）。实跑后果已在笔记里定案：正文先提及这对标签时会产生 2 个匹配（第 1 个是垃圾），可能误写变量。**但在 [InitVar] 侧 Kedai 反而有块标量识别**（`initvar.rs` 的 `block_scalar_marker` / `fold_block_scalar`，注释明确记录「露出日记-0615」的衣物/物品描述全是折叠标量，不认的话变量树整层错乱）——即两侧能力不对称：解析侧的补丁提取没有屏蔽，初始变量侧的 YAML 解析有。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU structured_update.ts（等长空格屏蔽视图 + 块标量状态机 + 普通标量屏蔽）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update/structured_update.ts#L24-L78"
+    },
+    {
+      "kind": "src",
+      "name": "MVU structured_update.ts（mode 判定正则里 \\w 为 ASCII —— 中文键盲区成因）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update/structured_update.ts#L54"
+    },
+    {
+      "kind": "src",
+      "name": "MVU structured_update.ts（思考区/字符串/注释/围栏/撇号保护各屏蔽层）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update/structured_update.ts#L81-L188"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（命令级括号配对与引号感知）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L584-L620"
+    }
+  ],
+  "related": ["mvu.updatevariable.commands", "mvu.initvar.merge", "regex.substitute.modes"],
+  "updated": "2026-10-31"
+}

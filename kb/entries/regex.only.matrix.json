@@ -1,0 +1,65 @@
+{
+  "id": "regex.only.matrix",
+  "domain": "regex",
+  "title": "两个 only 开关的四态真值表：这是「不发送」的实现方式",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "两个开关": {
+      "仅改显示（Alter Chat Display）": "脚本只在聊天界面渲染时生效，落盘内容不变",
+      "仅改提示词（Alter Outgoing Prompt）": "脚本只在组装送入模型的提示词时生效，落盘内容不变"
+    },
+    "四态真值表": [
+      { "仅显示": false, "仅提示词": false, "效果": "**直接改写聊天记录本身**（不可逆）⇒ 显示与提示词天然一致", "在显示面跑": "否", "在提示词面跑": "否", "在源改写阶段跑": "**是**" },
+      { "仅显示": true, "仅提示词": false, "效果": "只在界面显示时改，落盘不变", "在显示面跑": "是", "在提示词面跑": "否", "在源改写阶段跑": "否" },
+      { "仅显示": false, "仅提示词": true, "效果": "只在进提示词时改，落盘不变 ⇒ **「不发送」的实现方式**（把不该给模型看的块从 prompt 里删掉，但界面照常显示）", "在显示面跑": "否", "在提示词面跑": "是", "在源改写阶段跑": "否" },
+      { "仅显示": true, "仅提示词": true, "效果": "两处都改但不落盘 ⇒ 所见与所发可能不同；迁移来的老脚本多为此组合", "在显示面跑": "是", "在提示词面跑": "是", "在源改写阶段跑": "否" }
+    ],
+    "为什么「两个都不勾」只在源阶段跑": {
+      "理由": "源改写发生在更早阶段（生成结果落盘、用户输入落盘、开场白载入），既然聊天记录本身已经被改过，显示与组装提示词时再改一遍就是重复。源码注释明确表达了这一点。",
+      "后果（复刻最易错）": "若把它实现成「所有情况都跑」，这类脚本会在显示面与提示词面各再跑一遍 ⇒ 双重替换、甚至把已替换的产物再替换成空。",
+      "实操含义": "「两个都不勾」= 我会永久改写聊天记录；「仅提示词」= 我只过滤发给模型的内容；「仅显示」= 我只改界面观感。"
+    },
+    "典型卡内用法": [
+      "「[不发送]去除变量更新」：**仅提示词**（把更新块从 prompt 删掉，但界面/变量解析仍能看到原始块）",
+      "「隐藏思考块」：仅显示（界面不显示，落盘保留）",
+      "「状态栏占位符 → HTML」：通常仅显示；若同时需要影响提示词则双勾",
+      "老 MD_DISPLAY 脚本迁移后：双勾"
+    ],
+    "与本条相关的判定位置": "适用面三分支是「或」关系，且第三支显式带两个否定。复刻时不要写成「三个条件取与」或「两个 only 任一为真就全跑」。",
+    "易错点": [
+      "把「两不勾」理解为「全都在跑」（最贵的错，会让每张卡都双重替换）",
+      "以为「仅提示词」会把块从聊天记录里删掉（不删，记录里还在，下次显示仍在）",
+      "以为「仅显示」会影响模型看到的 prompt（不影响）",
+      "迁移老数据时忘了把两个 only 都置真"
+    ]
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/regex_script.rs:20-21",
+      "web/src/render.ts:593-611",
+      "web/src/render.ts:377-380"
+    ],
+    "note": "Kedai 只有单开关 markdown_only（且用法被收窄成「显示层只应用 markdown_only 的隐藏类脚本」），**没有 prompt_only**：`grep prompt_only|promptOnly` 全仓 0 命中。⇒ 「[不发送]去除变量更新」这类酒馆 MVU 卡标配正则无法表达，变量更新块只能靠引擎自己的解析剥离（render.ts 里用的是内置的更新块解析器，而不是卡的正则脚本）。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · 正则扩展（Alter Chat Display / Alter Outgoing Prompt 说明）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/extensions/Regex.md#L1-L120"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（适用面三支 OR 的判定）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L348-L355"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 index.js（两个 only 的 UI 字段映射）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/index.js#L848-L868"
+    }
+  ],
+  "related": ["regex.engine.chain", "regex.placement.constants"],
+  "updated": "2026-10-31"
+}

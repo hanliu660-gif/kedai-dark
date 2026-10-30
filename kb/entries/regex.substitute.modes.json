@@ -1,0 +1,76 @@
+{
+  "id": "regex.substitute.modes",
+  "domain": "regex",
+  "title": "findRegex 里的宏替换三档（NONE/RAW/ESCAPED）：ESCAPED 才是安全默认",
+  "priority": "P1",
+  "authority": "src",
+  "spec": {
+    "字段": "每个正则脚本有一个「查找正则是否做宏替换」的枚举，取值 0/1/2。落库可能是字符串，**判定前必须转数字**。",
+    "三档": [
+      { "值": 0, "名": "不做替换", "语义": "查找正则原样拿去编译。若里面写了宏（双花括号），通常会被当作正则语法（量词花括号一般直接编译失败）", "适用": "纯静态正则" },
+      { "值": 1, "名": "原样替换", "语义": "先做宏展开，把宏的值**原样拼进**正则字符串", "适用": "宏值本身就是合法的正则片段（高级用法）" },
+      { "值": 2, "名": "转义替换", "语义": "先做宏展开，但**每个宏的值先被转义**再拼进正则", "适用": "宏值是字面文本（角色名、变量内容）—— 这是**安全档**" }
+    ],
+    "转义表（值档 2）": {
+      "控制字符": "换行 / 回车 / 制表 / 垂直制表 / 换页 / 空字符 → 各自的转义序列",
+      "正则元字符": "点、脱字符、美元、星号、加号、问号、花括号、方括号、反斜杠、斜杠、竖线、圆括号 —— 一律前加反斜杠"
+    },
+    "为什么需要 ESCAPED": "宏展开出的内容可能含正则元字符。直接拼进 pattern 会改变语义（例如用户昵称里有个点变成通配符），严重时编译失败使整条脚本静默失效。ESCAPED 把用户数据当字面量，这是卡片作者最需要的默认行为。",
+    "其它两条相关语义（易错）": [
+      "「禁止用正则脚本」的全局开关：关掉时整条链路一条脚本都不跑（不是只跳过某类）。",
+      "脚本被停用时：判定发生在**替换函数内部**，因此停用脚本仍会过完前面所有门，只是不产生替换。"
+    ],
+    "编译与缓存": {
+      "缓存": "编译后的正则有进程级缓存（LRU，上限千级），命中时把条目移到最新位；未命中且满则淘汰最旧。",
+      "共享对象的副作用": "缓存归还的是**同一个正则对象**，所以带全局/粘滞标志的正则必须在使用前把「上次匹配位置」清零，否则会漏匹配。这一条复刻时若用「每次新建」的做法则不适用，但用缓存就必须处理。",
+      "非法正则": "编译失败时静默返回原串（不报错、不中断其它脚本）。"
+    },
+    "替换串里的引用语义（与 findRegex 相关，配合作者预期）": [
+      "`{{match}}` 会被改写成 `$0`（大小写不敏感），且**先于** `$数字` 处理；所以 `{{match}}` 里的美元符号不会被二次解释。",
+      "只认 `$数字` 与 `$<命名组>` 两种引用；JS 原生的 `$&` / `` $` `` / `$'` / `$$` **不被展开**，当作字面量留下。",
+      "引用的捕获组不存在时输出**空串**（不是保留 `$n` 字面）。",
+      "替换串里的宏是在**替换完成之后**统一展开的。"
+    ],
+    "易错点": [
+      "把 substituteRegex 当布尔：它是三档数字枚举",
+      "不转数字直接比较字符串：落库若是 `\"1\"` 会走 default 分支（告警 + 当 0 档）",
+      "把 ESCAPED 实现成「整体转义」：只转义宏展开出的值，正则本身的元字符要保持",
+      "缓存正则后不清匹配位置：全局正则会漏掉每段的首个匹配",
+      "把 `$&` 之类也展开：会让作者写的字面量被替换掉"
+    ],
+    "pseudocode": "档 = 数字(脚本.替换模式)\n若 档 == 0: 模式串 = 脚本.查找正则\n若 档 == 1: 模式串 = 展开宏(脚本.查找正则)\n若 档 == 2: 模式串 = 展开宏(脚本.查找正则, 值转义器 = 正则元字符转义)\n其它: 告警; 模式串 = 脚本.查找正则\n正则对象 = 缓存.取(模式串); 若 编译失败 → 输出原串\n取出后 若 带全局/粘滞标志 → 匹配位置清零\n输出 = replace(正则对象, 替换串中的引用逐项求值 且 求值后展开宏)\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/regex_script.rs:12-32",
+      "server-rs/src/parsing/regex_script.rs:150-167",
+      "web/src/render.ts:399-406"
+    ],
+    "note": "Kedai 没有 substituteRegex 字段：findRegex 一律原样拆分 `/pattern/flags` 后直接编译（相当于恒为 0 档），不做宏替换、也没有转义档。⇒ 卡片里「用宏拼出查找正则」的写法在 Kedai 里会编译失败并被静默跳过。另 Kedai 的 flags 只认 i / m / s（Rust 正则不支持 g/y/u 家族），渲染侧 TS 实现则强制补 g 标志。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（三档实现与转义器）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L391-L410"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（宏值正则转义表）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L304-L324"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（LRU 缓存与匹配位置清零）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L40-L90"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 regex 扩展 engine.js（替换串引用与 trim 语义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/extensions/regex/engine.js#L419-L465"
+    }
+  ],
+  "related": ["regex.engine.chain", "regex.only.matrix"],
+  "updated": "2026-10-31"
+}

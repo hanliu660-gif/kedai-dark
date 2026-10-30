@@ -1,0 +1,82 @@
+{
+  "id": "worldinfo.depth.atdepth",
+  "domain": "worldinfo",
+  "title": "atDepth 的 depth 缺失会静默丢条；且 depth 绝不可当扫描窗口",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "两个不同的东西": {
+      "depth（插入深度）": "只在 position = atDepth 时生效，表示「从 prompt 最底部往上数第几条」插入；条目默认值 4。",
+      "scanDepth（扫描窗口）": "关键词只扫最近 N 条消息；条目默认 null = 沿用全局值。两者名字相近但语义正交，**不可互换**。"
+    },
+    "静默丢条（上游实现缺陷，复刻必须避开）": {
+      "现象": "手写或第三方导入的 atDepth 条目若缺 depth 字段，最终**永远不会被注入**，且无任何告警。",
+      "成因链": [
+        "1. 组装期给条目分桶时，判重键用的是「depth 取缺省值 4」，但写入桶里的 depth 是条目的**裸值**（缺省即空）。",
+        "2. 消费侧把桶里的 depth 转成数字：空值 → NaN。",
+        "3. 注入时按「桶 depth 全等于当前枚举的下标」匹配，NaN 恒不相等 → 该条目永不注入。"
+      ],
+      "规避": "复刻时必须在落桶处统一补齐缺省深度（缺省即 4），不要照抄「判重补齐、写入裸值」的不对称。",
+      "触发面": "编辑器总会写 depth = 4，所以只有手写 JSON / 第三方转换器缺字段时才会踩。"
+    },
+    "depth 语义边界": [
+      "深度 0 = prompt 最底部（最新消息之后的位置）。",
+      "同一深度 + 同一角色的多条合并成一条注入，桶内按 order 升序（低 order 在前）。",
+      "同一深度 + 不同角色会依次插入同一位置，顺序固定为 system → user → assistant。",
+      "role 缺省为 system（0）。system 那条在一些实现里会带叙述者类型标记。"
+    ],
+    "与全局扫描深度的区别": "全局扫描深度代码初值是 2，atDepth 的默认深度是 4——**同名不同物、数值也不同**，是历史包袱。另注意出货配置的 settings 快照可能把全局值写成别的值，但代码初值才是契约。",
+    "扫描窗口的细节": [
+      "窗口为 0 时只评估递归条目与 Author's Note（不是「扫全部」）。",
+      "窗口上界是**右开**：scanDepth = 2 取最新两条；depth <= 0 一律空串。",
+      "扫描文本以固定哨兵字符打头、以「换行 + 哨兵」连接，使「消息开头即出现关键词」也能被整词匹配命中。",
+      "开启「包含名字」时，每条消息前会拼「名字: 」前缀，且这步由调用方在构造缓冲时就加好，缓冲内部不再补。"
+    ],
+    "易错点": [
+      "把条目 depth 当成扫描窗口（会静默收窄窗口，导致格式类条目永不命中）",
+      "补齐缺省只补一半：判重补齐、落桶不补 → atDepth 全丢",
+      "把 depth = 0 理解成「不注入」：0 是合法深度，表示最底部",
+      "以为全局扫描深度与 atDepth 默认深度是同一个常量"
+    ]
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:519-534",
+      "server-rs/src/parsing/world_book.rs:381-397",
+      "server-rs/src/agents/engine/worldbook.rs:130-143",
+      "server-rs/src/services/prompt_kit.rs:108-139",
+      "web/src/components/WorldBooksModal.vue:427"
+    ],
+    "note": "Kedai 把条目 depth 当作「关键词扫描窗口的缺省兜底」消费（scan_depth 未声明时用 depth 当窗口长度），而不是插入深度：世界书注入只有「常态并入 system / 激发追加最新用户消息尾部」两种落点，没有任何按深度插入聊天的实现，所以 atDepth 档整体不存在。仓库注释已明确记录过一次事故（角色卡把 extensions.depth=1 当窗口导致格式条目永不命中），但代码仍是 depth 兜底窗口的行为。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Insertion Position · @ D 与 depth 0 的含义",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L149-L152"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Scan Depth（0 的特殊语义）",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L339-L347"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（组装：判重补齐 vs 落桶裸值的对称性缺陷）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5236-L5247"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 script.js（深度插入按全等匹配，NaN 永不相等）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/script.js#L5628-L5675"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（扫描缓冲的哨兵与前缀规则）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L279-L328"
+    }
+  ],
+  "related": ["worldinfo.position.slots", "worldinfo.field.schema"],
+  "updated": "2026-10-31"
+}

@@ -1,0 +1,125 @@
+{
+  "$comment": "Kedai 酒馆兼容知识库总索引。由 tools/check-kb.mjs 校验与 entries/ 双向一致。新增/删除条目必须同步本文件。",
+  "version": 1,
+  "updated": "2026-10-31",
+  "authority_policy": {
+    "order": [
+      "doc",
+      "src",
+      "community"
+    ],
+    "note": "以官方文档为准（千夏 2026-10-30 拍板）；源码仅补文档写不到的实现级细节；社区实践最低。"
+  },
+  "license_policy": {
+    "upstream": {
+      "SillyTavern": "AGPL-3.0",
+      "JS-Slash-Runner": "PolyForm-Noncommercial-1.0.0",
+      "MagVarUpdate": "MIT",
+      "ST-Prompt-Template": "AGPL-3.0",
+      "Kedai": "MIT"
+    },
+    "rule": "只存行为契约，禁止贴上游源码片段（见 README.md §1）。"
+  },
+  "domains": {
+    "worldinfo": {
+      "label": "世界书",
+      "upstream": "SillyTavern 内建",
+      "entries": [
+        "worldinfo.field.schema",
+        "worldinfo.logic.selective",
+        "worldinfo.position.slots",
+        "worldinfo.activation.flow",
+        "worldinfo.budget.sticky",
+        "worldinfo.timed.state",
+        "worldinfo.depth.atdepth"
+      ]
+    },
+    "macro": {
+      "label": "宏系统",
+      "upstream": "SillyTavern 内建",
+      "entries": [
+        "macro.syntax.argspec",
+        "macro.eval.order",
+        "macro.registry.args",
+        "macro.variable.family",
+        "macro.flags"
+      ]
+    },
+    "regex": {
+      "label": "正则脚本",
+      "upstream": "SillyTavern 内建扩展",
+      "entries": [
+        "regex.placement.constants",
+        "regex.engine.chain",
+        "regex.only.matrix",
+        "regex.substitute.modes"
+      ]
+    },
+    "prompt": {
+      "label": "Prompt 装配",
+      "upstream": "SillyTavern 内建",
+      "entries": [
+        "prompt.injection.two_modes",
+        "prompt.slot.assignment",
+        "prompt.pinned.identifiers"
+      ]
+    },
+    "variable": {
+      "label": "变量存储",
+      "upstream": "SillyTavern 内建 + 酒馆助手",
+      "entries": [
+        "variable.store.scope"
+      ]
+    },
+    "card": {
+      "label": "角色卡载体",
+      "upstream": "SillyTavern 内建",
+      "entries": [
+        "card.png.tEXt",
+        "card.chat.jsonl",
+        "card.frontend.detect",
+        "card.lodash.shared"
+      ]
+    },
+    "sandbox": {
+      "label": "卡沙箱与 iframe 宿主",
+      "upstream": "酒馆助手 JS-Slash-Runner",
+      "entries": [
+        "sandbox.sillytavern.getcontext",
+        "sandbox.predefine.injection",
+        "sandbox.jquery.two_hosts",
+        "sandbox.event.chat_changed",
+        "sandbox.iframe.pagehide"
+      ]
+    },
+    "mvu": {
+      "label": "MVU 变量框架",
+      "upstream": "MagVarUpdate（社区扩展）",
+      "entries": [
+        "mvu.vwd.pair",
+        "mvu.updatevariable.commands",
+        "mvu.block.scalar",
+        "mvu.initvar.merge"
+      ]
+    },
+    "stscript": {
+      "label": "STscript / slash 命令",
+      "upstream": "SillyTavern 内建",
+      "entries": []
+    }
+  },
+  "stats": {
+    "total_entries": 33,
+    "by_status": {
+      "match": 0,
+      "partial": 8,
+      "missing": 12,
+      "differs": 13
+    },
+    "by_priority": {
+      "P0": 31,
+      "P1": 2,
+      "P2": 0
+    }
+  }
+}

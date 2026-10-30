@@ -1,0 +1,89 @@
+{
+  "id": "macro.variable.family",
+  "domain": "macro",
+  "title": "变量宏族：local 与 global 两套 18 个，getvar 找不到返回空串（不报错）",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "两套存储": {
+      "local（会话级）": "随当前聊天保存，进聊天元数据。前缀无标记，宏名不带 global。",
+      "global（全局级）": "跨聊天持久。宏名带 global，与 local 家族一一对应。"
+    },
+    "local 家族（9 个）": [
+      { "宏名": "getvar", "参数": "名", "返回": "变量值", "副作用": "无", "备注": "不存在返回空串，不报错；纯数字字符串在读取时会被转成数字再转回字符串" },
+      { "宏名": "setvar", "参数": "名, 值", "返回": "空串", "副作用": "写 local", "备注": "显式传两个参数" },
+      { "宏名": "addvar", "参数": "名, 值", "返回": "空串", "副作用": "写 local", "备注": "数值相加；非数值时退化为字符串追加" },
+      { "宏名": "incvar", "参数": "名", "返回": "新值", "副作用": "写 local", "备注": "**返回自增后的值**，不是空串" },
+      { "宏名": "decvar", "参数": "名", "返回": "新值", "副作用": "写 local", "备注": "**返回自减后的值**" },
+      { "宏名": "hasvar", "参数": "名", "返回": "`true`/`false` 字符串", "副作用": "无", "别名": "varexists" },
+      { "宏名": "deletevar", "参数": "名", "返回": "空串", "副作用": "删 local", "别名": "flushvar" },
+      { "宏名": "setvarkey", "参数": "名, 键, 值", "返回": "空串", "副作用": "写 local（按索引）", "别名": "setvarindex" },
+      { "宏名": "getvarkey", "参数": "名, 键", "返回": "对应索引的值", "副作用": "无", "别名": "getvarindex" }
+    ],
+    "global 家族（9 个，与 local 一一对应）": "getglobalvar / setglobalvar / addglobalvar / incglobalvar / decglobalvar / hasglobalvar / deleteglobalvar / setglobalvarkey / getglobalvarkey；别名分别是 globalvarexists / flushglobalvar / setglobalvarindex / getglobalvarindex。语义与 local 版完全同构，只是落到全局存储。",
+    "参数个数是硬约束": "这些宏全部开启严格参数校验：参数个数不符时**该宏原样保留为文本**（不报错、不吞文本）。例如 `{{setvar::x}}` 只给一个参数会被拒绝并原样留下。",
+    "写入返回空串的三条": "setvar / addvar / deletevar 以及它们的 global 对应物返回空串；incvar / decvar 家族返回新值。这是卡片里做「静默写入 + 立刻读回」两种写法的分界。",
+    "命名规则的边界": "变量名允许的范围比标识符宽：含特殊字符的变量名用宏形式仍能读写；但**变量简写语法**（`.名` / `$名`）要求名符合标识符规则（字母开头、词字符结尾）。两者不是同一套规则。",
+    "简写与宏的等价关系": [
+      "`{{.名}}` ≈ `{{getvar::名}}`；`{{$名}}` ≈ `{{getglobalvar::名}}`",
+      "`{{.名 = 值}}` ≈ `{{setvar::名::值}}`；`{{$名 = 值}}` ≈ `{{setglobalvar::名::值}}`",
+      "`{{.计数++}}` ≈ `{{incvar::计数}}`；`{{.计数--}}` ≈ `{{decvar::计数}}`",
+      "`{{.分数 += 10}}` ≈ `{{addvar::分数::10}}`（简写版的返回值是空串，与宏版一致）"
+    ],
+    "简写运算符的语义差异（易错）": [
+      { "运算": "`||`", "语义": "变量为 falsy 时返回默认值，否则返回变量值", "注意": "存在但 falsy 也会返回默认" },
+      { "运算": "`??`", "语义": "**仅变量不存在**时返回默认值", "注意": "与 `||` 的关键区别：已存在但值为 `0`/空串时**返回变量本身**" },
+      { "运算": "`||=` / `??=`", "语义": "前者 falsy 时写入并返回，后者不存在时写入并返回", "注意": "写操作" },
+      { "运算": "`==` / `!=`", "语义": "**字符串**比较", "注意": "`1` 与 `'1'` 相等" },
+      { "运算": "`>` `>=` `<` `<=`", "语义": "**数值**比较", "注意": "任一侧非数字时返回字符串 `false`（不是空串）" },
+      { "运算": "`-=`", "语义": "非数字时告警并返回空串，否则按负数相加", "注意": "不是独立减法实现" }
+    ],
+    "falsy 判定（简写的共用定义）": "以下都算 falsy：空串、数字 0、字符串 `0`、`false`、`off`、null、undefined、布尔 false。注意字符串 `'false'` / `'off'` 也在其中——这与直觉不符。",
+    "易错点": [
+      "把 incvar/decvar 做成「返回空串」：卡片依赖它的返回值拼文本",
+      "把 ?? 做成「falsy 就给默认」（那是 || 的语义）",
+      "getvar 读不到就报错或返回宏原文：ST 返回空串",
+      "把 addvar 只做数值相加：非数值时应退化为字符串追加",
+      "参数个数不对时不原样保留：会破坏卡片里刻意写错的兼容宏"
+    ],
+    "pseudocode": "getvar(名) → 存储.取(名) 归一化; 缺失折成空串\nsetvar(名,值) → 存储.写(名,值); 输出空串\naddvar(名,值) → 若 值是数 且 旧值可转数: 旧加值; 否则按字符串拼接; 输出空串\nincvar(名) → 存储.写(名, 旧加一); 输出新值\ndecvar(名) → 存储.写(名, 旧减一); 输出新值\nhasvar(名) → 存在折成字面 true, 否则字面 false\ndeletevar(名) → 存储.删(名); 输出空串\n参数个数不符 → 整个宏原样保留"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:140-168",
+      "server-rs/src/parsing/macros.rs:169-197",
+      "server-rs/src/parsing/macros.rs:236-238"
+    ],
+    "note": "Kedai 只有 getvar / setvar / addvar 三个（local 语义，写在请求期的会话变量表里），没有 incvar / decvar / hasvar / deletevar 以及整套 9 个 global 宏；`var::` 前缀是额外的简易取值。setvar/addvar 有「优先写酒馆助手变量树（stat_data 前缀或已存在路径）」的分支，其余键落扁平表。变量简写语法（`.名` / `$名`）完全未实现。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · 变量宏速查表",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L738-L760"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Variable Shorthands 与运算符",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L369-L520"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variable-macros.js（18 个变量宏的注册与 handler）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/definitions/variable-macros.js#L11-L417"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（简写运算符惰性求值与 ?? / || 差异）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L656-L798"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 variables.js（local/global 底层与数字字符串转换）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/variables.js#L22-L45"
+    }
+  ],
+  "related": ["macro.syntax.argspec", "variable.store.scope"],
+  "updated": "2026-10-31"
+}

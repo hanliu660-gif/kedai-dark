@@ -1,0 +1,49 @@
+{
+  "id": "sandbox.event.chat_changed",
+  "domain": "sandbox",
+  "title": "事件常量 CHAT_CHANGED 的**值**是 `chat_id_changed`，不是 `chat_changed`",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "事实": "事件常量表里，键名写作 `CHAT_CHANGED`，但**值是 `chat_id_changed`**。键名与值不一致，按值搜索或凭直觉写 `chat_changed` 都会踩空。",
+    "为什么最容易错": "键名 CHAT_CHANGED 直观上就对应「chat_changed」，卡作者写事件名时通常用常量（`tavern_events.CHAT_CHANGED`）所以没事；但**宿主实现方**（我们自己）容易按直觉把值写成 `chat_changed`——那一行就废了。",
+    "后果": "宿主广播用 `chat_changed`、卡用常量订阅实际值 `chat_id_changed`（或反之）⇒ 卡监听切会话**永远收不到**，表现为「切了会话卡界面不刷新 / 状态栏停在上一局」。",
+    "事件载荷": "载荷是聊天文件标识（字符串），不是聊天对象。",
+    "同类风险点": "事件常量的值与键名不一致是这套生态的既有现象，不能靠「键名小写化」推导值。复刻时所有事件名必须**逐条照抄值**，不能生成。",
+    "核对方法": "把宿主实现里的事件常量表与酒馆助手的常量表逐条比对，比较的是**值**（右侧字符串），不是左侧键名。",
+    "易错点": [
+      "凭直觉写 `chat_changed`",
+      "把键名转小写当值用（其它事件可能碰巧对，这条一定错）",
+      "只改广播侧不改订阅侧（或者反过来）——两边都在自己仓里，必须同时对齐",
+      "用「前缀一致」做批量校验：这条不满足该启发式"
+    ],
+    "pseudocode": "# 正确\n事件常量.CHAT_CHANGED = 'chat_id_changed'\n# 错误（静默失效）\n事件常量.CHAT_CHANGED = 'chat_changed'\n\n校验: for (键, 值) in 常量表: 断言 值 == 上游常量表[键].值\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:184-193",
+      "web/src/sandbox/boot/mvu-tavern.ts:192"
+    ],
+    "note": "Kedai 的沙箱事件常量表里 `CHAT_CHANGED:'chat_changed'` —— 值写错（上游是 `chat_id_changed`）。⇒ 监听切会话的卡在 Kedai 里永远收不到该事件。另注：Kedai 的事件总线只有 `eventOn/eventOff/eventEmit` 三个裸函数（基于内部 Map），也没有 ST 的 `eventSource` 语义，且常量注释自己写明「其余常量仅列出供脚本引用，kedai 侧暂无对应广播源不会触发」。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 event.ts（tavern_events 常量表，CHAT_CHANGED 的值为 chat_id_changed）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/event.ts#L190-L205"
+    },
+    {
+      "kind": "src",
+      "name": "ST events.js（同一事件在 ST 侧的值）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/events.js#L19"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 @types/iframe/event.d.ts（监听签名与载荷类型）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/@types/iframe/event.d.ts#L330-L345"
+    }
+  ],
+  "related": ["sandbox.iframe.pagehide", "sandbox.predefine.injection"],
+  "updated": "2026-10-31"
+}

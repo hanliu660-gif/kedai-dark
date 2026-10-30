@@ -1,0 +1,90 @@
+{
+  "id": "mvu.initvar.merge",
+  "domain": "mvu",
+  "title": "[InitVar] 合并：顶层浅展开且**已有值赢** ⇒ 整块存在的键永远补不进新子键",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "条目判定谓词": "只看条目的**标题/注释字段**（不是正文）里是否含 `[initvar]` 子串，**大小写不敏感**。另兼容 `[InitialVariables]` 别名。**不检查条目是否启用**（关闭状态的条目照样读）。",
+    "内容预处理顺序（固定）": [
+      "1. 若被 `<initvar>` 包裹 → 剥壳。剥壳要求开标签后**必须换行**、闭标签前**必须换行** ⇒ 单行 `<initvar>{...}</initvar>` **不匹配**。",
+      "2. 若被三反引号围栏包裹 → 剥围栏（同样要求围栏行后有换行、闭合围栏前有换行）。",
+      "3. 两者可叠加：先剥 XML 再剥围栏。",
+      "4. 剥完后做宏替换（`{{...}}`）。",
+      "5. 再解析（YAML / JSON5 / 修复后的 JSON 多段回退）。"
+    ],
+    "同书多条目": "按书名内的条目顺序依次深度合并：**对象深合并、数组整体替换**（这就是「修正通用深合并把数组补成不等长」的动机）。",
+    "与已有变量的优先级（核心）": {
+      "表达式": "最终变量 = 合并结果 ⊎ 已有变量，**已有值赢**（顶层浅展开，后者覆盖前者）。",
+      "含义": "InitVar 只补「顶层空缺」，**不覆盖已经结算过的值**。",
+      "关键陷阱": "因为是**顶层**浅合并：若已有变量里 `角色` 这个键已存在（哪怕只有一个子键），InitVar 里 `角色.好感度` 的初始值**整块都补不进去**（`角色` 被已有值整体覆盖）。",
+      "实测": "已有 `{角色:{好感度:[50,'描述']}, 已有键:[2,'d']}`＋InitVar `{角色:{好感度:[0,'描述'],姓名:[0,'d']}, 新键:[1,'d']}` ⇒ 结果 `{角色:{好感度:[50,'描述']}, 新键:[1,'d'], 已有键:[2,'d']}`：好感度保留 50 ✅，**角色.姓名 根本没被补入** ❌。"
+    },
+    "跨书顺序": "书清单 = 全局已选书 + 角色主书 + 角色附加书；**后面的书赢**（每本书处理完都重写一次顶层浅展开）。清单不做去重，靠「已初始化标记」保证幂等。",
+    "幂等与失败语义": [
+      "处理前先写入「已初始化」标记 ⇒ 每本书只处理一次。",
+      "解析失败：该书的合并不会发生，但**标记已经写了** ⇒ **这本书永远不会重试**（除非手动触发重新读取初始变量）。"
+    ],
+    "开场白 `<initvar>` 的覆盖规则（开局专属，优先级更高）": [
+      "只在「最后一条消息 id 为 0」（刚开局）时执行，并遍历**所有 swipe**。",
+      "**只要开场白里有任一 `<initvar>` 且解析成功 → `stat_data` 被整块替换为该块内容** ⇒ 此前从世界书 `[InitVar]` 读到的全部作废。",
+      "然后重置「已初始化」标记为「只剩角色主书」，再重跑全局书 ⇒ 效果：角色书的 [initvar] 被开场白压掉，全局书仍生效。",
+      "多个 `<initvar>` 块按深度合并累加。",
+      "注意：这里的正则用的是**小写标签** `<initvar>`（允许同行、允许代码围栏包裹），与世界书侧那个「必须换行」的剥壳正则**不是同一个**。",
+      "最后还会把**该 swipe 的原文**当命令流再跑一遍更新 ⇒ 开场白里写的赋值语句在此生效。"
+    ],
+    "schema 与元数据": [
+      "有更新发生时重建 schema（先克隆再生成，因为生成过程会就地删掉元数据）。",
+      "三个根级开关从 `$meta` 抬升到 schema 根：严格模板 / 数组模板拼接 / 严格写入。",
+      "最后清理真实数据里的元数据标记。"
+    ],
+    "易错点": [
+      "把「已有值赢」实现成深合并：会让 InitVar 的初始值覆盖已结算值（卡片存档被重置）",
+      "把「已有值赢」实现成深合并的另一面：其实应该保留 ST 的**浅展开**语义（整块被覆盖），否则「角色.姓名」会被补进来——与上游不同",
+      "判定谓词去查正文：世界书条目标题才是判据",
+      "检查条目是否启用：上游不检查",
+      "失败后重试：上游标记先写，永不重试",
+      "把开场白 `<initvar>` 也做成「补空缺」：上游是**整块替换**",
+      "漏了最后「把开场白原文当命令流跑一遍」"
+    ],
+    "pseudocode": "收集(书清单):\n  结果 = {}\n  for 书 in 清单: 若 已初始化(书) → 跳过; 已初始化标记[书] = 空\n  for 书 in 清单(未跳过的):\n    合并本 = {}\n    for 条目 in 书内全部条目:\n      若 标题 含 [initvar] (不区分大小写) 且 正文非空:\n        正文 = 剥XML壳(正文); 正文 = 剥围栏(正文); 正文 = 宏替换(正文)\n        解析结果 = 解析(正文)\n        若 成功: 深度合并(合并本, 解析结果)     # 对象深合并,数组整体替换\n        若 失败: 记录错误; 该书结束(标记已写,不重试)\n    结果 = 浅展开(结果, 合并本)                  # 已有值赢\n\n开局 ← 开场白处置:\n  若 最后消息 id == 0:\n    for swipe in 全部 swipe:\n      匹配 <initvar>…</initvar> (小写标签,允许同行/围栏)\n      累加 = 深度合并(全部块)\n    若 有任一成功:\n      变量树.stat_data = 累加            # 整块替换\n      已初始化标记 = { 角色主书: 空 }     # 重置为只剩角色主书\n      重跑 全局书\n    for swipe: 把 swipe 原文 当命令流跑一遍\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/assistant/initvar.rs:16-36",
+      "server-rs/src/parsing/assistant/initvar.rs:38-63",
+      "server-rs/src/parsing/assistant/initvar.rs:116-128"
+    ],
+    "note": "Kedai 的 [InitVar] 判定语义与上游一致（只看 comment、大小写不敏感、兼容 [InitialVariables]、不要求 enabled），内容解析支持三条路径（`_.set(...)` 语句序列 / 整体 JSON / YAML 风格缩进键值对，且 YAML 侧**认块标量** `>\\-` / `|`——这是 Kedai 比补丁解析侧更完善的一处）。但合并策略是**深度合并**（`merge_deep`），**不是**上游的「同书内深合并 + 书与已有值之间顶层浅展开、已有值赢」。⇒ 差异后果：已存在的顶层键下**新子键会被补进来**（上游不会），也就是「存档里已有的角色块可能被凭空加字段」。另外看不到开场白 `<initvar>` 整块替换、已初始化标记与失败不重试这三条链路。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（条目判定谓词与内容预处理）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L270-L291"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（同书深合并 + 与已有变量的顶层浅展开「已有值赢」）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L269-L320"
+    },
+    {
+      "kind": "src",
+      "name": "MVU variable_init.ts（开场白 <initvar> 整块替换与已初始化重置）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/initvar/variable_init.ts#L135-L197"
+    },
+    {
+      "kind": "src",
+      "name": "MVU common.ts（correctlyMerge：数组合并整体替换）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/util/common.ts#L7-L9"
+    },
+    {
+      "kind": "doc",
+      "name": "MVU 作者文档 · [InitVar] 条目说明（可关闭状态、开场白覆盖）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/doc/tutorial.md#L110-L170"
+    }
+  ],
+  "related": ["mvu.vwd.pair", "mvu.block.scalar", "worldinfo.field.schema"],
+  "updated": "2026-10-31"
+}

@@ -18,6 +18,27 @@
 - 不泄露聊天正文、API Key 或本地真实数据。
 - 不顺手实现未要求的安全/API 批次。**Git 提交按下方「Git 提交纪律」执行（2026-09-15 起由「一律不提交」改为「完成并验证后按体例提交」）。**
 
+## 酒馆兼容知识库(kb/,2026-10-31 起)
+
+**动卡层 / 世界书 / 宏 / 正则 / 变量 / 沙箱之前,先查 `kb/` —— 它是 Kedai 与酒馆(SillyTavern)生态
+差异的结构化契约库(33 条 / 8 域,**当前工作区未提交,尚未入 git;收口项见 `../交接文档.md` §8.1 末表**),
+每条都带 `kedai.evidence`(本仓路径:行号)。**
+
+```bash
+node tools/kb.mjs gaps                 # 全部缺口(missing/differs/partial),按优先级排
+node tools/kb.mjs gaps --domain regex  # 按域看缺口
+node tools/kb.mjs query --priority P0  # 只看高危(违反会导致卡行为错乱)
+node tools/kb.mjs show <id>            # 单条详情(spec/kedai 现状/sources 指针)
+```
+
+- **校验**:`node tools/check-kb.mjs`(已接 `check-all.ps1`,是**新增的第 22 个阶段**;但调用顺序上是第 7 个,不是"排在最后")。
+- **★ 许可红线**:上游 SillyTavern / ST-Prompt-Template 是 **AGPL-3.0**、酒馆助手是 **PolyForm 非商用**,
+  而本仓是 **MIT 公开仓** ⇒ `kb/` **只存行为契约、禁止贴上游源码片段**;校验器 K6 会自动拦截代码状字符串。
+  要精确到实现时用 `sources.ref` 写**上游线上指针**(如 `https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4943-L4978`)——**禁止写本机绝对路径**(本仓是公开仓)。
+- **准则**:以**官方文档**为准(千夏 2026-10-30 拍板「毕竟卡都是以这两个为基本写的」);源码只补文档写不到的实现级细节。
+- **新增条目**:id 格式 `<域>.<子域>.<名>`;写完**必须登记 `kb/index.json`** 的 `domains.<域>.entries`(否则 K4 报双向不一致);evidence 必须实际读过、不许猜。
+- 详细规范见 `kb/README.md`;工程级背景见 `../交接文档.md` §8.1。
+
 ## 酒馆「整页前端卡」渲染链路(本机分支独占,2026-10-29 起)
 
 酒馆生态的卡常用正则脚本把 `<start>…</start>` 换成**一整页 HTML + 内联脚本**(Vue/MVU/ST 全局 API

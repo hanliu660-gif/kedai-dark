@@ -1,0 +1,72 @@
+{
+  "id": "prompt.slot.assignment",
+  "domain": "prompt",
+  "title": "Prompt 装配是「按顺序数组的过滤后下标做槽位赋值」，不是顺序追加 —— 会留空洞",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "官方文档讲的是「拖拽顺序决定先后」，不讲装配用的是下标赋值、也不讲被跳过的槽会留下空洞。这条直接决定最终消息数组的顺序，是复刻时最容易整体漂移的一处。",
+    "机制": [
+      "「提示词顺序数组」经过滤后得到一份启用清单；**每个启用项的下标 = 目标消息数组里的槽位下标**。",
+      "装配时对每个写死的锚点提示词调用「写入第 index 个槽」，用的是**下标赋值**而非追加。",
+      "被跳过（未启用 / 走绝对注入档 / 不在清单）的槽会留下**空洞**，后面的槽**不左移**。",
+      "最终取消息时，遇到空洞会警告并跳过（`Skipping invalid or empty message`）。"
+    ],
+    "与「追加」的差别（实测）": "把某个锚点（例如主提示词）跳过之后，实测槽位是 `0:世界书前 | 1:空 | 2:世界书后 | …`，后续槽位序号不变。⇒ 若实现成 push/append，整段顺序会整体漂移一格。",
+    "写入前的三道判断（顺序）": [
+      "1. 目标提示词不在启用清单里 → 不出现。",
+      "2. 目标对当前角色被禁用（但**主提示词豁免**，即使禁用也保留一个空内容替身）。",
+      "3. 目标处于绝对注入档 → 本路径直接返回（走另一套深度插入）。",
+      "以上都通过才按「目标位置」的下标写入槽位。"
+    ],
+    "同一段的第二次写入（就地替换）": "处理系统提示覆盖时，若目标已在清单里则**就地替换该槽位**（保槽号）；若不在清单里则追加到末尾并拿到**新下标** ⇒ 该提示词的最终位置不再受顺序数组控制。",
+    "空洞的消费侧细节": "空内容的收集**仍会被写入槽位**，只是在最终取消息时按「内容非空 或 有工具调用」过滤掉。⇒ 「有槽位」与「进最终消息」是两件事，排障时不要混。",
+    "易错点": [
+      "用顺序追加（push）实现装配：所有位置整体偏移",
+      "对空洞做压缩：ST 不左移，压缩会改变后续所有位置",
+      "把「写入了槽位」当成「一定进了最终消息」",
+      "清单里没有的系统提示追加到末尾这件事当成 bug 去修：它有确定行为（末尾），修了反而与 ST 不同",
+      "顺序数组里引用不存在的提示词：会被清洗阶段删掉，数组静默变短"
+    ],
+    "pseudocode": "槽位数组 = 空\nfor id in 锚点序列(写死):\n  若 不在启用清单 → 跳过\n  若 该角色禁用 ∧ id 非主提示词 → 跳过\n  若 该提示词处于绝对注入档 → 跳过\n  槽位数组[清单.indexOf(id)] = 取消息(该提示词)\nfor 其它启用提示词 in 清单顺序:\n  槽位数组[清单.indexOf(id)] = 取消息(该提示词)\n追加 控制类提示词到末尾（不占槽）\n取最终消息时: for 项 in 槽位数组: 若 空洞 或 空内容 → 跳过(告警)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/preset.rs:130-138",
+      "server-rs/src/parsing/preset.rs:140-177",
+      "server-rs/src/agents/engine/messages/build.rs:110-135",
+      "server-rs/src/agents/engine/messages/context.rs:336"
+    ],
+    "note": "Kedai 不用「槽位下标赋值」：它把 ST 预设解析成「楼层（Floor）」列表，按四种归一位置（系统 / 消息前 / 消息后 / 深度）分组后按 order 拼接进固定位置的消息构建函数，注入提示词另有 `sort_by_key((order, position))` 的排序。⇒ 没有空洞、没有槽位漂移问题，但也因此**无法表达「某个提示词被禁用后后面整体不左移」这类 ST 特有行为**；顺序数组只被读成「id 的有序清单」，不参与槽位计算。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（唯一「按 index 塞数组」的入口与三道判断）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L1187-L1208"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（ChatCompletion.add 的下标赋值与 push 分支）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L3998-L4012"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（取最终消息时跳过空洞/空内容）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L4117-L4140"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（禁用时的主提示词空替身）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L1516-L1541"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（顺序数组清洗：删掉指向不存在提示词的引用）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L1006-L1035"
+    }
+  ],
+  "related": ["prompt.injection.two_modes", "prompt.pinned.identifiers"],
+  "updated": "2026-10-31"
+}

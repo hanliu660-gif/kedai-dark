@@ -1,0 +1,93 @@
+{
+  "id": "worldinfo.timed.state",
+  "domain": "worldinfo",
+  "title": "定时效果状态机（sticky / cooldown / delay）：绝对下标 + 内容 hash 身份",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "持久化位置": "聊天文件头的 chat_metadata 里的定时世界书对象，随聊天保存。只在 sticky 与 cooldown 两类型下有结构；delay 不落元数据。",
+    "键与值": {
+      "键": "世界书名与条目 uid 的二元组字符串",
+      "值字段": [
+        { "名": "hash", "含义": "条目身份指纹：对该条目整体做字符串 hash。内容或任意字段改动即变" },
+        { "名": "start", "含义": "激活当时的聊天消息条数（绝对下标）" },
+        { "名": "end", "含义": "start + N（N = sticky 或 cooldown 的配置值），绝对下标" },
+        { "名": "protected", "含义": "是否受保护（用于 sticky 到期转 cooldown 的无缝衔接）" }
+      ]
+    },
+    "计时单位": "聊天消息条数（user + assistant），不是轮次、不是 token、不是倒计时。比较方式是拿当前聊天条数与绝对的 start/end 比。",
+    "三类型语义": {
+      "sticky": "激活后持续 N 条消息；期间重复扫描时免摇概率、在组竞争里独占、在本轮排序里优先，并且直接激活（不再判关键词）。",
+      "cooldown": "激活后 N 条消息内不能再被激活。可与 sticky 并用：sticky 结束时立刻转成一条「受保护」的 cooldown，无缝衔接（不靠下一轮）。",
+      "delay": "聊天消息数不足 N 时屏蔽条目。每轮现算、无 start/end、无持久化。N=1 表示空聊天不激活，N=2 表示 0 或 1 条时不激活，依此类推。"
+    },
+    "五条官方规则": [
+      "时间以消息数为单位（不是消息对），0 表示无效果。",
+      "效果只在激活它的那个聊天里有效；分支继承父聊天状态。",
+      "聊天不前进（最后一条被重roll或删除）时，已生效的定时效果被移除。",
+      "对正处于定时效果的条目做任何改动，效果被强制移除。",
+      "已经在生效期内再次命中关键词不会刷新时长。"
+    ],
+    "每轮裁剪判定（优先级从高到低）": [
+      { "条件": "聊天没有前进 且 未被保护", "动作": "删除元数据，不生效" },
+      { "条件": "条目已找不到（换书 / 改名等）", "动作": "到期的删；未到期的保留但既不生效也不消耗" },
+      { "条件": "条目已不再配置该效果", "动作": "删除元数据" },
+      { "条件": "到期（当前条数 >= end）", "动作": "删除元数据并触发结束回调" },
+      { "条件": "其余", "动作": "本轮视为生效" }
+    ],
+    "结束回调": {
+      "sticky 结束": "若该条目同时配置了 cooldown，立刻建一条受保护的 cooldown 并直接计入本轮 cooldown 生效集合",
+      "cooldown 结束": "仅记日志",
+      "delay": "无回调"
+    },
+    "身份校验": "生效判定按 hash 全等比较，不比 uid。因此：改条目任意字段 → hash 变 → 旧 sticky 找不到条目 → 期间不生效也不消耗，等自然到期才清理。用 uid 做身份键会与 ST 行为不同（改名条目的效果不会失效）。",
+    "写入时机": "扫描结束时只对最终激活集合写入；已有计时不会被重置（只在键不存在时新建）。dry run 不写 sticky/cooldown（delay 照算）。",
+    "跨聊天": "键含世界书名，结构挂在当前聊天元数据上，切聊天即换一份，不迁移。",
+    "手动读写": "有对应的 slash 命令可查剩余值与改值；改值要求条目本身已配置该效果，写后立即保存元数据。手动设置时保护位恒为假。",
+    "易错点": [
+      "做成「每轮 -1」倒计时：与绝对下标语义不同，重roll/删楼行为会错",
+      "用 uid 做身份键：改内容后旧效果仍生效，与 ST 不同",
+      "以为 sticky 与 cooldown 需要两轮衔接：sticky 结束当场就转 cooldown",
+      "把 delay 当成持久化倒计时：它每轮现算、不落元数据"
+    ],
+    "pseudocode": "# 每轮开始\nfor 类型 in [sticky, cooldown]: 若 非dryrun: 裁剪(类型)\n裁剪(类型):\n  for 每条 元数据 按优先级:\n    if 聊天条数 <= start 且 未保护: 删; continue\n    if 条目不存在: 若 聊天条数 >= end 则删; continue\n    if 条目不再配置该效果: 删; continue\n    if 聊天条数 >= end: 删; 结束回调(条目); continue\n    本轮生效集合 += 条目\n裁剪(delay): for 条目 若 聊天条数 < delay: 本轮生效集合 += 条目\n\n结束回调(sticky, 条目): 若 条目有 cooldown: 建(受保护 cooldown); 本轮 cooldown 生效集合 += 条目\n\n# 扫描判定\nif 生效(delay): 跳过条目\nif 生效(cooldown) 且 非生效(sticky): 跳过条目\nif 生效(sticky): 直接激活,并免摇概率、组内独占、本轮排序优先\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:410-412",
+      "server-rs/src/parsing/world_book.rs:627-628",
+      "server-rs/src/agents/engine/worldbook.rs:135-143"
+    ],
+    "note": "Kedai 只把 sticky / cooldown 解析成条目上的整数字段并在编辑视图往返读写，世界书注入链路（collect_world_text_grouped → triggered_entry_hits_scoped）完全不读它们：没有 chat_metadata 级的定时状态、没有绝对下标、没有 hash 身份、没有 delay 字段。卡里配了 sticky 的条目在 Kedai 里每轮都要重新命中关键词才会注入，等价于只生效一轮。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Timed Effects 与五条规则",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L299-L333"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（元数据结构与计时字段构造）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L559-L611"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（每轮裁剪判定与优先级）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L619-L660"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（sticky 结束转 cooldown 与 delay 现算）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L512-L545"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（生效判定用内容 hash 全等）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L777-L783"
+    }
+  ],
+  "related": ["worldinfo.activation.flow", "worldinfo.field.schema"],
+  "updated": "2026-10-31"
+}

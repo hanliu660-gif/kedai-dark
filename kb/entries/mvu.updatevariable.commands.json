@@ -1,0 +1,92 @@
+{
+  "id": "mvu.updatevariable.commands",
+  "domain": "mvu",
+  "title": "<UpdateVariable> 命令全集与别名归一：move 是半成品，文本形态根本不被解析",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "两种块": [
+      { "块": "更新块", "别名": "updatevariable / variableupdate / update（大小写不敏感，允许标签内有空白与任意属性）", "作用": "包裹命令序列" },
+      { "块": "补丁块", "别名": "jsonpatch / json_patch（下划线可选）", "作用": "包裹 JSON 补丁数组" },
+      { "块": "思考区（被屏蔽）", "别名": "think / thinking / reasoning / analysis / analyze", "作用": "内容整体屏蔽，不做解析" }
+    ],
+    "块配对": [
+      "同类标签**栈式配对**：开标签压栈，闭标签出栈并产出一个块。",
+      "**只与同类型配对** ⇒ 更新块里包补丁块时两种块各自独立、可嵌套。",
+      "未闭合的开标签仍产出「未闭合」块（由调用方决定兼容或拒绝）。",
+      "结果按起始位置升序。"
+    ],
+    "命令归一化": [
+      { "写出来的命令": "remove", "归一为": "delete" },
+      { "写出来的命令": "assign", "归一为": "insert" },
+      { "写出来的命令": "unset", "归一为": "delete" },
+      { "写出来的命令": "insert / delete / set / add", "归一为": "自身" }
+    ],
+    "执行期只有四个分支": "set / insert（含 assign）/ delete（含 unset、remove）/ add。**没有「移动」分支、也没有兜底 default** ⇒ 「移动」命令被识别、被翻译，但执行时**静默什么都不做**（无报错、无展示记录）。",
+    "文本形态的正则只认 7 个（不含 move）": "所以卡里手写「移动」调用**根本不会被解析**；「移动」只可能来自 JSON 补丁通道，而它到执行期又静默无效。**复刻必须做决策**（建议落到「删除 + 插入」组合），不要照抄成「静默忽略」。",
+    "参数个数校验": [
+      { "命令": "set", "最少参数": 2 },
+      { "命令": "insert / assign", "最少参数": 2 },
+      { "命令": "remove / unset / delete", "最少参数": 1 },
+      { "命令": "add", "恰好参数": "2（不是 ≥2）" }
+    ],
+    "每个命令的语义要点": {
+      "赋值": "路径必须已存在（根路径是合法的特例）；值解析走专用解析链；旧值是数字而新值是字符串时先转数字；见 mvu.vwd.pair 的保留描述规则。不做 schema 校验。",
+      "插入/合并": "目标必须是集合（数组或对象），原始值 → 拒绝；**schema 三校验**：不可扩展对象拒绝合并 / 三参新键必须已在属性清单里 / 不可扩展（或未声明）的数组一律拒绝；无 schema 时父路径必须存在。数组 → 追加或按位插入（`-` 表示末尾）；对象 → 两参只接受对象做深合并、三参直接设键（目标不存在则先建空对象）。",
+      "删除": "数组下标单独早处理（末段纯数字且容器是数组 → 按位删除，且**跳过后续的展示记录**）；路径必须存在；两参时「键/下标/值」三种解释：数组里数字当下标、非数字按**值相等**查找；对象里数字当「第 n 个键」、否则按键删；删不动 → 报「删除失败」。",
+      "增量": "**只有 2 参**；路径必须存在；两种语义——日期（旧值是日期或可被日期解析且非纯数字的字符串，增量必须是毫秒数）与数字（相加后清浮点误差）；都不是 → 报「不支持的值」。"
+    },
+    "JSON 补丁的 op 映射": [
+      { "op": "replace", "翻译成": "赋值", "备注": "「set」也归到这里" },
+      { "op": "delta（MVU 方言，非标准）", "翻译成": "增量" },
+      { "op": "add / insert", "翻译成": "插入", "备注": "末段纯数字 → 裸数字下标；`-` 保留为字符串表示末尾" },
+      { "op": "remove", "翻译成": "删除" },
+      { "op": "move", "翻译成": "移动", "备注": "**执行期无分支 ⇒ 静默无操作**" }
+    ],
+    "路径转换": "补丁路径先去掉前导斜杠，按斜杠分段，再把 `~1` 还原成 `/`、`~0` 还原成 `~`，最后拼成「带方括号的点路径」。这类命令带固定标记，后续的路径修复环节会**跳过**它们，避免二次破坏方括号里的字面点或方括号。",
+    "注释 → 原因": "命令闭括号后必须先有分号，分号之后再出现行注释（允许跨行空白）→ 注释内容成为该命令的「原因」，拼进展示串。补丁类命令的原因恒为固定值。",
+    "易错点": [
+      "把「移动」实现成有效操作：与上游不一致（上游静默无效）——但上游是半成品，需明确决策",
+      "兼容写出来就执行：没有 default 分支，未知命令会被静默丢掉",
+      "赋值不校验路径存在：ST 生态会报错跳过（根路径除外）",
+      "增量做成 1 参或 ≥3 参也接受：只接受恰好 2 参",
+      "对象删除里把数字当键名：数字是「第 n 个键」",
+      "补丁里的替换/插入当成不同实现：上游把两者都归到赋值",
+      "漏了「必须跟分号」：没有分号的命令整条不被识别"
+    ],
+    "pseudocode": "解析(文本):\n  屏蔽(块标量/思考区/字符串/注释/围栏)\n  栈式配对 → 更新块[]、补丁块[]\n  for 块 in 更新块:\n    若 块内能提到补丁数组 → 走补丁通道\n    否则 逐条命令: 匹配命令名 + 括号配对 + 引号感知 + 参数按三层括号深度切分 + 必须跟分号\n  命令归一: remove/unset→delete, assign→insert\n\n执行(命令):\n  switch 归一后命令:\n    set    → 见 mvu.vwd.pair\n    insert → schema 三校验 → 数组追加/按位插入,对象合并/设键\n    delete → 数组下标早处理(跳过展示记录) → 按键/下标/值删\n    add    → 日期或数字增量\n    (无 default: 其余一律静默丢弃)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/assistant/patch.rs:49-72",
+      "server-rs/src/parsing/assistant/patch.rs:75-83",
+      "server-rs/src/parsing/assistant/patch.rs:105-124"
+    ],
+    "note": "Kedai 的 `<UpdateVariable>` 提取是**非贪婪正则**（`([\\s\\S]*?)`），不是括号配对栈；且只认标签名 `UpdateVariable`（正文注释里提到过为了容忍空白而放宽了尖括号内的空白），**不认 updatevariable / variableupdate / update 三个别名，也不认 json_patch 下划线变体**。块内两条通道：优先找 `<JSONPatch>` 走 serde_json 严格解析（解析失败则整块回落），否则走 `_.set(...)` 语句扫描。补丁 op 映射上，Kedai 把 `replace`/`set`/`insert` 全部归成 Replace，`delta`/`add` 归成 Delta（值非数字**整条跳过**），`remove` → Remove，**没有 move**（`from` 字段被当成 path 兜底）。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU structured_update.ts（标签别名正则与块配对状态机）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update/structured_update.ts#L120-L232"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（命令类型、别名归一与四分支 switch）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L340-L896"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（各命令执行实现与参数校验）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L928-L1631"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（JSON 补丁 op 映射与路径转换）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L361-L427"
+    }
+  ],
+  "related": ["mvu.vwd.pair", "mvu.initvar.merge", "mvu.block.scalar"],
+  "updated": "2026-10-31"
+}

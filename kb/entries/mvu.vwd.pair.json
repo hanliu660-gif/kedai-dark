@@ -1,0 +1,66 @@
+{
+  "id": "mvu.vwd.pair",
+  "domain": "mvu",
+  "title": "VWD（值-描述对）：判定只看「长度 2 且第二位是字符串」，但写入保留描述多一个条件",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "结构": "变量树的叶子不是裸值，而是成对数组：`[值, 描述字符串]`。描述用来记录「这个值是怎么变来的」，展示层再把老值与新值拼成变化串。",
+    "判定表达式（宽松版）": "是数组 ∧ 长度恰为 2 ∧ 第 2 个元素是字符串。**没有别的条件**（第 1 个元素是什么类型都不管）。",
+    "写入时保留描述的条件（比判定更严）": [
+      "未开启「严格写入」模式",
+      "旧值是数组 ∧ 长度 2 ∧ 第 2 位是字符串",
+      "**且 第 1 位不是数组** ← 这是关键差异"
+    ],
+    "描述被破坏的全部场景": [
+      { "场景": "开启严格写入模式", "后果": "赋值走普通替换，描述丢失（要显式写 `路径[0]` 才保留）" },
+      { "场景": "**VWD 的「值」本身是数组**", "后果": "不满足「第 1 位不是数组」，走普通替换 ⇒ **描述连带整个数组被换掉**（实测：`[[1,2],'desc']` 赋 `[3,4]` → 变 `[3,4]`，不是 `[[3,4],'desc']`）" },
+      { "场景": "用「合并/插入」打到 VWD 路径", "后果": "旧值是长度 2 的数组，会被当成「集合」通过第一道校验，但随后被 schema 的数组规则挡住（VWD 生成的 schema 是「数组、不可扩展」）⇒ 拒绝并跳过；**只有 schema 缺失时才会真的追加**，变成 3 元组 ⇒ 不再是 VWD" },
+      { "场景": "初始变量合并 / 开场白合并覆盖", "后果": "合并对数组是**整体替换** ⇒ VWD 被覆盖即失去描述" }
+    ],
+    "数值形态的特殊处理": "赋值时若「旧值首位是数字 ∧ 新值非空」→ 新值先转数字再写回首位（保持类型一致）；描述位完全不动。",
+    "增量（add）分支的判定更严": "除了「长度 2 且第二位是字符串」，还要求「第一位不是对象」⇒ **null 值不享受 VWD 增量**（typeof null 是 object）。即 `[null,'desc']` 上做增量会走非 VWD 路径。",
+    "写入是原地修改": "拿到的旧值是存储里的引用，直接改首位即落进变量树；描述位不受影响。",
+    "易错点": [
+      "把判定条件写成「长度 2 且第一位是标量」：会让「值本身是数组」的 VWD 也保留描述，与 ST 生态行为不同",
+      "把「值本身是数组」的场景当成会保留描述：实测会整体替换",
+      "增量分支漏了「第一位不能是对象」：null 值会被错误地当成 VWD",
+      "以为「合并/插入」会给 VWD 追加新元素：正常有 schema 时会被拒绝",
+      "把严格写入当默认值：默认是关的，描述会被保留（这是卡的预期）"
+    ],
+    "pseudocode": "判定_VWD(值) = 是数组(值) ∧ 长度(值) == 2 ∧ 类型(值[1]) == 字符串\n\n赋值(路径, 新值):\n  旧 = 取(路径)\n  若 非严格写入 ∧ 判定_VWD(旧) ∧ 非数组(旧[0]):\n    旧[0] = (旧[0] 是数字 ∧ 新值 非空) ? 数字(新值) : 新值\n    # 描述位不动,写入是原地生效\n  否则若 旧 是数字 ∧ 新值 是字符串 ∧ 新值非空:\n    写(路径, 数字(新值))\n  否则:\n    写(路径, 新值)     # 整体替换,描述丢失\n\n增量(路径, 增量值):\n  旧 = 取(路径)\n  若 判定_VWD(旧) ∧ 非对象(旧[0]):   # null 也算对象 ⇒ 不进入\n    旧[0] = 计算增量(旧[0], 增量值); 写(路径, 旧)\n  否则: 走非 VWD 的增量/报错路径\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "web/src/mvu/unwrap.ts:22-41",
+      "web/src/mvu/unwrap.ts:55-59",
+      "server-rs/src/parsing/assistant/vars.rs:1-16"
+    ],
+    "note": "Kedai 已有双树模型与成对叶子（`stat_data` 叶子为 `[新值, 原因]`，`display_data` 为「老值->新值(原因)」串），并区分了**两套判定**：点路径场景用宽松判定（任意长度 ≥1 的数组即视作叶子对，取首位），整树遍历用严格判定（长度 2 且第二位是字符串）。⇒ 「严格判定」这条与 ST 生态一致，但 Kedai 的**宽松判定**（长度 ≥1）是 ST 生态里不存在的额外语义：长度 3 的真实数组在点路径上会被错误解包成首位。另 Kedai 的写入语义（`value_with_desc` 保留描述）未在 vars.rs 体现，VWD 保留逻辑只在前端 unwrap 的读取侧可见。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "MVU variable_def.ts（VWD 判定表达式）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/variable_def.ts#L52-L67"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（set 分支的 VWD 保留条件，含 !Array.isArray(oldValue[0])）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L954-L978"
+    },
+    {
+      "kind": "src",
+      "name": "MVU update_variables.ts（增量分支多一条「首位非对象」判定）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/update_variables.ts#L1510-L1516"
+    },
+    {
+      "kind": "src",
+      "name": "MVU schema.ts（VWD 节点的 schema 是「数组、不可扩展」）",
+      "ref": "https://github.com/MagicalAstrogy/MagVarUpdate/blob/beta/src/function/schema.ts#L101-L152"
+    }
+  ],
+  "related": ["mvu.updatevariable.commands", "mvu.initvar.merge"],
+  "updated": "2026-10-31"
+}

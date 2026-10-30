@@ -1,0 +1,61 @@
+{
+  "id": "worldinfo.budget.sticky",
+  "domain": "worldinfo",
+  "title": "Token 预算（budget）是粘性溢出标志，不是逐条跳过",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "官方文档只有一句「预算耗尽后不再激活任何条目」，没有说明它是粘性标志、没有说明它与递归 / min_activations / ignoreBudget 的联动。这些是实现级细节，必须读源码补。",
+    "预算额": "预算 = round(全局预算百分比 × 上下文上限 / 100)，结果不会为 0（下限 1）。若设了预算封顶且大于 0，再取二者较小值。",
+    "计量口径": "只算**已激活条目的正文 token**，不算扫描文本、不算名字前缀、不算条目标题。",
+    "判定公式": "已激活累计 token + 本轮累计候选 token >= 预算 → 溢出。是闭区间（等于即算溢出）。",
+    "粘性语义（核心）": "溢出标志一旦置真，**本轮剩余条目与之后所有扫描轮**的非豁免条目全部停摆；同时递归轮与 min_activations 补扫也被挡住。它不是一个「逐条判断、超了就跳过这一条」的计数器。",
+    "ignoreBudget 的放行机制": [
+      "循环前先数出本轮候选中「豁免条目」的个数。",
+      "溢出后遇非豁免条目时：若还剩豁免条目未处理 → 跳过本条（继续），否则直接结束整个循环（break）。",
+      "豁免条目本身既不参与预算计算，也不被溢出阻断。"
+    ],
+    "溢出顺序的依赖": "每轮先按「粘性优先 → 原始序」排序本轮新激活条目，再进组竞争，再摇概率，再扣预算。⇒ 被组淘汰或概率失败的条目既不摇概率也不占预算。",
+    "与文档的关系": "文档说「预算耗尽后不再激活」，与实现一致但不完整：文档没提它会连带冻结递归与最小激活数补扫，这是最容易被误实现成「软上限」的地方。",
+    "易错点": [
+      "做成逐条软跳过：溢出后仍会继续激活后面的非豁免条目，行为与 ST 不同",
+      "把溢出标志每轮重置：ST 是单次扫描内粘性，跨轮不清",
+      "用开区间判断（strictly greater）：等于预算即应溢出",
+      "忘记 ignoreBudget 计数器：溢出一旦发生，豁免条目会一起被饿死"
+    ],
+    "pseudocode": "budget = max(1, round(pct * ctx / 100));  if cap > 0: budget = min(budget, cap)\noverflowed = false\nfor 轮次:\n  已激活token = tokens(累计已激活正文)\n  豁免余数 = count(本轮候选中 免疫预算)\n  本轮文本 = \"\"\n  for 条目 in 本轮候选(粘性优先→原始序):\n    豁免余数 -= (条目能耗免疫 ? 1 : 0)\n    if overflowed 且 条目非免疫:\n      if 豁免余数 > 0: continue   # 先放行后面的豁免条目\n      else: break                 # 整轮提前结束\n    if 未过概率: continue\n    本轮文本 += 条目正文\n    if 条目非免疫 且 已激活token + tokens(本轮文本) >= budget:\n      overflowed = true; continue\n    计入已激活\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "server-rs/src/agents/engine/worldbook.rs:135-143",
+      "server-rs/src/services/prompt_kit.rs:294-300",
+      "server-rs/src/parsing/world_book.rs:602-608"
+    ],
+    "note": "Kedai 的世界书注入链路没有 token 预算：触发判定只有「窗口 → 匹配 → 概率」三步，命中即全部注入，不存在累计正文 token 与上限的比较，也没有 ignoreBudget 这种豁免概念。仓内唯一叫 budget 的是任务节点的段预算（另一条链路），不是世界书预算。另：概率判定用的是「roll < probability」开区间且要求 probability > 0，与 ST 的「roll <= probability 且 0 也可能通过」不同。"
+    },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Context % / Budget",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L369-L378"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（预算额计算与封顶）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4736-L4741"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（免疫计数与溢出粘性判定）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5017-L5077"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（溢出阻挡递归与最小激活补扫的两个条件）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L5094-L5122"
+    }
+  ],
+  "related": ["worldinfo.activation.flow", "worldinfo.timed.state"],
+  "updated": "2026-10-31"
+}

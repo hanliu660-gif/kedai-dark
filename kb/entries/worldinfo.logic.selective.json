@@ -1,0 +1,70 @@
+{
+  "id": "worldinfo.logic.selective",
+  "domain": "worldinfo",
+  "title": "副关键词四档逻辑（selectiveLogic）：全部建立在主键命中之上",
+  "priority": "P0",
+  "authority": "doc",
+  "spec": {
+    "前提": "只有主关键词已命中（或 constant=true）的条目才有资格被评估副关键词；副关键词永远不能「单独」让条目激活。",
+    "取值": {
+      "0": {
+        "名": "AND_ANY",
+        "语义": "主键命中 且 至少一个副键命中",
+        "布尔": "主 ∧ (∃副)"
+      },
+      "1": {
+        "名": "NOT_ALL",
+        "语义": "主键命中 且 并非所有副键都命中（存在至少一个副键未命中）",
+        "布尔": "主 ∧ ¬(∀副)",
+        "陷阱": "名字里的 NOT 修饰的是 ALL，不是主键；只有副键『全中』时返回 false"
+      },
+      "2": {
+        "名": "NOT_ANY",
+        "语义": "主键命中 且 所有副键都未命中",
+        "布尔": "主 ∧ ¬(∃副)",
+        "陷阱": "与 NOT_ALL 极易混淆：NOT_ANY 只有『全不中』为 true"
+      },
+      "3": {
+        "名": "AND_ALL",
+        "语义": "主键命中 且 所有副键都命中",
+        "布尔": "主 ∧ (∀副)",
+        "备注": "与 NOT_ALL 恰好互补（在副键维度上）"
+      }
+    },
+    "副键为空时": "该逻辑被忽略（等价于不设副键条件），条目只看主键。",
+    "边角情况": {
+      "副键列表为空": "本逻辑不参与判定",
+      "副键全部命中": "NOT_ALL 返回 false（不激活）",
+      "副键全不命中": "NOT_ANY 返回 true（激活）；AND_ANY/AND_ALL 均为 false"
+    },
+    "pseudocode": "if (!主键命中 && !constant) return 不激活\nswitch (logic) {\n  AND_ANY : return 任一(副)_命中\n  NOT_ALL : return !全部(副)_命中\n  NOT_ANY : return !任一(副)_命中\n  AND_ALL : return 全部(副)_命中\n}"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/world_book.rs:68",
+      "server-rs/src/parsing/world_book.rs:570",
+      "server-rs/src/services/prompt_kit.rs:138"
+    ],
+    "note": "Kedai 的 WorldEntry 有 keys_secondary 字段，但匹配实现把主键与副键拼成同一个 OR 列表（chain 后 any 命中即算），既不看 selective 开关，也没有 selectiveLogic 字段；NULL 语义 ⇒ 设了副键做『排除条件』的条目会变成『任一命中就触发』。需补 selective + selectiveLogic 四档。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · World Info · Optional Filter",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md#L121-L129"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（四档判定实现）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4943-L4978"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 world-info.js（常量定义 0..3）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L33-L38"
+    }
+  ],
+  "related": ["worldinfo.field.schema", "worldinfo.activation.flow"],
+  "updated": "2026-10-31"
+}

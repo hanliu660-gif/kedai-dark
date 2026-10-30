@@ -1,0 +1,87 @@
+{
+  "id": "macro.eval.order",
+  "domain": "macro",
+  "title": "求值顺序 = 源码出现顺序（边遍历边吐结果），不是先收集后统一替换",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "为什么 authority 是 src": "文档只讲「嵌套先解」「副作用」，没有把「求值顺序 = 源码顺序、边求值边写结果」这条机制写出来。它是 setvar/getvar 时序能成立的根本原因，必须读源码。",
+    "四层流水线": [
+      "1. 预处理（纯文本整串替换，按权重升序）：兼容旧写法的替换，如把 `<USER>` 换成 user 宏、把旧式时区宏改成新式。",
+      "2. **只解析一次**得到语法树（不是逐个宏解析）。",
+      "3. 遍历顶层元素，按起始偏移**升序**逐个求值，求一个就把结果直接追加进输出缓冲——所以「先出现的宏先执行」。",
+      "4. 后处理（整串）：还原转义花括号、删 `{{trim}}` 与其两侧换行、清理条件宏残留的分支标记。"
+    ],
+    "时序的因果": "`{{setvar::t::4}}{{getvar::t}}` 必然输出 `4`：setvar 这个元素先被求值（handler 里写变量），getvar 是后面的元素，读到的就是已写入的值。**不是靠依赖分析或排序**，纯粹是源码顺序 = 求值顺序。",
+    "嵌套的时序": [
+      "同一宏的参数按出现顺序（偏移升序）求值。",
+      "参数的求值方式是把参数原文**重新解析一遍**再跑同一套遍历——这就是「参数里可以塞 scoped 宏 / 条件宏」的原因。",
+      "结论：内层先于外层，外层 handler 拿到的参数已经是解析后的字符串。"
+    ],
+    "scoped 内容的位置": "scoped 内容（开闭标签之间那段）**永远作为最后一个参数追加**，且先于 handler 调用求值。于是 `{{宏::名}}内容{{/宏}}` 与 `{{宏::名::内容}}` 等价。",
+    "scoped 内容能否成立的判定": [
+      "规则 = 一次「额外参数名额」校验：把 scoped 内容当成多出来的一个参数，看参数总数是否落在该宏的 [最少, 最多] 区间。",
+      "**声明了列表参数的宏一律不接受 scoped 内容**（直接返回 false）。",
+      "不接受时：开标签与闭标签都原样保留（不报错）。",
+      "未配对的闭标签同样原样保留。"
+    ],
+    "scoped 内容的自动修剪": {
+      "默认": "scoped 内容会被自动 trim，并做「去公共缩进」——按第一个非空行的前导空白长度作为基准，每行切掉等量前导，最后整体 trim。这不是简单 trim，多行内容的缩进会被改。",
+      "关闭方式": "保留空白标志（`#`）可关掉这次修剪。",
+      "例外": "开启「延迟参数解析」的宏（如条件宏）其 scoped 内容原样传入、不做修剪也不预解析。"
+    },
+    "延迟参数解析（关键机制）": {
+      "含义": "声明后，参数与 scoped 内容都**不预先解析嵌套宏**，handler 自己决定何时对哪段调用解析。",
+      "为什么必须": "条件宏要靠它做到「只执行被选中分支」；若预解析，两条分支里的 setvar 都会执行（双跑副作用）。",
+      "代价": "原始文本里的 setvar 不会被执行，除非 handler 主动解析。",
+      "偏移传递": "handler 主动解析时会带上原宏的偏移，保证依赖位置做种子的宏（如 pick）在延迟内容里仍拿到正确位置。"
+    },
+    "每个宏结果单独过后处理": "调用方传入的后处理函数是**对每个宏的结果各调用一次**（从内到外），不是整串处理完再统一过。这是实现细节，但会影响依赖该后处理的卡片行为。",
+    "环境冻结只到第一层": "引擎给 handler 的环境是浅冻结副本：顶层属性被冻结，但嵌套对象（动态宏表 / 角色字段 / 扩展位）仍是同一引用，handler 理论上能污染后续宏。复刻若想更安全应深冻结或克隆。",
+    "易错点": [
+      "做成「收集所有宏 → 统一替换」：setvar/getvar 的时序会错，条件宏分支副作用会双跑",
+      "对参数先做全局展开再交给 handler：等于关掉了延迟参数解析，条件宏语义崩",
+      "把 scoped 内容当第一个参数：位置错，参数个数校验也会错",
+      "用简单 trim 实现 scoped 修剪：多行缩进行为会与 ST 不同"
+    ],
+    "pseudocode": "输出 = \"\"; 光标 = 0\nfor 元素 in 顶层元素(按起始偏移升序):\n  if 元素起始 > 光标: 输出 += 原文[光标..元素起始]\n  if 元素是纯文本: 输出 += 原文切片; 光标 = 元素结束\n  else if 元素标记为原样保留: 输出 += 原文切片\n  else: 输出 += 求值(元素)\n  光标 = 元素结束\nthen 后处理(输出)\n\n求值(宏元素):\n  名 = 取宏名(统一小写查表)\n  若 声明了延迟参数解析:\n    参数 = 原文切片(不做嵌套解析)\n  else:\n    参数 = [递归解析(每个参数原文) 按偏移升序]\n  若 有 scoped 内容:\n    若 能接受额外参数 且 未声明延迟:\n      参数 += [修剪(解析(scoped 原文))]   # 修剪可被保留空白标志关掉\n    否则: 该开闭标签对整体原样保留\n  return 规范化(handler(参数, 环境))\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/macros.rs:33-81",
+      "server-rs/src/parsing/macros.rs:97-243",
+      "server-rs/src/parsing/macros.rs:152-168"
+    ],
+    "note": "Kedai 的求值同样是「单遍从左到右」，所以 setvar → getvar 的时序这一条是符合的（且有测试锁定）。但缺三件事：①参数内的嵌套宏不递归解析（setvar 的值原样存、getvar 不做二次展开），所以 `{{getvar::{{char}}_心情}}` 这类写法不成立；②没有 scoped 语法（`{{宏}}内容{{/宏}}` 原样保留）；③`{{trim}}` 被实现成「修剪紧随其后的单个宏输出」的修饰标志，而不是后处理器删除标记。"
+  },
+  "sources": [
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · Macros · Nested / Scoped / Content Trimming",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/macros.md#L123-L208"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（四层流水线与 normalize 规则）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L117-L159"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（逐元素求值写缓冲 + 延迟参数解析分支）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L411-L469"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroCstWalker.js（scoped 配对与「参数名额」判定）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroCstWalker.js#L1308-L1333"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 MacroEngine.js（scoped 修剪：trim + 去公共缩进）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/macros/engine/MacroEngine.js#L372-L413"
+    }
+  ],
+  "related": ["macro.syntax.argspec", "macro.registry.args", "macro.flags"],
+  "updated": "2026-10-31"
+}

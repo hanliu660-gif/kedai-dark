@@ -239,6 +239,11 @@ if (-not $AuditOnly) {
         # 放在文档口径段而不是 web 段:它校验的是「内容与界面一致性」这类口径事实,
         # 与 GATE-1 的教训同理——不该被 -SkipWeb 跳过(纯后端批次同样可能改改名/删入口而忘改教程)。
         Invoke-Stage 'docs: check-tutorial' { node tools/check-tutorial.mjs }
+        # 酒馆兼容知识库校验(2026-10-31 KB 批,硬门禁):kb/ 条目 schema 合规、ID 唯一、
+        # index 与 entries 双向一致、sources.ref 是「路径:行号」指针、kedai.evidence 可定位,
+        # 并**拦截上游源码片段**(许可红线:SillyTavern/ST-Prompt-Template 是 AGPL-3.0、
+        # 酒馆助手是 PolyForm 非商用,而本仓是 MIT 公开仓——贴代码会污染整个仓库)。
+        Invoke-Stage 'docs: check-kb' { node tools/check-kb.mjs }
     } finally { Pop-Location }
 }
 

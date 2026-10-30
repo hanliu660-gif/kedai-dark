@@ -1,0 +1,87 @@
+{
+  "id": "prompt.injection.two_modes",
+  "domain": "prompt",
+  "title": "注入位置两档（RELATIVE=0 / ABSOLUTE=1）：depth 与 order 只对 ABSOLUTE 生效",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "两档定义": [
+      {
+        "值": 0,
+        "名": "RELATIVE（相对）",
+        "语义": "该提示词**参与 prompt_order 顺序**，最终落在顺序数组里由它自己的下标决定的槽位",
+        "depth 与 order": "**不生效**（两个字段仅 ABSOLUTE 档可见/可用）"
+      },
+      {
+        "值": 1,
+        "名": "ABSOLUTE（绝对 / In-chat）",
+        "语义": "不占 prompt_order 槽位；改为按深度插进对话消息流内部",
+        "depth 与 order": "**只在这一档生效**"
+      }
+    ],
+    "判定方式": "严格等于 ABSOLUTE(1) 才走绝对路径；其它任何值（包括未定义）一律按 RELATIVE。",
+    "ABSOLUTE 的插入算法（顺序即语义）": [
+      "1. 深度从 0 起，枚举到「最大注入深度」；每层收集「深度全等于该层 ∧ 正文非空」的提示词。注意是**严格全等**：JSON 里存成字符串 `\"0\"` 不会匹配数字 0，会静默失效。",
+      "2. 同层内按「注入顺序」分组；**顺序值大的先被写入**（降序处理）。",
+      "3. 每组内再按角色固定顺序 **system → user → assistant** 拼接（同角色多条用换行合并）。",
+      "4. 该层拼接结果整体插入消息数组：插入下标 = 该层深度 + 已插入条数。",
+      "5. 全部插完后把整个消息数组**翻转**（输入是「最新在前」，输出是「最旧在前」）。"
+    ],
+    "换算后的最终观感": [
+      "深度 0 = 紧贴**最新消息之后**（输出数组尾部）。",
+      "深度 k = 插在「倒数第 k 条之前」。",
+      "同深度下：**顺序值小的更贴近最新消息**（因为大值先写、翻面后下沉）。UI 文案「从低/顶 到 高/底」与实现一致。",
+      "同深度同顺序下：翻面后 system 最贴近最新消息，assistant 最远。"
+    ],
+    "默认值": [
+      "注入顺序默认 100。",
+      "注入深度**没有数据层默认值**：界面显示时用缺省常量兜底，但数据里可能是未定义或空 —— 因此「用户界面看到 4」不等于「数据里存了 4」。",
+      "注入位置没有数据层默认值（界面默认 RELATIVE）。"
+    ],
+    "覆盖方向": "系统提示 → prompt_manager 配置的覆盖使用「空值合并」语义：配置里显式写了 0（RELATIVE）是**有效值**，不会被当空回退；只有 null/未定义才回退。",
+    "最大深度": "注入循环的上界是写死的极大常量（真实计算被注释掉），所以循环本质是「空跑到上限」，靠每层过滤短路。复刻可优化成「取实际最大深度」，但要注意语义差别仅在性能。",
+    "易错点": [
+      "把 0 当成「绝对/底部」：ST 的 0 是 RELATIVE，1 才是 ABSOLUTE",
+      "把深度当成「从最新消息往前数的第 k 条」以外的语义（如「第 k 条之后」）",
+      "同层内按角色顺序 asc 处理却不翻面：最终谁贴近最新消息会反",
+      "把顺序值大的当作更贴近最新消息：反了",
+      "深度用宽松比较：字符串型深度会意外命中",
+      "把「界面显示 4」当成数据默认 4"
+    ],
+    "pseudocode": "for 层 in 0..最大深度:\n  本层 = 提示词中 (深度 全等 层) 且 正文非空 者\n  若 本层 为空: 继续\n  按 顺序值 **降序** 分组\n  for 组 in 降序组:\n    for 角色 in [系统, 用户, 助手]:\n      内容 = 组内该角色各条 用换行 合并\n      若非空: 待插 += (角色, 内容)\n  若 待插 非空:\n    消息数组.在(层 + 已插入数) 处插入 待插\n    已插入数 += 待插长度\n消息数组 = 翻转(消息数组)\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/preset.rs:5",
+      "server-rs/src/parsing/preset.rs:140-177",
+      "server-rs/src/models/types.rs:477",
+      "web/src/api/types.ts:789"
+    ],
+    "note": "Kedai 把 ST 的 injection_position 重解释成四种楼层位置的映射：0 → 系统提示词、1 → 消息前、2 → （depth>0 则按深度，否则消息后）、其它 → 消息后；且把 system_prompt 布尔优先于 injection_position 判定。⇒ 与 ST 的两档语义**完全不同**：ST 的 0 是「按顺序数组」，Kedai 的 0 是「并入系统提示词」；ST 的 depth/order 只在 1 档生效，Kedai 只在 2 档生效。导入了带 injection_position 的 ST 预设后，条目落点会整体偏移。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 PromptManager.js（INJECTION_POSITION 常量与默认注入顺序）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js#L31-L40"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（ABSOLUTE 档按深度/顺序/角色插入与最终翻转）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L810-L874"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（RELATIVE 档走槽位赋值、ABSOLUTE 直接 return）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L1187-L1208"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 openai.js（系统提示覆盖用空值合并）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js#L1473-L1493"
+    }
+  ],
+  "related": ["prompt.slot.assignment", "prompt.pinned.identifiers"],
+  "updated": "2026-10-31"
+}

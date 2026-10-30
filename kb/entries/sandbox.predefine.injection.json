@@ -1,0 +1,83 @@
+{
+  "id": "sandbox.predefine.injection",
+  "domain": "sandbox",
+  "title": "predefine 注入的三条硬规则：绑定 this、名字去一个下划线、Mvu.set 必须空",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "注入清单（六项 + 两条访问器）": {
+      "整对象引用": "模板引擎对象、宿主 API 本体、YAML、markdown 渲染器、提示气泡、schema 校验库 —— 六项按**白名单逐个列名**注入，不是「把父窗所有对象灌进来」。",
+      "lodash": "**单独一行、最早注入**，并且是**直接引用父窗同一个实例**（不是拷贝）⇒ 共享记忆化缓存与模板配置。",
+      "SillyTavern": "走访问器，见 sandbox.sillytavern.getcontext",
+      "Mvu": "**条件注入**：父窗有才注入；且是「只读 getter + **空 setter**」。",
+      "编译标志": "三个 Vue/pinia 相关标志必须设：开发工具开关 true、选项式 API 开关 true、水合失配详情 false。缺了用 pinia 的卡会炸。",
+      "卸载清理": "在 window 上挂 `pagehide` 监听，卸载时清空本 iframe 注册的全部事件。见 sandbox.iframe.pagehide"
+    },
+    "三条硬规则（形似而神不似的根源）": [
+      {
+        "规则": "内部函数必须 **bind(当前 iframe 的 window)**",
+        "原因": "宿主 API 本体是全局单例，直接注册进去会丢「我是哪个 iframe」的身份；绑定后才能按 iframe 精确清理、才能在回调里知道是谁。",
+        "错法": "直接复制方法而不绑定 ⇒ 卡里调 `getVariables()` 时报「未指定 script_id」之类的无身份错误。"
+      },
+      {
+        "规则": "内部方法名**只去掉第一个下划线**",
+        "原因": "内部容器里的方法名统一加了前导下划线（`_eventOn` / `_getVariables`），注入时把首个下划线去掉变成公开名（`eventOn` / `getVariables`）。",
+        "错法": "用「去掉全部下划线」的替换 ⇒ 带多个下划线的名字会被改坏；正解只去首个。"
+      },
+      {
+        "规则": "`Mvu` 的 setter **必须是空函数**",
+        "原因": "Mvu 生态的脚本自己会用 lodash 写自己的变量；若不吞掉卡对 `Mvu` 的赋值，卡会把 iframe 侧的对象覆盖，导致变量层写坏。",
+        "错法": "给普通可写属性 ⇒ 卡里任何 `Mvu = ...` 或 `window.Mvu.xxx = ...` 写入都会污染。"
+      }
+    ],
+    "名字覆盖的意外后果": "内部改名注入发生在「整对象白名单注入」**之后**，因此同名者以改名版为准。⇒ iframe 里拿到的 `getVariables` / `replaceVariables` / `initializeGlobal` 等是**已绑定 this 的版本**，行为与父窗本体上的同名方法**不同**（父窗版本缺 iframe 身份）。这是「卡里裸调能跑、外面裸调不能跑」的机制。",
+    "注入顺序": [
+      "1. lodash 引用（一切后续操作的前提）",
+      "2. iframe 身份（先取 `frameElement.id`，回退 `window.name`；并双写到缓存字段，因为某些浏览器在 srcdoc 导航后 frameElement 会变 null）",
+      "3. 六项白名单整对象",
+      "4. 宿主 API 本体（剔除内部容器）",
+      "5. 内部容器逐项去首下划线 + 绑定 window，一次性合并",
+      "6. 触发链式求值（若用惰性链，**不显式求值等于前面全没执行**）",
+      "7. 编译标志 → SillyTavern 访问器 → Mvu 访问器 → pagehide 清理"
+    ],
+    "易错点": [
+      "用 `Object.assign(window, parent)` 图省事：会把 document/location 灌进来，直接毁掉沙箱",
+      "把内部容器整个注入：iframe 里会多出几十个 `_xxx` 内部名，卡可能误判",
+      "忘了 bind：卡里裸调 API 全部带错身份",
+      "用全局替换去掉下划线：多下划线的名字被改废",
+      "给 Mvu 可写属性：变量层被卡写坏",
+      "漏了编译标志：用 pinia 的卡在挂载阶段就炸",
+      "用惰性链却不求值：注入静默失效"
+    ],
+    "pseudocode": "挂 lodash = 父窗.lodash            # 同一实例,不拷贝\n身份 = frameElement.id 或 window.name\n若 身份 非空: 缓存到 __IFRAME_ID 与 window.name\n合并(window, 父窗[六项白名单])          # 逐个列名,不做整体摊开\n合并(window, 父窗.宿主API 但剔除 内部容器)\nfor (内部名, 函数) in 父窗.宿主API.内部容器:\n  合并(window, { 去掉首个下划线(内部名): 函数.bind(window) })\n若 用惰性链: 求值()\n设 编译标志三项\n定义访问器 SillyTavern / Mvu(Mvu 的 set = 空函数)\n$ (window).on('pagehide', 清空本 iframe 全部事件)\n"
+  },
+  "kedai": {
+    "status": "partial",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:102-106",
+      "web/src/sandbox/boot/mvu-tavern.ts:176-178",
+      "server-rs/src/api/resource_frame_template.html:553-562",
+      "server-rs/src/api/resource_frame_template.html:1150-1156"
+    ],
+    "note": "Kedai 的沙箱 boot 直接把一批裸全局**平铺挂到 globalThis**（`$` / `jQuery` / `_` / `Mvu` / 各类变量函数 / `eventOn` / `toastr` / 脚本按钮 API），没有「内部容器 + 去首下划线 + bind(window)」这套机制，也没有 Mvu 的只读访问器（`Mvu` 是普通可写对象）。整页卡的隔离文档侧同样是自己重写一套垫片（jQuery-lite / Mvu / Vue / 存储 shim），不是照 predefine 的规则注入。⇒ 形似（名字大多都在），但「绑定身份」「只去首下划线」「Mvu 空 setter」三条都不成立，卡对身份的依赖会隐性失效。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 predefine.js（整份注入实现：lodash/白名单/去下划线 bind/访问器/pagehide）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/predefine.js#L1-L48"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 index.ts（内部容器 34 个函数清单与公开面关系）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/index.ts#L200-L300"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 util.ts（_getIframeName 依赖 predefine 缓存的 id）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/function/util.ts#L74-L95"
+    }
+  ],
+  "related": ["sandbox.sillytavern.getcontext", "sandbox.iframe.pagehide", "sandbox.event.chat_changed"],
+  "updated": "2026-10-31"
+}

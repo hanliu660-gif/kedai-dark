@@ -1,0 +1,59 @@
+{
+  "id": "card.png.tEXt",
+  "domain": "card",
+  "title": "角色卡 PNG 载体：只认 tEXt、ccv3 优先、写入双写",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "读取": [
+      "只扫 **`tEXt`** 类型的块（写卡时用的是这种）。`iTXt` / `zTXt` 一律**不读** ⇒ 用错块类型卡就「读不出来」，且只有一行控制台错误，界面上看不出原因。",
+      "块内数据按「第一个 NUL 字节」切成「关键字 + 值」两段。",
+      "关键字比较**全部转小写** ⇒ 写卡时用大写关键字也能被读出。",
+      "**`ccv3` 优先于 `chara`**：两个都存时以 ccv3 为准；ccv3 不存在才回落到 chara。",
+      "两者都没有 → 报「PNG 元数据不含角色数据」。"
+    ],
+    "写入": [
+      "先解出全部块，把关键字是 `chara` 或 `ccv3` 的旧块**全部剔除**（同样大小写不敏感）。",
+      "插入位置是「紧贴文件末块（IEND）之前」。",
+      "**两个块都写，不是二选一**。",
+      "`ccv3` 不是独立生成的数据：把同一份 v2 JSON 的 `spec` 与 `spec_version` 两个字段改成 v3 值后序列化 ⇒ **不重排结构、不补字段**。所以两个块体量几乎相同（仅差两个字符串）。",
+      "v3 序列化失败时**静默忽略**（只写 chara，不报错）。"
+    ],
+    "上游注释与实现不符（要点）": "文件头注释写着「只写 chara，ccv3 不支持且被移除以避免失配」，但**实现里 v3 是支持的**（只是失败被静默吞掉）。这是上游自己的注释陈旧，不要据此判定「v3 不支持」。",
+    "其它容器": "JPEG / WebP 生态会把角色数据塞进各自段（APP1/Exif/COM 等），关键字形态可能不带 NUL 分隔。复刻若要支持这两种，不能只按 PNG 的「关键字 NUL 值」规则解析。",
+    "易错点": [
+      "为「兼容」去读 iTXt/zTXt：与上游行为分叉（上游只读 tEXt）",
+      "只写 chara 不写 ccv3：其它工具（按 v3 优先读的）读到的还是旧数据",
+      "把 ccv3 当成「重新序列化整卡」：会引入字段顺序变化，diff 炸",
+      "写入位置放到文件末尾而不是 IEND 前：部分解析器读不到",
+      "关键字比较不转小写：大写卡读不出来"
+    ],
+    "pseudocode": "读(图片):\n  chunks = 解析全部块\n  texts = chunks 中类型 == tEXt 者\n  for 块 in texts: (键, 值) = 值按首个 NUL 切分; 键 = 小写(键)\n  若 存在 键 == 'ccv3': 返回 解码(该值)\n  若 存在 键 == 'chara': 返回 解码(该值)\n  报错(无角色数据)\n\n写(图片, 数据):\n  chunks = 解析全部块\n  剔除 键 in {chara, ccv3}(小写比较) 的块\n  v2 串 = 编码(数据)\n  在 IEND 前 插入 块(tEXt, 'chara', v2串)\n  尝试: v3 = 数据; v3.spec = 固定v3标识; v3.spec_version = 固定版本串\n         在 IEND 前 插入 块(tEXt, 'ccv3', 编码(v3))\n  捕获失败: 忽略（只留 chara）\n"
+  },
+  "kedai": {
+    "status": "differs",
+    "evidence": [
+      "server-rs/src/parsing/character_card.rs:189",
+      "server-rs/src/parsing/character_card.rs:191",
+      "server-rs/src/parsing/character_card.rs:195"
+    ],
+    "note": "Kedai 的 PNG 解析同时接受 tEXt 与 iTXt(比上游宽松),但两处硬差异:①**无 ccv3 优先逻辑**(全仓 grep ccv3 = 0 命中),只认 chara ⇒ ST 用 v3 工具导出、仅含 ccv3 块的卡会直接报「未检测到 chara」;②关键字是**精确匹配** keyword == \"chara\",大小写敏感 ⇒ 大写关键字读不出。另有额外能力(JPEG/WebP 提取)属上游没有的扩展。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "ST 源码 character-card-parser.js（写入：双写 chara+ccv3、插到 IEND 前）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/character-card-parser.js#L15-L45"
+    },
+    {
+      "kind": "src",
+      "name": "ST 源码 character-card-parser.js（读取：只认 tEXt、ccv3 优先）",
+      "ref": "https://github.com/SillyTavern/SillyTavern/blob/release/src/character-card-parser.js#L54-L78"
+    }
+  ],
+  "related": [
+    "card.chat.jsonl",
+    "card.frontend.detect"
+  ],
+  "updated": "2026-10-31"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "sandbox.sillytavern.getcontext",
+  "domain": "sandbox",
+  "title": "卡里的 SillyTavern 必须是「实时 getter」，且必须带 getContext —— 静态空壳会 TypeError",
+  "priority": "P0",
+  "authority": "src",
+  "spec": {
+    "契约": {
+      "形态": "iframe 里的 `SillyTavern` 必须是 **Object.defineProperty + getter**，每次属性访问都重新调用宿主的「取上下文」函数。",
+      "返回内容": "返回「当前上下文的浅拷贝 + 把取上下文函数自身也挂在对象上」。⇒ 卡里两种写法都成立：`SillyTavern.getContext()` 与 `SillyTavern.getContext().getContext()`。",
+      "附加字段": "getter 还会在返回对象上挂一个「写扩展字段」辅助方法（供卡写自己的扩展配置），这是相机/插件类卡的必要入口。",
+      "为什么必须实时": "静态快照会让卡里的上下文永远停在沙箱启动那一刻：切聊天、切角色、改设置后卡读到的是旧值；实测有卡靠轮询上下文里的变量树来判断就绪，快照会永远不就绪。",
+      "为什么必须带取上下文函数": "`getContext()` 是大量现代卡的标准入口（用于拿聊天数组、角色卡数据、扩展设置、事件总线、slash 命令执行器等）。缺它 → 卡一进函数体就 TypeError。"
+    },
+    "最小可用面（缺任一都可能被真实卡踩）": [
+      "取上下文函数本身",
+      "上下文的浅拷贝（字段至少含：聊天消息数组、当前角色、用户/角色名、扩展设置、事件总线、工具函数表）",
+      "写扩展字段的辅助方法（挂在返回对象上，不是挂在 SillyTavern 本体上）"
+    ],
+    "反面样本（Kedai 现状）": "给的是一个**静态可写对象**：只有 `extensionSettings` / `chat` / `characters` / `name1` 四个键，**没有取上下文函数**。注释里写明动机是「避免 ReferenceError 连锁」——这个动机是对的，但后果是卡调 `getContext()` 直接 TypeError。",
+    "与文档的关系": "官方文档把取上下文写成唯一的推荐入口（不要在卡里直接摸内部变量）。所以这条的 authority 虽是 src（形态由源码定），语义本身是文档级契约。",
+    "其它同类陷阱（易一起做错）": [
+      "把 `SillyTavern` 做成普通对象但每次重建：不是 getter，卡里缓存的引用会失效",
+      "把整个宿主 window 直接摊给 iframe：会把 `document` / `location` 带进去，直接搞坏沙箱",
+      "只挂 `SillyTavern.getContext` 但不去掉对 `window.parent` 的依赖：跨源访问直接抛"
+    ],
+    "pseudocode": "定义访问器(window, 'SillyTavern'):\n  取 = 函数():\n    上下文 = 宿主.取上下文()      # 每次访问都重新取\n    副本 = 浅拷贝(上下文)\n    副本.写扩展字段 = 宿主.写扩展字段\n    副本.取上下文 = 取              # 自引用,支持二次调用\n    返回 副本\n  只有 getter，不设 setter（避免卡把本体覆盖掉）\n"
+  },
+  "kedai": {
+    "status": "missing",
+    "evidence": [
+      "web/src/sandbox/boot/mvu-tavern.ts:176-178",
+      "web/src/render.ts:787"
+    ],
+    "note": "Kedai 在沙箱 boot 里给出的是静态可写空壳 `{extensionSettings:{},chat:[],characters:[],name1:'user'}`，`grep getContext web/src/sandbox/` = **0 命中**。⇒ 现代卡最常用的入口 `SillyTavern.getContext()` 在 Kedai 沙箱里必定 TypeError；整页卡的隔离文档（resource-frame.html）里也完全没有注入 `SillyTavern`（grep 只有注释提到）。这属于「性质差异」而非参数差异，必须加 RPC 桥才能补齐。"
+  },
+  "sources": [
+    {
+      "kind": "src",
+      "name": "酒馆助手 predefine.js（SillyTavern 用 defineProperty + getter 实时取上下文）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/src/iframe/predefine.js#L26-L34"
+    },
+    {
+      "kind": "src",
+      "name": "酒馆助手 @types/iframe/exported.sillytavern.d.ts（卡可见的 SillyTavern 类型面）",
+      "ref": "https://github.com/N0VI028/JS-Slash-Runner/blob/main/@types/iframe/exported.sillytavern.d.ts#L1-L60"
+    },
+    {
+      "kind": "doc",
+      "name": "ST 官方文档 · 扩展开发 · getContext 是唯一推荐上下文入口",
+      "ref": "https://github.com/SillyTavern/SillyTavern-Docs/blob/main/For_Contributors/Writing-Extensions.md#L1-L60"
+    }
+  ],
+  "related": ["sandbox.predefine.injection", "sandbox.jquery.two_hosts"],
+  "updated": "2026-10-31"
+}
