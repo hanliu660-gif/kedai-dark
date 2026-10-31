@@ -109,6 +109,47 @@ function Invoke-Stage([string]$Name, [scriptblock]$Body) {
     $script:results += [pscustomobject]@{ Stage = $Name; Result = 'OK'; Seconds = [math]::Round($sw.Elapsed.TotalSeconds,1) }
 }
 
+# ============================================================
+# [STAGE-REORDER] 2026-10-31:文档段前移(秒级检查前置)
+# 依据:最长的一步(全量测试)曾排在 0.1 秒的文档检查之前 ⇒ 测试跑满后被文档检查
+# 判死整轮作废(上游实测有 1288s 测试通过后被 0.3s check-docs 否决的记录)。
+# 本段 4 个 Node 检查合计 < 0.6 秒,前置后失败可在秒级反馈。
+# 守卫条件(-AuditOnly)与判定语义零改动;vcvars 依赖仍在后端块内,不受影响。
+# ============================================================
+# ===== 文档一致性门禁(纯 Node 零依赖,与 -SkipRust/-SkipWeb 解耦)=====
+# 2026-09-16 文档整合:68 份散落 md → 六类体系(契约/功能/计划/展望/经验/遗留),
+# 原文档归档到 docs/archive/2026-09-16-consolidation/。此前 docs/ 没有任何机器校验,
+# 本阶段把「根下只放六类活文档 + 索引双向一致 + 链接不失效 + 归档映射覆盖」变成硬门禁。
+# 规则清单见 tools/check-docs.mjs 头部注释(D1~D6)。
+#
+# GATE-1(2026-10-06 修复):`docs: check-doc-claims` 此前被包在 `-SkipWeb` 守卫内,
+# 而段注释却声称「与 -SkipWeb 解耦」——带 `-SkipWeb` 跑时文档口径(含路由总表穷尽性
+# 与十余项由代码派生的计数)不校验且无任何提示,「口径全绿」成为假信号。现与
+# `docs: check-docs` 并列在本段内:只有 `-AuditOnly` 能跳过它们。本段与后端编译、
+# 前端测试/构建都无依赖,可独立运行。
+if (-not $AuditOnly) {
+    Push-Location $root
+    try {
+        Invoke-Stage 'docs: check-docs' { node tools/check-docs.mjs }
+        # 文档口径检查(2026-09-26 起,硬门禁):把「由代码/脚本派生」的计数(表数、ensure_* 个数、
+        # check-contract 映射组数与镜像表行数、check-arch 规则字母与两个 ratchet 基线、
+        # SseEvent/TaskEventKind 变体数、check-all 阶段数)与文档字面逐条比对——这批事实
+        # 原先散在多份文档各写一个数、且不在任何门禁内(count-tests 只管测试数字)。
+        # 历史层(「原文 + 变更标注」体例)保留旧值不判失配。
+        Invoke-Stage 'docs: check-doc-claims' { node tools/check-doc-claims.mjs }
+        # 新手教程防漂移机检(2026-10-10 TUTSYNC OB-12,硬门禁):教程步骤表的跳转落点、
+        # 引用的界面真实名、退役入口叫法、关于页速览覆盖与步数派生,逐条与真实界面对比。
+        # 放在文档口径段而不是 web 段:它校验的是「内容与界面一致性」这类口径事实,
+        # 与 GATE-1 的教训同理——不该被 -SkipWeb 跳过(纯后端批次同样可能改改名/删入口而忘改教程)。
+        Invoke-Stage 'docs: check-tutorial' { node tools/check-tutorial.mjs }
+        # 酒馆兼容知识库校验(2026-10-31 KB 批,硬门禁):kb/ 条目 schema 合规、ID 唯一、
+        # index 与 entries 双向一致、sources.ref 是「路径:行号」指针、kedai.evidence 可定位,
+        # 并**拦截上游源码片段**(许可红线:SillyTavern/ST-Prompt-Template 是 AGPL-3.0、
+        # 酒馆助手是 PolyForm 非商用,而本仓是 MIT 公开仓——贴代码会污染整个仓库)。
+        Invoke-Stage 'docs: check-kb' { node tools/check-kb.mjs }
+    } finally { Pop-Location }
+}
+
 if (-not $SkipRust -and -not $AuditOnly) {
     if (-not $hasCargo) { Write-Host '未找到 cargo(也不在 ~\.cargo\bin),跳过后端;请先安装 Rust 工具链' -ForegroundColor Yellow }
     elseif (-not (Test-Path $vcvars)) { Write-Host "未找到 vcvars64.bat,跳过后端;请安装 VS BuildTools(MSVC)" -ForegroundColor Yellow }
@@ -251,39 +292,6 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 
-# ===== 文档一致性门禁(纯 Node 零依赖,与 -SkipRust/-SkipWeb 解耦)=====
-# 2026-09-16 文档整合:68 份散落 md → 六类体系(契约/功能/计划/展望/经验/遗留),
-# 原文档归档到 docs/archive/2026-09-16-consolidation/。此前 docs/ 没有任何机器校验,
-# 本阶段把「根下只放六类活文档 + 索引双向一致 + 链接不失效 + 归档映射覆盖」变成硬门禁。
-# 规则清单见 tools/check-docs.mjs 头部注释(D1~D6)。
-#
-# GATE-1(2026-10-06 修复):`docs: check-doc-claims` 此前被包在 `-SkipWeb` 守卫内,
-# 而段注释却声称「与 -SkipWeb 解耦」——带 `-SkipWeb` 跑时文档口径(含路由总表穷尽性
-# 与十余项由代码派生的计数)不校验且无任何提示,「口径全绿」成为假信号。现与
-# `docs: check-docs` 并列在本段内:只有 `-AuditOnly` 能跳过它们。本段与后端编译、
-# 前端测试/构建都无依赖,可独立运行。
-if (-not $AuditOnly) {
-    Push-Location $root
-    try {
-        Invoke-Stage 'docs: check-docs' { node tools/check-docs.mjs }
-        # 文档口径检查(2026-09-26 起,硬门禁):把「由代码/脚本派生」的计数(表数、ensure_* 个数、
-        # check-contract 映射组数与镜像表行数、check-arch 规则字母与两个 ratchet 基线、
-        # SseEvent/TaskEventKind 变体数、check-all 阶段数)与文档字面逐条比对——这批事实
-        # 原先散在多份文档各写一个数、且不在任何门禁内(count-tests 只管测试数字)。
-        # 历史层(「原文 + 变更标注」体例)保留旧值不判失配。
-        Invoke-Stage 'docs: check-doc-claims' { node tools/check-doc-claims.mjs }
-        # 新手教程防漂移机检(2026-10-10 TUTSYNC OB-12,硬门禁):教程步骤表的跳转落点、
-        # 引用的界面真实名、退役入口叫法、关于页速览覆盖与步数派生,逐条与真实界面对比。
-        # 放在文档口径段而不是 web 段:它校验的是「内容与界面一致性」这类口径事实,
-        # 与 GATE-1 的教训同理——不该被 -SkipWeb 跳过(纯后端批次同样可能改改名/删入口而忘改教程)。
-        Invoke-Stage 'docs: check-tutorial' { node tools/check-tutorial.mjs }
-        # 酒馆兼容知识库校验(2026-10-31 KB 批,硬门禁):kb/ 条目 schema 合规、ID 唯一、
-        # index 与 entries 双向一致、sources.ref 是「路径:行号」指针、kedai.evidence 可定位,
-        # 并**拦截上游源码片段**(许可红线:SillyTavern/ST-Prompt-Template 是 AGPL-3.0、
-        # 酒馆助手是 PolyForm 非商用,而本仓是 MIT 公开仓——贴代码会污染整个仓库)。
-        Invoke-Stage 'docs: check-kb' { node tools/check-kb.mjs }
-    } finally { Pop-Location }
-}
 
 if (-not $SkipWeb -and -not $AuditOnly) {
     Push-Location $root
