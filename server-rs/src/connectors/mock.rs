@@ -638,20 +638,14 @@ impl MockConnector {
         let prompt_tokens = (prompt_chars as f64 / 4.0).ceil() as i64;
         let completion_tokens = (reply.chars().count() as f64 / 4.0).ceil() as i64;
 
-        // 字符间延时（2026-10-31 提效批，对齐上游 #63）：测试构建默认零延时。
-        //
-        // **必须跳过 sleep 调用本身**，不能写成 `sleep(delay)`：
-        // Windows 上 `tokio::time::sleep(Duration::ZERO)` 仍会消耗一个约 8ms 的定时器
-        // 周期（上游实测：把延时设 0 只让 undo.rs 从 489s 降到 454s，仅 7%）。
-        // 详见 `connectors/mock_timing.rs` 模块头注释。
+        // 逐字延时:测试构建零延时,须跳过 sleep 本身(ZERO 在 Windows 仍耗 8ms);判据见 mock_timing.rs
         let char_delay = crate::connectors::mock_timing::char_delay_for(messages);
-        let skip_delay = char_delay.is_zero();
         for ch in reply.chars() {
             if *abort.borrow() {
                 return Err(LlmError::generation("生成已中断"));
             }
             chunks.push(LlmStreamChunk::Token(ch.to_string()));
-            if !skip_delay {
+            if !char_delay.is_zero() {
                 tokio::time::sleep(char_delay).await;
             }
         }

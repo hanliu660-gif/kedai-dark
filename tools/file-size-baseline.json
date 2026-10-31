@@ -9,7 +9,7 @@
     "server-rs/src/api/chat.rs": 1126,
     "server-rs/src/api/settings.rs": 1906,
     "server-rs/src/api/tasks.rs": 1112,
-    "server-rs/src/connectors/mock.rs": 1072,
+    "server-rs/src/connectors/mock.rs": 1075,
     "server-rs/src/connectors/openai_compatible/mod.rs": 1191,
     "server-rs/src/mcp/mod.rs": 1113,
     "server-rs/src/models/types.rs": 2157,
@@ -31,5 +31,5 @@
     "web/src/api/types.ts": 1434,
     "web/src/stores/task.ts": 1014
   },
-  "updated": "2026-10-30"
+  "updated": "2026-10-31"
 }
