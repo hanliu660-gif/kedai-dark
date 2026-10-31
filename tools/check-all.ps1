@@ -66,6 +66,20 @@ if (-not (Test-Path $vcvars)) {
 $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
 $hasCargo = [bool](Get-Command cargo -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $cargoBin 'cargo.exe'))
 
+# ---- nextest 检测(2026-10-31 接入) ----
+# 为什么用 cargo-nextest:实测 1781 个测试 108.7s vs 原生 cargo test 827s(快 7.6 倍)。
+# 原理:cargo test 只在单二进制内部并行,63 个集成测试文件之间串行;
+# nextest 是跨二进制的进程级并行。详见 编译速度优化-实测总文档.md §4.0。
+#
+# 回退策略:**没装就自动回退 cargo test**,不硬失败。
+# 本项目是公开仓,别人 clone 下来不该因为缺一个可选工具就门禁全红;
+# nextest 是可选加速器,不是正确性依赖。
+$cargoNextestExe = Join-Path $cargoBin 'cargo-nextest.exe'
+$hasNextest = [bool](Get-Command cargo-nextest -ErrorAction SilentlyContinue) -or (Test-Path $cargoNextestExe)
+if ($hasNextest) {
+    Write-Host '[信息] 检测到 cargo-nextest,后端测试将用 nextest(跨二进制并行)' -ForegroundColor DarkGray
+}
+
 # 把 vcvars64 设置的环境变量一次性导入当前 PowerShell 进程
 # (不再每层 cmd /c 嵌套——PS5.1 原生命令引号传递不可靠,曾导致 clippy 误用 Git 的 link.exe)
 function Import-VcVars([string]$VcvarsPath) {
@@ -114,11 +128,35 @@ if (-not $SkipRust -and -not $AuditOnly) {
             Clear-KedaiLockedServerArtifacts -TargetDir $serverTargetDir
             Invoke-Stage 'cargo fmt --check'        { cargo fmt --check }
             Invoke-Stage 'cargo clippy'             { cargo clippy --all-targets @cargoTargetArgs -- -D warnings }
-            # -j 8:2026-09-17 P-13 实测后由 -j 2 放宽。历史故障(全并行链接撞 os error 1455
-            # 页面文件不足 / rustc 自身 STATUS_STACK_BUFFER_OVERRUN)本次**未能复现**:
-            # 冷 target 全并行(16 jobs)与 -j 4/6/8 五轮均 1157 passed / 0 failed。
-            # 取 8 而非不限制,是为与 build.ps1 等重活并发时留内存余量(详见 docs/经验.md 条目 29)。
-            Invoke-Stage 'cargo test --workspace'   { cargo test --workspace -j 8 @cargoTargetArgs }
+            # 后端测试(2026-10-31 起优先 nextest,缺则回退 cargo test)。
+            #
+            # 为何换 nextest:实测 1781 例 108.7s vs 原生 827s(**快 7.6 倍**),
+            # 结果完全一致(都是 1780 passed / 1 failed,失败是同一条已知环境红点)。
+            # 原理:cargo test 只在单二进制内并行,63 个集成测试文件之间串行;
+            # nextest 跨二进制进程级并行。详见 编译速度优化-实测总文档.md §4.0。
+            #
+            # -j 8(回退路径):2026-09-17 P-13 实测后由 -j 2 放宽。历史故障
+            # (全并行链接撞 os error 1455 页面文件不足 / rustc 自身 STATUS_STACK_BUFFER_OVERRUN)
+            # 未能复现:冷 target 全并行 16 jobs 与 -j 4/6/8 五轮均 1157 passed / 0 failed。
+            # 取 8 而非不限制,是为与 build.ps1 等重活并发时留内存余量(docs/经验.md 条目 29)。
+            #
+            # **必须 --no-fail-fast**:nextest 默认 fail-fast(一失败即取消剩余),
+            # 实测默认只跑 1417/1781(364 个被静默跳过),门禁覆盖率会悄悄下降。
+            # 失败时退出码 100(原生 cargo test 是 101),两者都非 0;
+            # Invoke-Stage 用 $code -ne 0 判断,兼容。
+            #
+            # 用**单个 Invoke-Stage + 内部条件选命令**,不是 if/else 各调一次:
+            # check-doc-claims 静态数 Invoke-Stage 次数当作「阶段数」,
+            # 两个分支各写一次会被数成 2 个阶段,与实际每次只跑 1 个不符。
+            Invoke-Stage 'cargo test --workspace' {
+                if ($hasNextest) {
+                    # 优先 nextest(跨二进制并行,实测快 7.6 倍);--no-fail-fast 保证跑全量。
+                    & cargo nextest run --workspace --no-fail-fast @cargoTargetArgs
+                } else {
+                    # 回退:缺少 nextest 的机器走原生 cargo test(-j 8 见上方注释)。
+                    cargo test --workspace -j 8 @cargoTargetArgs
+                }
+            }
             # cargo audit 已迁出本块,升级为下方独立「审计段」:不再受 -SkipRust 影响,
             # 并覆盖 server-rs + src-tauri 两把锁。
         } finally { Pop-Location }

@@ -63,6 +63,14 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # nextest(2026-10-31 接入):把后端测试从 cargo test 换成 cargo nextest。
+      # 实测 1781 例 108.7s vs 原生 827s(**快 7.6 倍**),结果完全一致。
+      # check-all.ps1 已做「装了就用、没装回退 cargo test」的检测,
+      # 所以本步失败或缺失不会让门禁变红(只是退回旧路径)。
+      # 用 taiki-e/install-action 装**预编译二进制**(秒级),不用 cargo install(本地实测编译要 3m11s)。
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:

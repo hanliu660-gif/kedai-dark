@@ -69,11 +69,25 @@ import/export);CSP 里 `style-src` 未放行 `cdnjs` 故 Font Awesome 图标空�
 ## 验证命令
 
 ```powershell
+# 后端测试(2026-10-31 起推荐 nextest,实测快 7.6 倍;未装则回退 cargo test)
+cargo nextest run --workspace --no-fail-fast
+# 回退 / 无 nextest 的机器:
 cargo test --manifest-path server-rs/Cargo.toml -j 8
 npm test -w web
 npm run build -w web
 cargo build --manifest-path server-rs/Cargo.toml
 ```
+
+- **后端测试优先 `cargo nextest`（2026-10-31 接入；实测 1781 例 108.7s vs 原生 827s，快 7.6 倍）**：
+  `cargo nextest run --workspace --no-fail-fast`。原理：`cargo test` 只在单个测试二进制内部并行，
+  63 个集成测试文件之间是**串行**的；nextest 是**跨二进制的进程级并行**。
+  ⚠️ **必须带 `--no-fail-fast`**：nextest 默认 fail-fast（一失败即取消剩余），实测默认只跑 1417/1781，
+  **会让门禁覆盖率静默下降**。
+  ⚠️ **输出格式不同**（`PASS [ 0.123s] 二进制::测试名`，不是 libtest 的 `test result: ok`）；
+  失败退出码 **100**（原生是 101），两者都非 0，门禁只判非 0，兼容。
+  `tools/check-all.ps1` 已做「装了就用 / 没装自动回退 cargo test」检测（阶段名保持 `cargo test --workspace`）。
+  安装：`cargo install cargo-nextest --locked`；CI 用 `taiki-e/install-action@nextest` 装预编译版。
+  详见 `../编译速度优化-实测总文档.md` §4.0。
 
 - **`cargo test` 统一带 `-j 8`**:本机历史上默认并行度下 rustc 自身可能崩溃(`STATUS_STACK_BUFFER_OVERRUN`),报错却伪装成「依赖 rlib 缺失」,照它改依赖只会越改越偏;遇到该形态先降并发复跑,不要改依赖(详见 `docs/经验.md` 条目 29)。**2026-09-17 P-13 实测**:冷 target 全并行(16 jobs)与 `-j 4/6/8` 五轮均 1157 passed / 0 failed,历史故障**未复现**,故上限由 2 放宽到 8(取 8 而非不限制,是为与 `build.ps1` 等重活并发时留内存余量);矩阵与依据见 `docs/经验.md` 条目 29。
 
@@ -108,7 +122,7 @@ cargo build --manifest-path server-rs/Cargo.toml
   按主题分多次提交(必要时用 `git add <path>` 逐个指定),不要一把 `git add -A` 了事。
 - **不提交**:构建产物与其 sidecar(`dist/`、`target/`、`Kedai.exe`、`*.lnk` 等,`.gitignore` 已覆盖)、
   用户数据(`data/`)、密钥(`.env`)、开发 agent 的会话目录(`.zcode/`)。
-- **提交前的最低验证**:改了后端跑 `cargo test --manifest-path server-rs/Cargo.toml -j 8`;
+- **提交前的最低验证**:改了后端跑 `cargo nextest run --workspace --no-fail-fast`（无 nextest 则 `cargo test --manifest-path server-rs/Cargo.toml -j 8`）;
   改了前端跑 `npm test -w web`;只改文档可跳过测试,但仍要跑 `node tools/check-arch.mjs` 与
   `node tools/count-tests.mjs --check` 确认门禁不漂移。**涉及模型链路的改动另须附真实模型实测
   证据(见上「真实模型实测」节);纯文档 / 样式批次按其豁免条款执行。**
