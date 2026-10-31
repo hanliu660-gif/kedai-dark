@@ -192,7 +192,12 @@ async fn task_multi_mode_subagent_runs_to_done() {
 #[tokio::test]
 async fn task_multi_mode_stop_running() {
     let app = test_app();
-    let id = create_task_with_mode(app, "慢慢写一篇长文,不要任何钩子", "multi").await;
+    let id = create_task_with_mode(
+        app,
+        "慢慢写一篇长文,不要任何钩子 __KEDAI_SLOW_STREAM__",
+        "multi",
+    )
+    .await;
 
     let (status, json) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "run 应 200: {json}");

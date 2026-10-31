@@ -363,7 +363,7 @@ mod tests {
         // 直接在 async 测试体(runtime worker 线程)上同步调用 handler
         let (_abort_tx, abort_rx) = watch::channel(false);
         let result = handler(
-            vec![LlmMessage::plain("user", "你好")],
+            vec![LlmMessage::plain("user", "你好__KEDAI_SLOW_STREAM__")],
             test_params(),
             abort_rx,
         );
@@ -380,7 +380,7 @@ mod tests {
         let handler = generate_handler_from_tx(tx);
         let (_abort_tx, abort_rx) = watch::channel(false);
         let msg = handler(
-            vec![LlmMessage::plain("user", "你好")],
+            vec![LlmMessage::plain("user", "你好__KEDAI_SLOW_STREAM__")],
             test_params(),
             abort_rx,
         )
@@ -396,7 +396,7 @@ mod tests {
         let call = tokio::task::spawn_blocking(move || {
             let (_abort_tx, abort_rx) = watch::channel(false);
             handler(
-                vec![LlmMessage::plain("user", "普通输入")],
+                vec![LlmMessage::plain("user", "普通输入__KEDAI_SLOW_STREAM__")],
                 test_params(),
                 abort_rx,
             )

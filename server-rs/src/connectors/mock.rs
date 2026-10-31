@@ -9,7 +9,6 @@
 // [[tool:]] 在 mock 的「空列表=全放行」语义下无法区分步骤)。
 use crate::models::llm_error::{LlmError, LlmErrorKind};
 use crate::models::types::{GenerationParams, LlmMessage, LlmStreamChunk, ToolCallArgs};
-use std::time::Duration;
 use tokio::sync::watch;
 
 /// [[tool_raw:]] 钩子的截断预算门限:max_tokens 低于该值视为「输出预算不足」,
@@ -639,12 +638,22 @@ impl MockConnector {
         let prompt_tokens = (prompt_chars as f64 / 4.0).ceil() as i64;
         let completion_tokens = (reply.chars().count() as f64 / 4.0).ceil() as i64;
 
+        // 字符间延时（2026-10-31 提效批，对齐上游 #63）：测试构建默认零延时。
+        //
+        // **必须跳过 sleep 调用本身**，不能写成 `sleep(delay)`：
+        // Windows 上 `tokio::time::sleep(Duration::ZERO)` 仍会消耗一个约 8ms 的定时器
+        // 周期（上游实测：把延时设 0 只让 undo.rs 从 489s 降到 454s，仅 7%）。
+        // 详见 `connectors/mock_timing.rs` 模块头注释。
+        let char_delay = crate::connectors::mock_timing::char_delay_for(messages);
+        let skip_delay = char_delay.is_zero();
         for ch in reply.chars() {
             if *abort.borrow() {
                 return Err(LlmError::generation("生成已中断"));
             }
             chunks.push(LlmStreamChunk::Token(ch.to_string()));
-            tokio::time::sleep(Duration::from_millis(8)).await;
+            if !skip_delay {
+                tokio::time::sleep(char_delay).await;
+            }
         }
         chunks.push(LlmStreamChunk::Usage {
             prompt_tokens,

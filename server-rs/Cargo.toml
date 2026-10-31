@@ -129,6 +129,24 @@ debug = "line-tables-only"
 # [KB-PERF] 依赖 crate 不产生调试符号(它们本来也不需要单步调试)。
 [profile.dev.package."*"]
 debug = false
+
+# [KB-PERF] 2026-10-31:测试档调试信息取 0（对齐上游 #64 的实测结论）。
+#
+# ⚠️ **这条是实测反直觉的一点，别按「dev 用 1 那 test 也用 1」类推**：
+#   `[profile.dev]` **不作用于 `cargo test`** —— 测试走 `profile.test`。
+#   而 `debug = 1`（line-tables-only）对**测试 PDB 几乎无瘦身**
+#   （131MB vs 完整档 127MB —— 行号表本身占绝大部分）。
+#
+# 上游实测矩阵（本机口径可参考）：
+#   test 档        PDB 总量     测试二进制编译
+#   debug = 1      11 GB        91 s
+#   debug = 0      3.2 GB       66 s   ← 快 28%
+#
+# 为什么 test 档丢行号可以接受：libtest 直接打印 `tests/xxx.rs:123` 与断言消息，
+# **不依赖 PDB 符号化**；需要调试测试时临时改回 1 即可。
+[profile.test]
+debug = 0
+
 [profile.release]
 # 2026-10-26:fat LTO → thin。fat 会把 314 个 crate 的 bitcode 收拢成单线程全局优化,
 # 链接阶段慢;thin 仍做跨 crate 内联与优化(优化面与 fat 基本一致),但可按 CGU 并行,

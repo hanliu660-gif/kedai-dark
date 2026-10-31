@@ -224,8 +224,7 @@ async fn task_run_to_done() {
     // title 内嵌 [[reply:...]] 让 mock 规划器直接返回 JSON 计划(2 步,goal 为普通文本);
     // 步骤 goal 无特殊标记,mock 子智能体返回默认非空回复。
     // 注意:mock reply 钩子在首个 "]]" 截断,故数组闭合 "]" 与标记闭合 "]]" 之间须留空格。
-    let title =
-        r#"[[reply:[{"name":"步骤一","goal":"写第一段"},{"name":"步骤二","goal":"写第二段"}] ]]"#;
+    let title = r#"[[reply:[{"name":"步骤一","goal":"写第一段__KEDAI_SLOW_STREAM__"},{"name":"步骤二","goal":"写第二段__KEDAI_SLOW_STREAM__"}] ]]"#;
     let id = create_task(app, title).await;
 
     let (status, json) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
@@ -343,8 +342,7 @@ async fn task_partial_when_step_fails() {
 async fn task_usage_recorded_and_aggregated() {
     let app = test_app();
 
-    let title =
-        r#"[[reply:[{"name":"步骤一","goal":"写第一段"},{"name":"步骤二","goal":"写第二段"}] ]]"#;
+    let title = r#"[[reply:[{"name":"步骤一","goal":"写第一段__KEDAI_SLOW_STREAM__"},{"name":"步骤二","goal":"写第二段__KEDAI_SLOW_STREAM__"}] ]]"#;
     let id = create_task(app, title).await;
     let (status, _) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
     assert_eq!(status, StatusCode::OK);
@@ -481,8 +479,7 @@ async fn task_summary_failure_without_step_outputs_stays_error() {
 async fn task_stop_running() {
     let app = test_app();
 
-    let title =
-        r#"[[reply:[{"name":"步骤一","goal":"写第一段"},{"name":"步骤二","goal":"写第二段"}] ]]"#;
+    let title = r#"[[reply:[{"name":"步骤一","goal":"写第一段__KEDAI_SLOW_STREAM__"},{"name":"步骤二","goal":"写第二段__KEDAI_SLOW_STREAM__"}] ]]"#;
     let id = create_task(app, title).await;
     let (status, json) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "run 应 200: {json}");
@@ -534,7 +531,7 @@ async fn task_stop_running() {
 async fn task_stop_running_keeps_done_step_output() {
     let app = test_app();
 
-    let title = r#"[[reply:[{"name":"步骤一","goal":"写第一段"},{"name":"步骤二","goal":"写第二段"},{"name":"步骤三","goal":"写第三段"}] ]]"#;
+    let title = r#"[[reply:[{"name":"步骤一","goal":"写第一段__KEDAI_SLOW_STREAM__"},{"name":"步骤二","goal":"写第二段__KEDAI_SLOW_STREAM__"},{"name":"步骤三","goal":"写第三段__KEDAI_SLOW_STREAM__"}] ]]"#;
     let id = create_task(app, title).await;
     let (status, json) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "run 应 200: {json}");

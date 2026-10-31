@@ -4,6 +4,9 @@
 // 判据: 把各提供商的线格式翻译成本项目内部类型;只依赖 L1(models)。
 // 纪律: 新增提供商在此适配,不得把提供商特有字段泄漏到上层。
 pub mod mock;
+// mock 逐字流式节流判据（构建档 × 环境变量），2026-10-31 提效批：
+// 测试构建默认零延时（**跳过 sleep 调用本身**，不是 sleep(ZERO)）；生产/演示仍 8ms/字符。
+pub(crate) mod mock_timing;
 pub mod openai_compatible;
 
 use crate::models::llm_error::LlmError;

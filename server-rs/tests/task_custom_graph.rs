@@ -175,8 +175,12 @@ async fn preset_parallel_flow(app: &axum::Router, max_parallel: u32) -> String {
     });
     let (status, json) = send_json(app, "PUT", "/api/agent-flows", flow).await;
     assert_eq!(status, StatusCode::OK, "保存并行流程应 200: {json}");
-    let id =
-        create_task_with_mode(app, "[[reply_if:合并本步|合并成果]] 并行任务目标", "custom").await;
+    let id = create_task_with_mode(
+        app,
+        "[[reply_if:合并本步|合并成果]] 并行任务目标__KEDAI_SLOW_STREAM__",
+        "custom",
+    )
+    .await;
     let (status, json) = send_json(app, "POST", &format!("/api/tasks/{id}/run"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "run 应 200: {json}");
     id

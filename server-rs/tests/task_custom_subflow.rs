@@ -153,7 +153,8 @@ async fn custom_sub_flow_injects_draft_and_keeps_usage_invariant() {
     )
     .await;
 
-    let title = "[[reply_if:起草本步|起草产出]][[reply_if:扩写本步|扩写产出]]\
+    let title =
+        "[[reply_if:起草本步|起草产出]][[reply_if:扩写本步|扩写产出]] __KEDAI_SLOW_STREAM__\
                  [[reply_if:子一本步|子一产出]][[reply_if:子二本步|子二产出]]\
                  [[reply_if:收尾本步|收尾成果]] 子流程任务目标";
     let id = create_task(app, title).await;
@@ -798,7 +799,7 @@ async fn custom_sub_flow_stop_aborts_running_sub_graph() {
     )
     .await;
 
-    let id = create_task(app, "慢子图任务目标").await;
+    let id = create_task(app, "慢子图任务目标__KEDAI_SLOW_STREAM__").await;
     run_task(app, &id).await;
 
     // 等挂载节点进入 running(子图这时才开始跑)再停止
