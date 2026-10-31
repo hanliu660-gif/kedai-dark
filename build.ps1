@@ -55,10 +55,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if ($Fast) {
-    $env:RUSTFLAGS = if ($env:RUSTFLAGS) { "$env:RUSTFLAGS -C lto=off" } else { "-C lto=off" }
-    Write-Host "[快循环] 已开启 -Fast (跳过 LTO 全局内联,大幅加速链接阶段)" -ForegroundColor Cyan
-}
+# [FAST-FLAGS-MOVED] $env:RUSTFLAGS 原在此设置;2026-10-31 移到门禁之后(见 [1/3] 之前)。
+# 原因:门禁会继承该环境变量 ⇒ 与"单独跑 check-all"(无 RUSTFLAGS)形成两套编译指纹,
+# 触发重编。实测:门禁稳态多花 51.1s(首次建第二套缓存时 95.3s)。
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $Root "tools\Write-BuildStamp.ps1")
 
@@ -190,6 +189,15 @@ Write-Host "========== Kedai Build ==========" -ForegroundColor Cyan
 
 # 1) 前端构建
 if (-not $NoWeb) {
+# -Fast 的 RUSTFLAGS 在此设置(2026-10-31 从文件头移来):
+# **必须晚于 [0/3] 门禁**——门禁若继承 "-C lto=off",会与"单独跑 check-all(无 RUSTFLAGS)"
+# 形成两套指纹,导致 clippy/nextest 重编。实测门禁因此多花 51.1s(首次 95.3s)。
+# 此处置后,-Fast 只影响 [2/3]/[3/3] 的 release 构建,这正是它的设计意图(LTO 只影响链接)。
+if ($Fast) {
+    $env:RUSTFLAGS = if ($env:RUSTFLAGS) { "$env:RUSTFLAGS -C lto=off" } else { "-C lto=off" }
+    Write-Host "[快循环] 已开启 -Fast (跳过 LTO 全局内联,大幅加速链接阶段)" -ForegroundColor Cyan
+}
+
     Write-Host "[1/3] 构建前端 (web/dist) ..." -ForegroundColor Green
     Push-Location $Root
     try {
@@ -228,17 +236,11 @@ if (-not $NoWeb) {
     if ((Test-Path $distIndex) -and (Test-Path $exeCheck)) {
         $distTime = (Get-Item $distIndex).LastWriteTime
         $exeTime = (Get-Item $exeCheck).LastWriteTime
-        if ($distTime -gt $exeTime) {
-            Write-Host "[检测] 前端更新于 $distTime,晚于现有 exe($exeTime),清 kedai-server 指纹强制重编" -ForegroundColor Yellow
-            Push-Location "$Root\server-rs"
-            try {
-                $ErrorActionPreference = "Continue"
-                & $env:ComSpec /d /c "cargo clean -p kedai-server --target-dir `"$CargoTargetDir`" 2>&1"
-            } finally {
-                $ErrorActionPreference = "Stop"
-                Pop-Location
-            }
-        }
+            # [CLEAN-REMOVED] 2026-10-31:删掉 cargo clean -p kedai-server。
+            # 原因:① 它会连根删掉 release/incremental 缓存,使 [profile.release].incremental=true 失效;
+            #       ② server-rs/build.rs 的 rerun-if-changed=../web/dist 已能精确感知前端变化
+            #          (实测:改 web/dist 内容即触发重编),无需靠 clean 强制。
+            Write-Host "[信息] 前端更新由 build.rs 的 rerun-if-changed 自动触发重编(不再 cargo clean)" -ForegroundColor DarkGray
     }
 }
 

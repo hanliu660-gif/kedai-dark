@@ -48,6 +48,17 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
+
+# [KB-PERF] 2026-10-31:debug 只保留行号表,砍掉局部变量/类型全量符号。
+# 实测 debug/deps 里 92 个 .pdb 占 19 GB(默认 debug=2)。
+# 保留:panic 栈的文件名:行号(仍可定位);
+# 失去:调试器里看局部变量。若需完整调试,临时改回 debug = 2。
+[profile.dev]
+debug = "line-tables-only"
+
+# [KB-PERF] 依赖 crate 不产生调试符号(它们本来也不需要单步调试)。
+[profile.dev.package."*"]
+debug = false
 [profile.release]
 # 2026-10-26:与 server-rs 同步改成 thin LTO(理由见 server-rs/Cargo.toml 同段注释)。
 lto = "thin"
@@ -65,5 +76,12 @@ strip = true
 # 故 allow 之后链接器**警告**也不再上报,等价于回到 Rust 1.97 之前的行为;链接**错误**
 # (导致构建失败者,走 error: linking with ... failed 路径)不受影响,仍会正常报出。
 # 参考 rust-lang/rust#159133 与 #136096;Rust >= 1.99(PR #160445 改为按 LNK 码分类)后本行可移除。
+
+# [KB-PERF] 2026-10-31:开启 release 增量编译。
+# release 默认 incremental=false ⇒ 每次改动都要对全部 CGU 重跑 opt-level=3 代码生成。
+# 代价:多占约 3~5 GB;收益:改少量代码或只改前端嵌资源时可复用未变模块。
+# ⚠️ 前提:必须同时删掉 build.ps1 / build-portable.ps1 里的 cargo clean -p kedai-server,
+#    否则每次构建都会把本目录增量缓存连根删光(incremental 白配)。
+incremental = true
 [lints.rust]
 linker_messages = "allow"

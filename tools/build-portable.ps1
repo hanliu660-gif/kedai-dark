@@ -43,12 +43,9 @@ try {
     if ((Test-Path $DistIndex) -and (Test-Path $DesktopExe)) {
         $distTime = (Get-Item $DistIndex).LastWriteTime
         $exeTime = (Get-Item $DesktopExe).LastWriteTime
-        if ($distTime -gt $exeTime) {
-            Write-Host "[检测] 前端更新于 $distTime,晚于现有 exe($exeTime),清 kedai-server 指纹强制重编" -ForegroundColor Yellow
-            $ManifestPath = Join-Path $Root "src-tauri\Cargo.toml"
-            & $env:ComSpec /d /c "cargo clean -p kedai-server --manifest-path `"$ManifestPath`" 2>&1"
-            if ($LASTEXITCODE -ne 0) { throw "cargo clean 失败(exit=$LASTEXITCODE)" }
-        }
+        # [CLEAN-REMOVED] 2026-10-31:删掉 cargo clean -p kedai-server(理由见 build.ps1 同段)。
+        # build.rs 的 rerun-if-changed 已能感知 web/dist 变化;clean 会删光 release/incremental 缓存。
+        Write-Host "[信息] 前端更新由 build.rs 自动触发重编(不再 cargo clean)" -ForegroundColor DarkGray
     }
     # 独立二进制名避免已运行的开发版锁住 kedai-desktop.exe。
     # 与 build.ps1 同款处理:cargo 进度写 stderr,PS 5.1 在 EAP=Stop 下会包成

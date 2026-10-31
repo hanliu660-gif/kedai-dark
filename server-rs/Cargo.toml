@@ -118,6 +118,17 @@ tokio = { version = "1", features = ["test-util"] }
 # 集成测试需要 utils::test_support::TempDataDir,而 cfg(test) 不作用于独立 crate 的 tests/**。
 kedai-server = { path = ".", features = ["test-support"] }
 
+
+# [KB-PERF] 2026-10-31:debug 只保留行号表,砍掉局部变量/类型全量符号。
+# 实测 debug/deps 里 92 个 .pdb 占 19 GB(默认 debug=2)。
+# 保留:panic 栈的文件名:行号(仍可定位);
+# 失去:调试器里看局部变量。若需完整调试,临时改回 debug = 2。
+[profile.dev]
+debug = "line-tables-only"
+
+# [KB-PERF] 依赖 crate 不产生调试符号(它们本来也不需要单步调试)。
+[profile.dev.package."*"]
+debug = false
 [profile.release]
 # 2026-10-26:fat LTO → thin。fat 会把 314 个 crate 的 bitcode 收拢成单线程全局优化,
 # 链接阶段慢;thin 仍做跨 crate 内联与优化(优化面与 fat 基本一致),但可按 CGU 并行,
@@ -128,5 +139,12 @@ lto = "thin"
 strip = true
 
 # MSVC 本地化链接进度消息与符号导入提示的告警抑制(与 src-tauri/Cargo.toml 同步):
+
+# [KB-PERF] 2026-10-31:开启 release 增量编译。
+# release 默认 incremental=false ⇒ 每次改动都要对全部 CGU 重跑 opt-level=3 代码生成。
+# 代价:多占约 3~5 GB;收益:改少量代码或只改前端嵌资源时可复用未变模块。
+# ⚠️ 前提:必须同时删掉 build.ps1 / build-portable.ps1 里的 cargo clean -p kedai-server,
+#    否则每次构建都会把本目录增量缓存连根删光(incremental 白配)。
+incremental = true
 [lints.rust]
 linker_messages = "allow"
