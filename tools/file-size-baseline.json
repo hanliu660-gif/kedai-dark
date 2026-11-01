@@ -23,7 +23,7 @@
     "server-rs/src/services/task_engine/team.rs": 1698,
     "server-rs/src/services/task_service/db.rs": 1267,
     "server-rs/src/services/task_service/executor.rs": 1397,
-    "server-rs/src/tools/agent_tools.rs": 1347,
+    "server-rs/src/tools/agent_tools.rs": 1411,
     "server-rs/src/tools/agent_tools_fs_patch.rs": 1114,
     "server-rs/src/tools/permissions.rs": 1071,
     "server-rs/src/tools/registry.rs": 1034,
@@ -31,5 +31,5 @@
     "web/src/api/types.ts": 1434,
     "web/src/stores/task.ts": 1014
   },
-  "updated": "2026-10-31"
+  "updated": "2026-11-02"
 }

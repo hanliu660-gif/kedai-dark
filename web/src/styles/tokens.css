@@ -142,6 +142,13 @@
   /* 黑底上的次级文字(2026-10-02 UIP-10):替代「原色 + opacity」写法,保证实色对比度 */
   --sv-on-ink-soft: rgba(255, 255, 255, 0.72);
 
+  /* ===== 阅读宽度(2026-11-02 吸收上游 UIQ-4/UIPOL 时补) ===== */
+  /* 中文正文一行约 42 个汉字;聊天列 820px(含头像/间距),任务成果略宽。
+     shell.css 的气泡 max-width 已改用 --measure-prose(上游 UIPOL-1/C2 口径)。 */
+  --measure-prose: 42em;
+  --measure-chat: 820px;
+  --measure-task-result: 46em;
+
   /* 这两个令牌此前只在 styles/task.css 里以「var(--x, #兜底)」形态使用(未定义即走兜底)。
      NIGHT-1 起在亮色下显式取同一兜底值(逐字等价、零视觉变化),否则暗色主题无从覆写,
      深底上会照旧画出 #d8d3c8 的浅边与 #d97706 的暗琥珀字。 */

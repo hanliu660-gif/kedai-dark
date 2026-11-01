@@ -73,14 +73,31 @@ const VERBOSE = process.argv.includes('--verbose');
  * R3 变动(主题声明层并轨,同源生成,只降 tokens 247→235):tokens 的暗色块改为由
  * web/src/theme/darkTokens.ts 机器同源生成,去除了冗余手工分段注释,
  * 确保 DARK_THEME.tokens 与 :root[data-theme='dark'] 100% 同源无双源漂移。
+ * ANDUI 变动(2026-10-13):mobile 433→464(安卓窄屏布局修复批 +31 行,五处新增各带实测注释:
+ * 模态 Sheet 底部让位底导航 + 左抽屉同款让位 + 行内按钮豁免(3 条) + 任务中部 grow-不缩钩子 +
+ * 会话条目行竖排——全部发生在既有 <768px 断点内、无新域。理由:mobile.css 是唯一的移动端适配层
+ * (UIP 批起的既定形态),窄屏专用规则无处可去;新增规则仍遵守「不改桌面、不加 !important、
+ * 间距走 --space-*」三条既有纪律)。
+ * UIQ-4 变动(2026-10-17):tokens 144→153(新增 --measure-prose/--measure-chat/
+ * --measure-task-result 与焦点环两个令牌,供双主体终稿共用),task 997→1007
+ * (侧栏模式切换 01/02 序号 + 任务历史激活态与搜索框聚焦态)。均为两主体版式服务的
+ * 正常增长,不新增 !important、不引入裸时长;新增规则优先留在 .vue scoped。
+ * C-2A 变动(2026-10-25):task 1007→987——`.sv-task-new` 基础视觉块随 Sidebar 拆分
+ * 移入 components/sidebar/TaskComposer.vue 的 scoped 块(单一 CSS 所有者),全局域净减 20 行。
+ * UIPOL 变动(2026-10-31,两批):
+ *   content 997→1001(消息表格整宽:width/table-layout/overflow-wrap 三条声明 + 一行注释。
+ *     `.sv-msg-bubble.sv-msg-md table` 只能落全局域——消息正文经 v-html 注入,scoped 不生效);
+ *   shell 保持 827(气泡内边距 18px→--space-5 行数不变,其间距裸值 10→9 已同步下调)。
+ *   两批均不新增 !important、不引入裸时长;新增的 calc(--space-4 + 48px) 属浮钮让位常量,
+ *   走令牌表达式而非裸值。
  */
 const LINE_BASELINE = {
   'style.css': 49,
-  'styles/tokens.css': 235,
+  'styles/tokens.css': 242, /* 2026-11-02 吸收上游 UIPOL:补 --measure-prose/--measure-chat/--measure-task-result 三个令牌 + 4 行注释 */
   'styles/base.css': 130,
   'styles/shell.css': 843,
   'styles/panels.css': 971,
-  'styles/content.css': 1011,
+  'styles/content.css': 1015,
   'styles/task.css': 997,
   'styles/mobile.css': 433,
 };
@@ -103,7 +120,7 @@ const SPACING_BASELINE = {
   'style.css': 0,
   'styles/tokens.css': 0,
   'styles/base.css': 0,
-  'styles/shell.css': 11,
+  'styles/shell.css': 10, /* 2026-11-02 吸收上游 UIPOL-1/C2:气泡右内边距裸值 18px → --space-5,裸值 -1 */
   'styles/panels.css': 7,
   'styles/content.css': 24,
   'styles/task.css': 15,

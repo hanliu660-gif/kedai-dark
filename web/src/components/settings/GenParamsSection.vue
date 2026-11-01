@@ -105,7 +105,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
       </div>
       </template>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">工具轮次上限</label>
+        <label class="sv-inp-tag" title="工具轮次上限">工具轮次上限</label>
         <input
           v-model.number="maxToolRounds"
           type="number"
@@ -121,7 +121,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
            (服务端 `apply!(s, is_task, …)` 落在任务覆盖层),角色扮演侧不受影响。
            缺省值全部等于 A 批之前的行为:深度 2 / 每任务 8 / 不裁剪(0)。 -->
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">流程调用深度</label>
+        <label class="sv-inp-tag" title="流程调用深度">流程调用深度</label>
         <input
           v-model.number="maxFlowCallDepth"
           type="number"
@@ -134,7 +134,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">任务侧:流程动态调用嵌套深度(1-5,默认 2)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">每任务调用上限</label>
+        <label class="sv-inp-tag" title="每任务调用上限">每任务调用上限</label>
         <input
           v-model.number="maxFlowCallsPerTask"
           type="number"
@@ -147,7 +147,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">任务侧:单个任务的流程调用次数上限(1-64,默认 8)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">节点默认上下文</label>
+        <label class="sv-inp-tag" title="节点默认上下文">节点默认上下文</label>
         <input
           v-model.number="defaultNodeMaxContext"
           type="number"
@@ -161,7 +161,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">任务侧:节点未单独设置时的输入 token 上限(0 = 不裁剪,否则 256-1048576)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">工具历史保留轮数</label>
+        <label class="sv-inp-tag" title="工具历史保留轮数">工具历史保留轮数</label>
         <input
           v-model.number="toolHistoryKeepRounds"
           type="number"
@@ -174,7 +174,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">最近完整保留轮数(1-32,默认 4;超出部分摘要化)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">工具历史 token 预算</label>
+        <label class="sv-inp-tag" title="工具历史 token 预算">工具历史 token 预算</label>
         <input
           v-model.number="toolHistoryBudgetTokens"
           type="number"
@@ -187,7 +187,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">0 = 禁用;否则 1024-1048576(默认 16384)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">单次生成 token 预算</label>
+        <label class="sv-inp-tag" title="单次生成 token 预算">单次生成 token 预算</label>
         <input
           v-model.number="sessionTokenBudget"
           type="number"
@@ -200,7 +200,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">0 = 关闭;否则 1024-1000000000(默认 0)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">预算超限动作</label>
+        <label class="sv-inp-tag" title="预算超限动作">预算超限动作</label>
         <select
           v-model="sessionBudgetAction"
           class="sv-select"
@@ -212,7 +212,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">默认 warn;stop 用于硬性控成本(长工具循环提前收尾)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">空转熔断次数下限</label>
+        <label class="sv-inp-tag" title="空转熔断次数下限">空转熔断次数下限</label>
         <input
           v-model.number="loopGuardSemanticMinCalls"
           type="number"
@@ -225,7 +225,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">0 = 关闭;否则 4-64(默认 12)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">空转熔断窗口 / 输出去重上限</label>
+        <label class="sv-inp-tag" title="空转熔断窗口 / 输出去重上限">空转熔断窗口 / 输出去重上限</label>
         <input
           v-model.number="loopGuardSemanticWindow"
           type="number"
@@ -247,7 +247,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">窗口 4-64(默认 16);去重上限 1-8(默认 2)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">步骤墙钟预算</label>
+        <label class="sv-inp-tag" title="步骤墙钟预算">步骤墙钟预算</label>
         <input
           v-model.number="taskStepBudgetSecs"
           type="number"
@@ -260,7 +260,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">任务侧:单步工具循环上限(默认 1200;0 = 关;建议 ≥300)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">任务总预算</label>
+        <label class="sv-inp-tag" title="任务总预算">任务总预算</label>
         <input
           v-model.number="taskTotalBudgetSecs"
           type="number"
@@ -273,7 +273,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">任务侧:整任务上限(默认 0 = 关;0 或 1-86400)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">任务空闲超时</label>
+        <label class="sv-inp-tag" title="任务空闲超时">任务空闲超时</label>
         <input
           v-model.number="taskIdleTimeoutSecs"
           type="number"
@@ -288,7 +288,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
       <!-- 压缩 + 记忆:仅角色扮演(聊天)消费,任务模式隐藏(TM-SET-3) -->
       <template v-if="!isTaskMode">
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">压缩模式</label>
+        <label class="sv-inp-tag" title="压缩模式">压缩模式</label>
         <select v-model="compactionMode" class="sv-select" title="上下文压缩模式:off 不压缩 / manual 手动触发 / auto token 超阈值自动压缩">
           <option value="off">off · 不压缩</option>
           <option value="manual">manual · 手动触发</option>
@@ -313,7 +313,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <p class="sv-note">仅 auto 模式生效:历史 token 达到该占比时自动压缩。</p>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">压缩保留条数</label>
+        <label class="sv-inp-tag" title="压缩保留条数">压缩保留条数</label>
         <input
           v-model.number="compactionKeepRecent"
           type="number"
@@ -326,7 +326,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">压缩后保留的最近消息条数(2-200,默认 4)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">超长裁剪阈值</label>
+        <label class="sv-inp-tag" title="超长裁剪阈值">超长裁剪阈值</label>
         <input
           v-model.number="compactionSnipBytes"
           type="number"
@@ -339,14 +339,14 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">超长消息裁剪阈值(字节;0 = 禁用,默认 8192)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">记忆蒸馏</label>
+        <label class="sv-inp-tag" title="记忆蒸馏">记忆蒸馏</label>
         <label style="display: flex; gap: var(--space-1-5); align-items: center; cursor: pointer" title="开启后允许在优化面板把当前会话蒸馏为角色跨会话记忆">
           <input v-model="memoryDistillEnabled" type="checkbox" style="flex-shrink: 0" />
           <span class="sv-note">开启跨会话记忆蒸馏(优化面板 → 记忆库)</span>
         </label>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">记忆注入条数</label>
+        <label class="sv-inp-tag" title="记忆注入条数">记忆注入条数</label>
         <input
           v-model.number="memoryInjectLimit"
           type="number"
@@ -359,7 +359,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">注入提示词的记忆条数上限(0-50,默认 8)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">记忆字符预算</label>
+        <label class="sv-inp-tag" title="记忆字符预算">记忆字符预算</label>
         <input
           v-model.number="memoryInjectCharBudget"
           type="number"
@@ -372,7 +372,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">注入记忆的字符预算(0-20000,0 = 不限制,默认 2000)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">记忆容量上限</label>
+        <label class="sv-inp-tag" title="记忆容量上限">记忆容量上限</label>
         <input
           v-model.number="memoryMaxEntries"
           type="number"
@@ -387,14 +387,14 @@ const isTaskMode = computed(() => store.appMode === 'task');
       <!-- 剧情推演词条同步两档(RPFLOW-2):deep/agent 流程「归档步」改写世界书词条的放行开关。
            拆两档是因为全局书常服务多个角色(默认关,影响面更大);仅聊天侧消费,随记忆组隐藏。 -->
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">剧情推演同步角色词条</label>
+        <label class="sv-inp-tag" title="剧情推演同步角色词条">剧情推演同步角色词条</label>
         <label style="display: flex; gap: var(--space-1-5); align-items: center; cursor: pointer" title="deep/agent 归档时把剧情变化写入角色绑定/卡内嵌世界书的绿灯(触发)词条;蓝灯(常驻)条目不改写、只新建绿灯条目。默认开启。">
           <input v-model="worldbookSyncCharacterEnabled" type="checkbox" style="flex-shrink: 0" />
           <span class="sv-note">归档步同步角色绑定与卡内嵌世界书(默认开)</span>
         </label>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">剧情推演同步全局词条</label>
+        <label class="sv-inp-tag" title="剧情推演同步全局词条">剧情推演同步全局词条</label>
         <label style="display: flex; gap: var(--space-1-5); align-items: center; cursor: pointer" title="deep/agent 归档时把剧情变化写入全局世界书(未绑定角色)的绿灯(触发)词条;蓝灯(常驻)条目不改写、只新建绿灯条目。可能影响多个角色,默认关闭。">
           <input v-model="worldbookSyncGlobalEnabled" type="checkbox" style="flex-shrink: 0" />
           <span class="sv-note">同上,作用范围为全局世界书(默认关)</span>
@@ -405,7 +405,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         最大上下文窗口、压缩与记忆参数仅角色扮演(聊天)使用,已在任务模式下隐藏;如需调整请切到角色扮演模式。
       </p>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">子代理深度</label>
+        <label class="sv-inp-tag" title="子代理深度">子代理深度</label>
         <input
           v-model.number="subagentMaxDepth"
           type="number"
@@ -418,7 +418,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">子智能体嵌套深度上限(1-4,默认 2)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">子代理并发</label>
+        <label class="sv-inp-tag" title="子代理并发">子代理并发</label>
         <input
           v-model.number="subagentMaxConcurrency"
           type="number"
@@ -431,7 +431,7 @@ const isTaskMode = computed(() => store.appMode === 'task');
         <span class="sv-note">子智能体并发上限(1-16,默认 6)</span>
       </div>
       <div class="sv-inp-row">
-        <label class="sv-inp-tag">子代理结果上限</label>
+        <label class="sv-inp-tag" title="子代理结果上限">子代理结果上限</label>
         <input
           v-model.number="subagentResultMaxChars"
           type="number"
