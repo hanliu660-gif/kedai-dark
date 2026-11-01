@@ -154,9 +154,12 @@ const IPV6_SPECIAL: &[(Ipv6Addr, u8)] = &[
     // 未指定 / 环回 / 已废弃的 IPv4 兼容地址,三者都在 `::/96` 内
     (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), 96),
     (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96), // NAT64 翻译前缀
+    (Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48), // 本地 NAT64 前缀(RFC 8215)
     (Ipv6Addr::new(0x100, 0, 0, 0, 0, 0, 0, 0), 64),     // 丢弃前缀
+    (Ipv6Addr::new(0x100, 0, 0, 1, 0, 0, 0, 0), 64),     // Dummy IPv6 Prefix
     (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),    // IETF 协议分配(含 Teredo)
     (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32), // 文档段
+    (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),    // 6to4(内嵌 IPv4,可指向私网)
     (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20),    // 文档段(RFC 9637)
     (Ipv6Addr::new(0x5f00, 0, 0, 0, 0, 0, 0, 0), 16),    // SRv6 SID 空间
     (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),     // 唯一本地
