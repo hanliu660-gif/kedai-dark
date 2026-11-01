@@ -135,12 +135,7 @@
   },
   "stats": {
     "total_entries": 58,
-    "by_status": {
-      "match": 0,
-      "partial": 16,
-      "missing": 16,
-      "differs": 26
-    },
+    "by_status": {"match": 3, "partial": 15, "missing": 15, "differs": 25},
     "by_priority": {
       "P0": 53,
       "P1": 5,

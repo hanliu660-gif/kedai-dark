@@ -1,4 +1,4 @@
-﻿# 统一修改全仓库版本号(单一入口,避免 7 处手工同步漏改)。
+﻿# 统一修改全仓库版本号(单一入口,避免 9 处手工同步漏改)。
 # 覆盖:根 package.json、web/package.json、server-rs/Cargo.toml、
 #       src-tauri/Cargo.toml、launcher/Cargo.toml、src-tauri/tauri.conf.json、
 #       package-lock.json(全部自身版本;依赖项版本不动)、

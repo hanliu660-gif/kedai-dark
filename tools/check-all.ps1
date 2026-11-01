@@ -67,9 +67,9 @@ $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
 $hasCargo = [bool](Get-Command cargo -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $cargoBin 'cargo.exe'))
 
 # ---- nextest 检测(2026-10-31 接入) ----
-# 为什么用 cargo-nextest:实测 1781 个测试 108.7s vs 原生 cargo test 827s(快 7.6 倍)。
+# 为什么用 cargo-nextest:首次实测 1781 个测试 108.7s vs 原生 cargo test 827s(快 7.6 倍;1781 是当时口径,现以 count-tests 现取为准)。
 # 原理:cargo test 只在单二进制内部并行,63 个集成测试文件之间串行;
-# nextest 是跨二进制的进程级并行。详见 编译速度优化-实测总文档.md §4.0。
+# nextest 是跨二进制的进程级并行。详见仓外文档 ../编译与测试提速-权威文档.md §2.1/§2.2(路径相对仓库根,该文件在仓库外)。
 #
 # 回退策略:**没装就自动回退 cargo test**,不硬失败。
 # 本项目是公开仓,别人 clone 下来不该因为缺一个可选工具就门禁全红;
@@ -174,7 +174,7 @@ if (-not $SkipRust -and -not $AuditOnly) {
             # 为何换 nextest:实测 1781 例 108.7s vs 原生 827s(**快 7.6 倍**),
             # 结果完全一致(都是 1780 passed / 1 failed,失败是同一条已知环境红点)。
             # 原理:cargo test 只在单二进制内并行,63 个集成测试文件之间串行;
-            # nextest 跨二进制进程级并行。详见 编译速度优化-实测总文档.md §4.0。
+            # nextest 跨二进制进程级并行。详见仓外文档 ../编译与测试提速-权威文档.md §2.1/§2.2。
             #
             # -j 8(回退路径):2026-09-17 P-13 实测后由 -j 2 放宽。历史故障
             # (全并行链接撞 os error 1455 页面文件不足 / rustc 自身 STATUS_STACK_BUFFER_OVERRUN)

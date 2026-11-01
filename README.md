@@ -314,8 +314,10 @@ cargo test --manifest-path server-rs/Cargo.toml -j 8
 npm test -w web
 npm run typecheck -w web
 
-# 仓库根:一键全量检查(15 段:fmt/clippy/cargo test/audit/docs/lock-sync/
-#          contract/arch/count/doc-claims/type-ratchet/eslint/vue-tsc/vitest/bundle)
+# 仓库根:一键全量检查(22 个阶段 + 2 段依赖审计:docs 四段 → fmt/clippy/
+#          cargo test → 两段 audit → lock-sync/contract/arch/file-size/count/
+#          type-ratchet/test-ratchet/css-discipline/tokens-sync/eslint/vue-tsc/
+#          vitest/vite build/bundle/perf)
 npm run check
 ```
 

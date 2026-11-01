@@ -21,7 +21,7 @@
 ## 酒馆兼容知识库(kb/,2026-10-31 起)
 
 **动卡层 / 世界书 / 宏 / 正则 / 变量 / 沙箱之前,先查 `kb/` —— 它是 Kedai 与酒馆(SillyTavern)生态
-差异的结构化契约库(33 条 / 8 域,**已提交 `5fd6b58` 并入 git**;遗留收口项见 `../交接文档.md` §8.1 末表),
+差异的结构化契约库(**58 条 / 9 域**(其中 `stscript` 域暂 0 条),**已提交 `5fd6b58` 并入 git**;遗留收口项见 `../交接文档.md` §8.1 末表),
 每条都带 `kedai.evidence`(本仓路径:行号)。**
 
 ```bash
@@ -31,7 +31,7 @@ node tools/kb.mjs query --priority P0  # 只看高危(违反会导致卡行为�
 node tools/kb.mjs show <id>            # 单条详情(spec/kedai 现状/sources 指针)
 ```
 
-- **校验**:`node tools/check-kb.mjs`(已接 `check-all.ps1`,是**新增的第 22 个阶段**;但调用顺序上是第 7 个,不是"排在最后")。
+- **校验**:`node tools/check-kb.mjs`(已接 `check-all.ps1`,是**新增的第 22 个阶段**;2026-10-31 文档段前移后,调用顺序上是**第 4 个**——文档四段排在最前,不是"排在最后")。
 - **★ 许可红线**:上游 SillyTavern / ST-Prompt-Template 是 **AGPL-3.0**、酒馆助手是 **PolyForm 非商用**,
   而本仓是 **MIT 公开仓** ⇒ `kb/` **只存行为契约、禁止贴上游源码片段**;校验器 K6 会自动拦截代码状字符串。
   要精确到实现时用 `sources.ref` 写**上游线上指针**(如 `https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js#L4943-L4978`)——**禁止写本机绝对路径**(本仓是公开仓)。
@@ -78,16 +78,16 @@ npm run build -w web
 cargo build --manifest-path server-rs/Cargo.toml
 ```
 
-- **后端测试优先 `cargo nextest`（2026-10-31 接入；实测 1781 例 108.7s vs 原生 827s，快 7.6 倍）**：
+- **后端测试优先 `cargo nextest`（2026-10-31 接入；首次实测 1781 例 108.7s vs 原生 827s，快 7.6 倍——该例数是当时静态 1794 的口径，**现行静态 1797 / nextest 运行时 1784 例**，以 `node tools/count-tests.mjs` 现取为准）**：
   `cargo nextest run --workspace --no-fail-fast`。原理：`cargo test` 只在单个测试二进制内部并行，
   63 个集成测试文件之间是**串行**的；nextest 是**跨二进制的进程级并行**。
-  ⚠️ **必须带 `--no-fail-fast`**：nextest 默认 fail-fast（一失败即取消剩余），实测默认只跑 1417/1781，
+  ⚠️ **必须带 `--no-fail-fast`**：nextest 默认 fail-fast（一失败即取消剩余），实测默认只跑 **1417 例**（当时运行时 1781，掐掉约 1/5），
   **会让门禁覆盖率静默下降**。
   ⚠️ **输出格式不同**（`PASS [ 0.123s] 二进制::测试名`，不是 libtest 的 `test result: ok`）；
   失败退出码 **100**（原生是 101），两者都非 0，门禁只判非 0，兼容。
   `tools/check-all.ps1` 已做「装了就用 / 没装自动回退 cargo test」检测（阶段名保持 `cargo test --workspace`）。
   安装：`cargo install cargo-nextest --locked`；CI 用 `taiki-e/install-action@nextest` 装预编译版。
-  详见 `../编译速度优化-实测总文档.md` §4.0。
+  详见 `../编译与测试提速-权威文档.md` §2.1（三步叠加效果）/ §2.2（为什么 nextest 快 7.6 倍）。
 
 - **`cargo test` 统一带 `-j 8`**:本机历史上默认并行度下 rustc 自身可能崩溃(`STATUS_STACK_BUFFER_OVERRUN`),报错却伪装成「依赖 rlib 缺失」,照它改依赖只会越改越偏;遇到该形态先降并发复跑,不要改依赖(详见 `docs/经验.md` 条目 29)。**2026-09-17 P-13 实测**:冷 target 全并行(16 jobs)与 `-j 4/6/8` 五轮均 1157 passed / 0 failed,历史故障**未复现**,故上限由 2 放宽到 8(取 8 而非不限制,是为与 `build.ps1` 等重活并发时留内存余量);矩阵与依据见 `docs/经验.md` 条目 29。
 
@@ -148,3 +148,9 @@ cargo build --manifest-path server-rs/Cargo.toml
   ——等价做法是**预跑** `tools/check-all.ps1 -Quick` 后 `git push --no-verify`,推送后一律以
   `git ls-remote` 验收,别读日志结论。始末与恢复清单执行情况见 `docs/遗留.md` CI-BILL-1 追注。
 - **不改写历史**:不 `rebase`/`amend` 已推送的提交;`docs/archive/` 下的历史文档只读不改。
+- **⚠️ 上述「主干 `main` / 平台分支 / main 分支保护 / 走 PR」段落的适用范围(2026-11-02 追注)**:
+  这些描述的是**上游 `main` 的云端流程**。本机现役分支是 `feat/st-compat`,**独立演进、不推 `main`、
+  不向上游提任何东西**(2026-11-02 定案,取代旧的「合流决策」),推送目标是 `github` 私有备份远端,
+  因此 main 分支保护与 `check`/`check-ubuntu` 两档 required checks **对本机不生效**。本机实际生效的
+  提交纪律是:**改完 → 跑 `tools/check-all.ps1`(推送前 `-Quick`)→ 提交 → 推送**,分支创建与合并规则
+  同样只约束上游贡献流程。原段落保留作历史与「将来若恢复上游流程」的参照。

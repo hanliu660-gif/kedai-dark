@@ -23,7 +23,7 @@
   "kedai": {
     "status": "match",
     "evidence": [
-      "web/src/sandbox/boot/mvu-tavern.ts:213"
+      "web/src/sandbox/boot/mvu-tavern.ts:216"
     ],
     "note": "【已修 2026-10-31】值已改为上游正确的 `chat_id_changed`（原为 `chat_changed`）。卡用 eventOn(CHAT_CHANGED) 订阅切会话现在能收到。"
   },

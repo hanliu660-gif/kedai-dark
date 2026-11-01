@@ -3,7 +3,7 @@
 > **这份文件是什么**：`kb/` 的**主题总盘**——把「酒馆生态里所有需要对齐的契约点」列全，
 > 标清**已有 / 待补 / 明确不做**，作为后续补条目的施工图。
 >
-> **为什么需要它**：33 条已经覆盖了 P0 主干，但「还缺什么」只存在于会话记忆里 ——
+> **为什么需要它**：已有 **58 条**已经覆盖了 P0 主干，但「还缺什么」只存在于会话记忆里 ——
 > 这份大纲把它落盘，避免下个会话重新摸一遍，也避免重复造条目。
 >
 > **状态图例**：✅ 已有条目 · ⬜ 待补（本轮目标）· ⏸ 暂不做（记为 backlog）· ❌ 确认不需要
@@ -16,23 +16,23 @@
 
 | 域 | 已有 | 待补 | 暂不做 | 说明 |
 | --- | --- | --- | --- | --- |
-| `worldinfo` 世界书 | 7 | **6** | 2 | 主干已齐；缺组竞争/装饰器/卡内书转换/全局设置/缓冲评分/再扫路径 |
-| `macro` 宏系统 | 5 | **6** | 2 | 缺词法/trim/内建宏清单/别名/求值上下文/宏 vs 命令对照 |
-| `regex` 正则脚本 | 4 | **3** | 1 | 缺替换语义/调用点真值表/老数据迁移 |
-| `prompt` Prompt 装配 | 3 | **3** | 1 | 缺锚点拼接细节/扩展注入/Context Template 与 Instruct |
-| `variable` 变量存储 | 1 | **4** | 1 | 只有 scope 落点；缺 get/set/add 精确语义/变量名规则/命令宏对照 |
-| `card` 角色卡载体 | 4 | **2** | 2 | 缺 CHARX/JPEG-WebP 容器 · 卡字段 V1V2V3 差异（重要！） |
-| `sandbox` 沙箱宿主 | 5 | **4** | 2 | 缺消息层 range/refresh、事件表、前端卡渲染流程、高度同步 |
-| `mvu` MVU 框架 | 4 | **4** | 2 | 缺 MvuData 结构/parseString 回退/correctlyMerge/事件表 |
-| `stscript` STscript | **0** | **4** | 2 | **整个域为空** —— 与 Kedai 的 slash 能力对齐需要 |
+| `worldinfo` 世界书 | 13 | **0** | 2 | **已结项**（原待补 6 条全部补齐：组竞争/装饰器/卡内书转换/全局设置/缓冲评分/再扫路径） |
+| `macro` 宏系统 | 11 | **0** | 2 | **已结项**（原待补 6 条全部补齐：trim 语义/内建宏清单/条件宏/别名规则/求值上下文/宏 vs 命令） |
+| `regex` 正则脚本 | 4 | **3** | 1 | 缺替换语义/调用点真值表/老数据迁移（**未开工**） |
+| `prompt` Prompt 装配 | 3 | **3** | 1 | 缺锚点拼接细节/扩展注入/Context Template 与 Instruct（**未开工**） |
+| `variable` 变量存储 | 5 | **0** | 1 | **已结项**（原待补 4 条全部补齐：get/set/add 精确语义/变量名规则/查找顺序） |
+| `card` 角色卡载体 | 5 | **1** | 2 | `card.spec.versions`（V1V2V3 差异）**已补**；仍缺 CHARX/JPEG-WebP 容器 |
+| `sandbox` 沙箱宿主 | 9 | **0** | 2 | **已结项**（原待补 4 条全部补齐：消息层 range/refresh、事件表、前端卡渲染流程、高度同步） |
+| `mvu` MVU 框架 | 8 | **0** | 2 | **已结项**（原待补 4 条全部补齐：MvuData 结构/parseString 回退/correctlyMerge/事件表） |
+| `stscript` STscript | **0** | **4** | 2 | **整个域为空** —— 与 Kedai 的 slash 能力对齐需要（**未开工**） |
 
-**合计**：已有 33 · 待补 **36** · 暂不做 15 · 本轮目标 ≈ **36 条**
+**合计**：已有 **58** · 待补 **11** · 暂不做 15 · 全部补齐后 **69 条**（原「待补 36」中 **25 条已补齐**，见各节标 ✅ 的行）
 
 ---
 
-## 1. `worldinfo` 世界书（已有 7 / 待补 6）
+## 1. `worldinfo` 世界书（已有 13 / 待补 0 · **已结项**）
 
-### 1.1 已有
+### 1.1 首批已有（7 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
@@ -44,16 +44,16 @@
 | ✅ | `worldinfo.timed.state` | sticky/cooldown/delay 状态机 |
 | ✅ | `worldinfo.depth.atdepth` | atDepth 深度缺失静默丢条 |
 
-### 1.2 待补
+### 1.2 补齐记录（原待补 6 条，2026-11-02 已全部补齐，见下表 ✅ 已补）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `worldinfo.group.competition` | **组内竞争**（`group`/`groupWeight`/`groupOverride`/`useGroupScoring`）：两阶段过滤 + 五种结局，写错会导致「同组多条目同时激活」 |
-| ⬜ | `worldinfo.decorators` | **装饰器**（`@@activate`/`@@dont_activate`/`@@if`/`@@unless`/`@@var`/`@@set`）：卡作者用它在世界书条目里写条件逻辑，顺序压得住 constant |
-| ⬜ | `worldinfo.book.convert` | **卡内书转换**（`convertCharacterBook`）：哪些字段被丢、`use_regex` 为何强制 true ⇒ 直接影响导入卡的世界书行为 |
-| ⬜ | `worldinfo.settings.global` | **全局激活设置**（`world_info_depth` 默认 2 / `budget` 默认 25（百分比）/`min_activations`/`max_recursion_steps`/`include_names`/`character_strategy`） |
-| ⬜ | `worldinfo.buffer.score` | **扫描缓冲与 getScore**：缓冲如何构造（含 `Name:` 前缀）、组评分怎么算 |
-| ⬜ | `worldinfo.rescan.paths` | **三条再扫路径**（递归 / min_activations / delayUntilRecursion）的循环结构与互斥关系 |
+| ✅ 已补 | `worldinfo.group.competition` | **组内竞争**（`group`/`groupWeight`/`groupOverride`/`useGroupScoring`）：两阶段过滤 + 五种结局，写错会导致「同组多条目同时激活」 |
+| ✅ 已补 | `worldinfo.decorators` | **装饰器**（`@@activate`/`@@dont_activate`/`@@if`/`@@unless`/`@@var`/`@@set`）：卡作者用它在世界书条目里写条件逻辑，顺序压得住 constant |
+| ✅ 已补 | `worldinfo.book.convert` | **卡内书转换**（`convertCharacterBook`）：哪些字段被丢、`use_regex` 为何强制 true ⇒ 直接影响导入卡的世界书行为 |
+| ✅ 已补 | `worldinfo.settings.global` | **全局激活设置**（`world_info_depth` 默认 2 / `budget` 默认 25（百分比）/`min_activations`/`max_recursion_steps`/`include_names`/`character_strategy`） |
+| ✅ 已补 | `worldinfo.buffer.score` | **扫描缓冲与 getScore**：缓冲如何构造（含 `Name:` 前缀）、组评分怎么算 |
+| ✅ 已补 | `worldinfo.rescan.paths` | **三条再扫路径**（递归 / min_activations / delayUntilRecursion）的循环结构与互斥关系 |
 
 ### 1.3 暂不做（backlog）
 
@@ -64,9 +64,9 @@
 
 ---
 
-## 2. `macro` 宏系统（已有 5 / 待补 6）
+## 2. `macro` 宏系统（已有 11 / 待补 0 · **已结项**）
 
-### 2.1 已有
+### 2.1 首批已有（5 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
@@ -76,16 +76,16 @@
 | ✅ | `macro.variable.family` | local/global 两套 18 个变量宏 |
 | ✅ | `macro.flags` | 六个标志位（只有 `#` 真改行为） |
 
-### 2.2 待补
+### 2.2 补齐记录（原待补 6 条，2026-11-02 已全部补齐，见下表 ✅ 已补）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `macro.trim.semantics` | **scoped 内容的 trim + dedent 语义**：默认自动 trim，只有 `#` 能关；写错会让卡的多行文本缩进错乱 |
-| ⬜ | `macro.builtin.catalog` | **内建宏全目录**（93 主宏 / 31 别名 / 124 lookup）：分类（名字/卡字段/时间/随机/工具/条件） |
-| ⬜ | `macro.conditional` | **条件宏** `{{if}}`：必须延迟参数解析（`delayArgResolution`），否则两个分支都执行 |
-| ⬜ | `macro.alias.rules` | **别名与大小写**：宏名不敏感、别名解析顺序、`{{.x}}`/`{{$x}}` 简写规则 |
-| ⬜ | `macro.eval.context` | **求值上下文**（`MacroEnvBuilder`）：哪些环境变量可用、`normalize` 回调做什么 |
-| ⬜ | `macro.vs.command` | **宏 vs STscript 命令的边界**：什么该用宏、什么该用命令；两者的互嵌规则 |
+| ✅ 已补 | `macro.trim.semantics` | **scoped 内容的 trim + dedent 语义**：默认自动 trim，只有 `#` 能关；写错会让卡的多行文本缩进错乱 |
+| ✅ 已补 | `macro.builtin.catalog` | **内建宏全目录**（93 主宏 / 31 别名 / 124 lookup）：分类（名字/卡字段/时间/随机/工具/条件） |
+| ✅ 已补 | `macro.conditional` | **条件宏** `{{if}}`：必须延迟参数解析（`delayArgResolution`），否则两个分支都执行 |
+| ✅ 已补 | `macro.alias.rules` | **别名与大小写**：宏名不敏感、别名解析顺序、`{{.x}}`/`{{$x}}` 简写规则 |
+| ✅ 已补 | `macro.eval.context` | **求值上下文**（`MacroEnvBuilder`）：哪些环境变量可用、`normalize` 回调做什么 |
+| ✅ 已补 | `macro.vs.command` | **宏 vs STscript 命令的边界**：什么该用宏、什么该用命令；两者的互嵌规则 |
 
 ### 2.3 暂不做
 
@@ -149,22 +149,22 @@
 
 ---
 
-## 5. `variable` 变量存储（已有 1 / 待补 4）
+## 5. `variable` 变量存储（已有 5 / 待补 0 · **已结项**）
 
-### 5.1 已有
+### 5.1 首批已有（1 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
 | ✅ | `variable.store.scope` | local/global/scope 三处落点、自动数字化、add 三级降级、变量名无正则 |
 
-### 5.2 待补
+### 5.2 补齐记录（原待补 4 条，2026-11-02 已全部补齐，见下表 ✅ 已补）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `variable.get.set` | **get/set 精确语义**：`get` 自动数字化（`"5"`→`5`）、`set` 带 index 时整条 JSON 化 ⇒ 同一变量两种物理表示 |
-| ⬜ | `variable.add.inc.dec` | **add/inc/dec 的降级顺序**（数组 push > 非数则字符串拼 > 数字加）：`"5"+"apples"="5apples"`，这块最常被写错 |
-| ⬜ | `variable.name.rules` | **变量名合法性**：只有「非空」校验；`/^[a-zA-Z0-9_]{1,64}$/` 是 OpenAI 消息 name 不是变量名（张冠李戴陷阱） |
-| ⬜ | `variable.resolve.order` | **查找顺序**：scope→local→global→原样返回名字；命令参数求值 `数字→scope→local→global→字面量` |
+| ✅ 已补 | `variable.get.set` | **get/set 精确语义**：`get` 自动数字化（`"5"`→`5`）、`set` 带 index 时整条 JSON 化 ⇒ 同一变量两种物理表示 |
+| ✅ 已补 | `variable.add.inc.dec` | **add/inc/dec 的降级顺序**（数组 push > 非数则字符串拼 > 数字加）：`"5"+"apples"="5apples"`，这块最常被写错 |
+| ✅ 已补 | `variable.name.rules` | **变量名合法性**：只有「非空」校验；`/^[a-zA-Z0-9_]{1,64}$/` 是 OpenAI 消息 name 不是变量名（张冠李戴陷阱） |
+| ✅ 已补 | `variable.resolve.order` | **查找顺序**：scope→local→global→原样返回名字；命令参数求值 `数字→scope→local→global→字面量` |
 
 ### 5.3 暂不做
 
@@ -174,9 +174,9 @@
 
 ---
 
-## 6. `card` 角色卡载体（已有 4 / 待补 2）
+## 6. `card` 角色卡载体（已有 5 / 待补 1）
 
-### 6.1 已有
+### 6.1 首批已有（4 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
@@ -185,11 +185,11 @@
 | ✅ | `card.frontend.detect` | 前端卡三子串判定（极宽松） |
 | ✅ | `card.lodash.shared` | iframe 的 lodash 是父窗同一实例 |
 
-### 6.2 待补
+### 6.2 待补 / 补齐记录（`card.spec.versions` 已补，剩 `card.container.others`）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `card.spec.versions` | **★ 卡规格 V1/V2/V3 差异**：`spec`/`spec_version`/`data` 包装、V1 六字段、V3 `assets`/`nickname`/`group_only_greetings`（**这是最缺的一条**，导入兼容全靠它） |
+| ✅ 已补 | `card.spec.versions` | **★ 卡规格 V1/V2/V3 差异**：`spec`/`spec_version`/`data` 包装、V1 六字段、V3 `assets`/`nickname`/`group_only_greetings`（**这是最缺的一条**，导入兼容全靠它） |
 | ⬜ | `card.container.others` | **CHARX 与 JPEG/WebP 容器**：zip 结构 `card.json`+assets、`embeded://path` 拼写、非 PNG 容器的段规则 |
 
 ### 6.3 暂不做
@@ -201,9 +201,9 @@
 
 ---
 
-## 7. `sandbox` 沙箱宿主（已有 5 / 待补 4）
+## 7. `sandbox` 沙箱宿主（已有 9 / 待补 0 · **已结项**）
 
-### 7.1 已有
+### 7.1 首批已有（5 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
@@ -213,14 +213,14 @@
 | ✅ | `sandbox.event.chat_changed` | CHAT_CHANGED 的值是 `chat_id_changed` |
 | ✅ | `sandbox.iframe.pagehide` | pagehide 自动清空事件监听 |
 
-### 7.2 待补
+### 7.2 补齐记录（原待补 4 条，2026-11-02 已全部补齐，见下表 ✅ 已补）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `sandbox.chat.messages` | **消息层 API**：`getChatMessages` range 解析（含 `'0-{{lastMessageId}}'`）、`include_swipes` 两种返回形状、`setChatMessages` refresh 三态 |
-| ⬜ | `sandbox.event.table` | **事件表**：`tavern_events` 82 个 / `iframe_events` 9 个、`eventOn` 不去重、`.stop()` 实际无效 |
-| ⬜ | `sandbox.render.flow` | **前端卡渲染流程**：识别 → srcdoc/Blob → 注入 → 高度同步 |
-| ⬜ | `sandbox.height.vh` | **高度同步与 vh 改写**：只有 `min-height` 的 vh 会被改写为 `--TH-viewport-height`，其余 vh 以楼层 iframe 为基准 |
+| ✅ 已补 | `sandbox.chat.messages` | **消息层 API**：`getChatMessages` range 解析（含 `'0-{{lastMessageId}}'`）、`include_swipes` 两种返回形状、`setChatMessages` refresh 三态 |
+| ✅ 已补 | `sandbox.event.table` | **事件表**：`tavern_events` 82 个 / `iframe_events` 9 个、`eventOn` 不去重、`.stop()` 实际无效 |
+| ✅ 已补 | `sandbox.render.flow` | **前端卡渲染流程**：识别 → srcdoc/Blob → 注入 → 高度同步 |
+| ✅ 已补 | `sandbox.height.vh` | **高度同步与 vh 改写**：只有 `min-height` 的 vh 会被改写为 `--TH-viewport-height`，其余 vh 以楼层 iframe 为基准 |
 
 ### 7.3 暂不做
 
@@ -231,9 +231,9 @@
 
 ---
 
-## 8. `mvu` MVU 框架（已有 4 / 待补 4）
+## 8. `mvu` MVU 框架（已有 8 / 待补 0 · **已结项**）
 
-### 8.1 已有
+### 8.1 首批已有（4 条）
 
 | 状态 | ID | 主题 |
 | --- | --- | --- |
@@ -242,14 +242,14 @@
 | ✅ | `mvu.block.scalar` | 块标量屏蔽与中文键盲区 |
 | ✅ | `mvu.initvar.merge` | [InitVar] 顶层浅展开、已有值赢 |
 
-### 8.2 待补
+### 8.2 补齐记录（原待补 4 条，2026-11-02 已全部补齐，见下表 ✅ 已补）
 
 | 待补 | 建议 ID | 为什么重要 |
 | --- | --- | --- |
-| ⬜ | `mvu.data.structure` | **MvuData 类型结构**：`stat_data`/`display_data`/`delta_data`/`initialized_lorebooks`/`schema`/`$meta` 各是什么 |
-| ⬜ | `mvu.parse.fallback` | **parseString 四段回退**（YAML→JSON5→jsonrepair→JSON）：与 `parseStructuredUpdate`（JSON5 优先）是**两条不同链** |
-| ⬜ | `mvu.merge.correctly` | **correctlyMerge 三态**（数组整体替换 / 对象深合并 / 标量覆盖） |
-| ⬜ | `mvu.events.deprecated` | **事件表与 deprecated API**：`VARIABLE_INITIALIZED`/`UPDATE_STARTED`/`COMMAND_PARSED`/`UPDATE_ENDED` + 10 项 deprecated |
+| ✅ 已补 | `mvu.data.structure` | **MvuData 类型结构**：`stat_data`/`display_data`/`delta_data`/`initialized_lorebooks`/`schema`/`$meta` 各是什么 |
+| ✅ 已补 | `mvu.parse.fallback` | **parseString 四段回退**（YAML→JSON5→jsonrepair→JSON）：与 `parseStructuredUpdate`（JSON5 优先）是**两条不同链** |
+| ✅ 已补 | `mvu.merge.correctly` | **correctlyMerge 三态**（数组整体替换 / 对象深合并 / 标量覆盖） |
+| ✅ 已补 | `mvu.events.deprecated` | **事件表与 deprecated API**：`VARIABLE_INITIALIZED`/`UPDATE_STARTED`/`COMMAND_PARSED`/`UPDATE_ENDED` + 10 项 deprecated |
 
 ### 8.3 暂不做
 
@@ -286,16 +286,17 @@
 
 | 批次 | 条目 | 理由 |
 | --- | --- | --- |
-| **B1** | `worldinfo.group.competition` · `worldinfo.decorators` · `worldinfo.book.convert` · `worldinfo.settings.global` · `worldinfo.buffer.score` · `worldinfo.rescan.paths` | 世界书已是最完整域，补齐即可**结项** |
-| **B2** | `card.spec.versions` · `variable.get.set` · `variable.add.inc.dec` · `variable.name.rules` · `variable.resolve.order` | 卡规格最缺；变量层是 MVU 基础 |
-| **B3** | `macro.trim.semantics` · `macro.builtin.catalog` · `macro.conditional` · `macro.alias.rules` · `macro.eval.context` · `macro.vs.command` | 宏系统补齐 |
-| **B4** | `sandbox.chat.messages` · `sandbox.event.table` · `sandbox.render.flow` · `sandbox.height.vh` | 沙箱补齐（与真卡实测直接相关） |
-| **B5** | `mvu.data.structure` · `mvu.parse.fallback` · `mvu.merge.correctly` · `mvu.events.deprecated` | MVU 补齐 |
-| **B6** | `regex.replace.semantics` · `regex.call.sites` · `regex.migration` | 正则补齐 |
-| **B7** | `prompt.anchor.code` · `prompt.extension.inject` · `prompt.context.instruct` | Prompt 补齐 |
-| **B8** | `stscript.syntax` · `stscript.argument.types` · `stscript.control.flow` · `stscript.command.catalog` | 新域，最后做 |
+| **B1** ✅ 已完成 | `worldinfo.group.competition` · `worldinfo.decorators` · `worldinfo.book.convert` · `worldinfo.settings.global` · `worldinfo.buffer.score` · `worldinfo.rescan.paths` | 世界书已是最完整域，补齐即**结项**（6/6 已补） |
+| **B2** ✅ 已完成 | `card.spec.versions` · `variable.get.set` · `variable.add.inc.dec` · `variable.name.rules` · `variable.resolve.order` | 卡规格最缺；变量层是 MVU 基础（5/5 已补） |
+| **B3** ✅ 已完成 | `macro.trim.semantics` · `macro.builtin.catalog` · `macro.conditional` · `macro.alias.rules` · `macro.eval.context` · `macro.vs.command` | 宏系统补齐（6/6 已补） |
+| **B4** ✅ 已完成 | `sandbox.chat.messages` · `sandbox.event.table` · `sandbox.render.flow` · `sandbox.height.vh` | 沙箱补齐（与真卡实测直接相关；4/4 已补） |
+| **B5** ✅ 已完成 | `mvu.data.structure` · `mvu.parse.fallback` · `mvu.merge.correctly` · `mvu.events.deprecated` | MVU 补齐（4/4 已补） |
+| **B6** ⬜ 未开工 | `regex.replace.semantics` · `regex.call.sites` · `regex.migration` | 正则补齐（0/3） |
+| **B7** ⬜ 未开工 | `prompt.anchor.code` · `prompt.extension.inject` · `prompt.context.instruct` | Prompt 补齐（0/3） |
+| **B8** ⬜ 未开工 | `stscript.syntax` · `stscript.argument.types` · `stscript.control.flow` · `stscript.command.catalog` | 新域，最后做（0/4） |
 
-**总量**：36 条待补。全部补齐后 kb 将有 **69 条**，九个域全覆盖。
+**总量**：原计划 **36 条待补**，其中 **25 条已补齐**（B1~B5 + `card.spec.versions`），**仍缺 11 条**（B6 正则 3 / B7 Prompt 3 / B8 STscript 4 / `card.container.others` 1）。
+现役 **58 条**；全部补齐后 kb 将有 **69 条**，九个域全覆盖。
 
 ---
 

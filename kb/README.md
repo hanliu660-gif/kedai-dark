@@ -7,6 +7,10 @@
 > **它不是**：不是上游源码镜像、不是教程、不是产品文档。
 >
 > **入口**：`kb/index.json`（总索引）→ `kb/entries/*.json`（条目）→ `kb/schema.json`（字段规范）
+>
+> **现状（2026-11-02 实测，以 `node tools/check-kb.mjs` 现取为准）**：**58 条 / 9 个域**
+> （`stscript` 域暂 0 条，实有条目 8 个域）；按 `kedai.status`：`match` 3 / `partial` 15 / `missing` 15 / `differs` 25；
+> 按 `priority`：`P0` 53 / `P1` 5 / `P2` 0。缺口清单现查现出用 `node tools/kb.mjs gaps`。
 
 ---
 
@@ -30,7 +34,9 @@
 4. **可以**写「上游源码在 `world-info.js:4943` 的 `matchSecondaryKeys()` 里」——**指路不算转载**。
 
 > 这条红线的实际后果：本库能回答「契约是什么、我们做得对不对」，不能直接拿来做代码移植。
-> 要移植时按条目里的**路径行号指针**去仓外 `C:\src-st\` 看原文。
+> 要移植时按条目里的**路径行号指针**去**本机的上游 SillyTavern 本地克隆**看原文（该克隆路径不入库：
+> 本仓是公开仓，禁止写本机绝对路径；按 `sources.ref` 里的 `<owner>/<repo>/blob/<ref>/<path>#L<起>-L<止>`
+> 自己找一份对应版本的克隆即可）。
 
 ---
 

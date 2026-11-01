@@ -64,6 +64,12 @@
 (require PR + required checks `check`/`check-ubuntu` + `enforce_admins`,见 CI-PROT-1 追注)。
 生效的闸门是 `build.ps1` 的 `[0]` 阶段、`tools/check-all.ps1` 与 `tools/hooks/pre-push`(详见 `../MAINTENANCE.md` §0)。
 
+> **⚠️ 本机不适用(2026-11-02 追注)**:以上 CI 现状描述的是**上游 `main` 的云端流程**。本机现役分支是
+> `feat/st-compat`,**独立演进、不推 `main`、不向上游提 PR**(2026-11-02 定案),因此两档 workflow 的
+> `push`/PR 触发面与 main 分支保护**对本机不生效**;本机实际生效的只有上面那句「本地闸门」——
+> 推送前后跑 `tools/check-all.ps1`(推送前用 `-Quick`,见 `../AGENTS.md` 的 pre-push 说明)。
+> 两档 workflow 文件仍保留在位,以便将来若恢复上游流程可直接启用。
+
 **纪律**:架构文档不再硬编码测试数字(那类事实一律引用 `../MAINTENANCE.md`);若与代码实测不符,
 以代码为准并**先修文档再动代码**。
 
@@ -97,6 +103,9 @@
 | [plans/COMPUTER-USE-HARNESSES.md](plans/COMPUTER-USE-HARNESSES.md) | 成熟 harness 的 computer use 方案调研(ZCode 本机实物 + 跨方案共识定律) |
 | [plans/DOC-DRIFT-REPORT.md](plans/DOC-DRIFT-REPORT.md) | 文档漂移盘点报告(六类 84 点:契约字面/状态过时/文档矛盾/ID 断链/漏登记/其他;修正项见 `计划.md` 文档漂移收口批) |
 | [plans/CODING-REPORT.md](plans/CODING-REPORT.md) | 编码能力包功能扩展调研(五家 harness 机制对照 / 仓库现状矩阵 / 出包判据;条目 CODE-1~CODE-5 见 `计划.md`) |
+| [plans/LITERARY-REPORT.md](plans/LITERARY-REPORT.md) | 文学能力包方案调研(外部文学/角色扮演 harness 经验 + 仓库现状对照 + 能力包形态 T1~T3 与出包清单 T4;条目 LIT-1~LIT-8 见 `计划.md`) |
+| [plans/UI-AUDIT-2026-10-30.md](plans/UI-AUDIT-2026-10-30.md) | 前端观感审计报告(真实启动 + 真实浏览器四档视口逐屏观察,查的是**缺陷**) |
+| [plans/UI-AESTHETICS-2026-10-31.md](plans/UI-AESTHETICS-2026-10-31.md) | 前端美感优化报告(接续上一份,查的是**美感**;每条均带「修前→修后」实测数字) |
 
 > **同名撞车提醒**:[archive/TASK-MODE-FIX-PLAN.md](archive/TASK-MODE-FIX-PLAN.md) 是更早的
 > 「Kimi 续做」交接稿(归档,只读);其同名的工作区执行稿已于 2026-09-27 并入 `计划.md` 并删除。
