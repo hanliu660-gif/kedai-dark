@@ -93,7 +93,9 @@ const VERBOSE = process.argv.includes('--verbose');
  */
 const LINE_BASELINE = {
   'style.css': 50, /* 2026-11-03 新增 palettes.css 的 @import(+1 行) */
-  'styles/palettes.css': 213, /* 2026-11-03 新增配色:4 套护眼(明暗各 17 令牌)+ 纯黑 OLED(仅深色,额外压暗 9 个固定亮色) */
+  'styles/palettes.css': 221, /* 2026-11-07 改为生成物(单一真相源 web/src/theme/palettes.ts):213→221,
+                                 +8 = 头部加"生成物勿手改"说明(2 行)+ 生成标记 start/end(2 行)+ 每条配色多 1 行空行;
+                                 令牌值与 2026-11-03 手写版逐键逐值等价(见 generate-tokens.mjs --check) */
   'styles/tokens.css': 250, /* 2026-11-03 抽「重块」语义对 --sv-block-bg/--sv-block-fg(亮/暗各 2 个令牌 + 3 行注释):
                                原先复用 --sv-ink/--sv-white,暗色对调后重块反相成近白,两主题语义相反且刺眼 */
   'styles/base.css': 130,
