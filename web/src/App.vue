@@ -6,7 +6,8 @@
 import { nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useAppStore } from './store';
 import { lazyModal } from './asyncModal';
-import { MODALS, MODAL_FLAGS } from './modals';
+import { MODALS, MODAL_FLAGS, shouldMountModal } from './modals';
+import { pendingConfirm } from './composables/useConfirm';
 import { shouldShowOnboarding } from './onboarding';
 import { inTauri } from './platform';
 import { useExternalLinks } from './composables/useExternalLinks';
@@ -31,9 +32,11 @@ let unlistenCloseRequested: (() => void) | null = null;
  *  web/src/modals.ts 单点定义,并由 web/src/modals.test.ts 元测试锁定。 */
 const storeFlags = store as unknown as Record<string, boolean | undefined>;
 
-/** 按 flag 名读弹窗开关(渲染与返回键共用同一来源)。 */
+/** 按 flag 名读弹窗开关(渲染与返回键共用同一来源)。
+ *  判断逻辑在 modals.ts 的 shouldMountModal:确认对话框还要看 useConfirm 队列
+ *  (它自己的开关只在组件挂载后才会置位,只看开关会自锁)。 */
 function isModalOpen(flag: string): boolean {
-  return storeFlags[flag] === true;
+  return shouldMountModal(flag, storeFlags, pendingConfirm.value !== null);
 }
 
 /** 窄屏(<768px)判定:抽屉与底部导航仅在窄屏有意义。

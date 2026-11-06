@@ -73,3 +73,29 @@ export type ModalFlag = (typeof MODALS)[number]['flag'];
 
 /** 全部弹窗 flag(顺序同渲染顺序)。 */
 export const MODAL_FLAGS: readonly ModalFlag[] = MODALS.map((m) => m.flag);
+
+/** 应用内确认对话框的 flag(其开关由 ConfirmDialog 自身的 watch 置位,见 shouldMountModal)。 */
+const CONFIRM_DIALOG_FLAG: ModalFlag = 'confirmDialogOpen';
+
+/**
+ * 判断某个弹窗是否应当挂载渲染。
+ *
+ * 不能只看 store 开关:确认对话框的 `confirmDialogOpen` 由 `components/ConfirmDialog.vue`
+ * 自己的 watch 在**组件挂载之后**才置位;若渲染判断也只看它,就会形成
+ * 「未挂载 ⇒ 开关不打开 ⇒ 永不挂载」的自锁(2026-11-07 实机:桌面端点「授权 JS」毫无反应,
+ * 所有走 `confirmAction` 的确认/删除动作全部静默失效)。
+ * 故对确认对话框额外把「`useConfirm` 队列有队首请求」算作挂载条件:
+ * 入队即挂载,组件随即把开关置位;结算后队列清空,开关由组件自身 watch 收起。
+ *
+ * @param flag 弹窗 flag(运行期字符串,合法集合见 MODALS)
+ * @param flags store 上的弹窗开关(按 flag 名读)
+ * @param confirmPending `useConfirm` 队列中是否有待结算请求
+ */
+export function shouldMountModal(
+  flag: string,
+  flags: Record<string, boolean | undefined>,
+  confirmPending: boolean,
+): boolean {
+  if (flags[flag] === true) return true;
+  return flag === CONFIRM_DIALOG_FLAG && confirmPending;
+}

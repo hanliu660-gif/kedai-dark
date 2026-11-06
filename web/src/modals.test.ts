@@ -12,7 +12,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { MODALS, MODAL_FLAGS } from './modals';
+import { MODALS, MODAL_FLAGS, shouldMountModal } from './modals';
 import { useUiPrefsStore } from './stores/uiPrefs';
 // 读源码文本做契约校验(仓库既有先例:mvu/parser.contract.test.ts);?raw 由 vite 提供
 import appSource from './App.vue?raw';
@@ -106,5 +106,37 @@ describe('App.vue 渲染与单点表一致', () => {
     for (const flag of MODAL_FLAGS) {
       expect(appSource, `${flag} 仍被硬编码渲染`).not.toContain(`v-if="store.${flag}"`);
     }
+  });
+
+  it('挂载判断交给 shouldMountModal,并把确认队列状态纳入条件', () => {
+    // 回归 2026-11-07:确认弹窗的开关由组件自身挂载后才置位,只看开关会自锁;
+    // 故 App.vue 必须走 shouldMountModal 并传入 useConfirm 的队首状态。
+    expect(appSource).toContain('shouldMountModal(');
+    expect(appSource).toContain('pendingConfirm.value !== null');
+  });
+});
+
+/**
+ * 回归守卫(2026-11-07 实机:桌面端点「授权 JS」毫无反应)。
+ *
+ * 原因:`confirmDialogOpen` 只由 `ConfirmDialog.vue` 自己的 watch 在组件**已挂载后**
+ * 置位;若 App.vue 的渲染判断也只看这个开关,就形成
+ * 「未挂载 ⇒ 开关不打开 ⇒ 永不挂载」的自锁 ⇒ 走 confirmAction 的确认框永不出现,
+ * 所有二次确认(授权/删除/撤销…)静默失效。
+ */
+describe('shouldMountModal:确认对话框不得依赖自身置位的开关', () => {
+  it('普通弹窗:只看 store 开关', () => {
+    expect(shouldMountModal('settingsOpen', {}, true)).toBe(false);
+    expect(shouldMountModal('settingsOpen', { settingsOpen: true }, false)).toBe(true);
+  });
+
+  it('确认对话框:队列有待结算请求时,即使开关仍是 false 也要挂载', () => {
+    expect(shouldMountModal('confirmDialogOpen', { confirmDialogOpen: false }, true)).toBe(true);
+    expect(shouldMountModal('confirmDialogOpen', {}, true)).toBe(true);
+  });
+
+  it('确认对话框:队列为空时按开关判定(结算后由组件自身收起)', () => {
+    expect(shouldMountModal('confirmDialogOpen', { confirmDialogOpen: true }, false)).toBe(true);
+    expect(shouldMountModal('confirmDialogOpen', {}, false)).toBe(false);
   });
 });
