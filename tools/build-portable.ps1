@@ -5,7 +5,10 @@
 param(
     [string]$OutputDir = "",
     [switch]$NoWeb,
-    [switch]$KeepTarget
+    [switch]$KeepTarget,
+    # 发布档:--profile dist(thin LTO),产物落 src-tauri\target\dist\。
+    # 由 build.ps1 -Dist 透传;日常构建不加,走 release 档(lto=false)。
+    [switch]$Dist
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +19,12 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $Root $OutputDir
 }
+
+# [PROFILE-SPLIT 2026-11-03] 与 build.ps1 / 两个 Cargo.toml 同步的档位解析:
+# 日常 release(lto=false) → src-tauri\target\release\
+# 发布 dist(thin LTO)    → src-tauri\target\dist\
+$ProfileName = if ($Dist) { "dist" } else { "release" }
+$ProfileDir = Join-Path $Root "src-tauri\target\$ProfileName"
 
 Write-Host "========== Kedai Portable Build ==========" -ForegroundColor Cyan
 Push-Location $Root
@@ -39,7 +48,7 @@ try {
     # 前端新鲜度检测(同 build.ps1):kedai-server 编译期嵌入 web/dist,
     # 清掉 kedai-server 指纹防止增量编译复用旧前端(不触发全量重编)。
     $DistIndex = Join-Path $Root "web\dist\index.html"
-    $DesktopExe = Join-Path $Root "src-tauri\target\release\kedai-portable.exe"
+    $DesktopExe = Join-Path $ProfileDir "kedai-portable.exe"
     if ((Test-Path $DistIndex) -and (Test-Path $DesktopExe)) {
         $distTime = (Get-Item $DistIndex).LastWriteTime
         $exeTime = (Get-Item $DesktopExe).LastWriteTime
@@ -55,8 +64,8 @@ try {
     # 占用让位:运行中的 kedai-portable.exe(直接跑 src-tauri\target 产物时)会锁住链接目标,
     # 导致 cargo 报「failed to remove file ... os error 5」;编译前改名让位,无需杀进程。
     [void](Clear-KedaiLockedBuildArtifact -ExePath $DesktopExe)
-    [void](Clear-KedaiLockedBuildArtifact -ExePath (Join-Path $Root "src-tauri\target\release\kedai-desktop.exe"))
-    & $env:ComSpec /d /c "cargo build --release --manifest-path `"$(Join-Path $Root 'src-tauri\Cargo.toml')`" --bin kedai-portable 2>&1"
+    [void](Clear-KedaiLockedBuildArtifact -ExePath (Join-Path $ProfileDir "kedai-desktop.exe"))
+    & $env:ComSpec /d /c "cargo build --profile $ProfileName --manifest-path `"$(Join-Path $Root 'src-tauri\Cargo.toml')`" --bin kedai-portable 2>&1"
     $code = $LASTEXITCODE
     $ErrorActionPreference = "Stop"
     if ($code -ne 0) { throw "Tauri 编译失败(exit=$code)" }
@@ -64,7 +73,7 @@ try {
     Pop-Location
 }
 
-$DesktopExe = Join-Path $Root "src-tauri\target\release\kedai-portable.exe"
+$DesktopExe = Join-Path $ProfileDir "kedai-portable.exe"
 if (-not (Test-Path $DesktopExe)) {
     throw "未生成桌面可执行文件:$DesktopExe"
 }
@@ -124,6 +133,7 @@ if ($ServerRustTarget -eq $DefaultServerTarget) {
 } else {
     $CleanDirs = @(
         (Join-Path $ServerRustTarget "debug"), (Join-Path $ServerRustTarget "release"),
+        (Join-Path $ServerRustTarget "dist"),
         (Join-Path $ServerRustTarget "tmp"), (Join-Path $ServerRustTarget "CACHEDIR.TAG"),
         (Join-Path $ServerRustTarget ".rustc_info.json"),
         (Join-Path $Root "src-tauri\target")

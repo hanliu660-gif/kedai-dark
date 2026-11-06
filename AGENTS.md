@@ -105,7 +105,7 @@ cargo build --manifest-path server-rs/Cargo.toml
 ## 构建提醒(后续模型必读)
 
 - **改完任何前后端代码后,`dist\` 下的 exe 与项目根 `Kedai.exe` 不会自动更新。** 用 `target\debug\` 二进制验证通过后,交付/试用 exe 版前必须跑一次 `.\build.ps1`(默认双端同步:前端 + release + 便携版 + 构建指纹 sidecar;详见 MAINTENANCE.md §4)。只改了代码只跑过 debug,不等于 exe 版已更新。
-- 快速迭代优先用 `.\build.ps1 -Fast -TestOnly`（2026-10-30 接入 rust-lld 快速链接器并跳过全局 LTO，单端热重编仅需 1m45s；若前端未动带 `-NoWeb` 仅需 3.1 秒）或 `.\build.ps1 -Dev`（debug profile + 不打包便携版，热 28s），产物 `kedai-server.exe` 可直接跑。日常全量双端同步打包用 `.\build.ps1 -Fast`（**双端**实测 **5m46s~5m52s**（含 `-SkipChecks`；同日另一轮 07:21→07:26 复测约 5m），比无 `-Fast` 省近 5 分钟）。注意 `-Dev` 与 `-TestOnly` **不能同时用**(脚本主动抛错:语义重叠)，`-Dev` 与 `-WithPortable` 也互斥。交付前若要出包，补一次完整的 `.\build.ps1`。
+- 快速迭代优先用 `.\build.ps1 -TestOnly`（**2026-11-03 起档位由 Cargo profile 承载，不再用 RUSTFLAGS 切档**：默认 `release` 档 `lto=false`，单端热重编实测 **89s**，前端未动带 `-NoWeb` 仅 **4s**；`-Dist` 走 thin LTO 发布档，改一行 **170s**，仅在发版/归档时需要）或 `.\build.ps1 -Dev`（debug profile + 不打包便携版）。日常全量双端同步打包用 `.\build.ps1`。注意 `-Dev` 与 `-TestOnly` **不能同时用**(脚本主动抛错:语义重叠)，`-Dev` 与 `-WithPortable` 也互斥。发布归档用 `.\tools\pack-7z.ps1 -Build`（已自动带 `-Dist`）。**`-Fast` 仍可传但是无操作别名**——切档方式的变更原因见 `编译与测试提速-权威文档.md` §3.3。
 - **本机环境**:裸 PowerShell/cmd/Git Bash 里可能没有 cargo 环境(MSVC toolchain 未注入)。构建/测试前先执行
   `call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"`,
   或在已加载 vcvars64 的 shell 里再调用 build.ps1 / cargo;Git Bash 中可用 `cmd //c "<bat 包装>"` 形式嵌套。

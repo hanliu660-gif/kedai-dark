@@ -99,6 +99,9 @@ if ($Portable) {
     if (-not $NoRebuild -and ($mismatch -or (Test-ArtifactStale $PortableExe))) {
         Write-Host "========== Kedai 自动构建(检测到源码更新) ==========" -ForegroundColor Yellow
         Write-Host "[构建] 产物过期或两版漂移,自动执行 build.ps1(双端同步) ..." -ForegroundColor Yellow
+        # [FAST-ALIGN 2026-11-03] 日常构建统一走默认 release 档(lto=false),
+        # 与 build-local.ps1 的产物同一 target 子目录 ⇒ 不再有 RUSTFLAGS 指纹翻转。
+        # 需要 thin LTO 的发布产物走 tools\pack-7z.ps1 -Build(它带 -Dist)。
         # build.ps1 失败走 throw(不是 exit),异常会直接穿透到本脚本;
         # 必须 try/catch 捕获,否则 $LASTEXITCODE 判断永远执行不到,用户只看到裸红字堆栈。
         try {
@@ -160,6 +163,7 @@ if (-not $NeedBuild -and -not $NoRebuild) {
 if ($NeedBuild) {
     Write-Host "[自动构建] 产物缺失或源码更新,执行 build.ps1(双端同步) ..." -ForegroundColor Yellow
     # 同 -Portable 分支:build.ps1 失败是 throw,需捕获而非查 $LASTEXITCODE
+    # [FAST-ALIGN 2026-11-03] 默认 release 档即 lto=false,无需再传 -Fast,理由见上。
     try {
         & (Join-Path $Root "build.ps1")
     } catch {

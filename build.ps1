@@ -48,10 +48,13 @@ param(
     # (build script exe 报 os error 5),用本参数把后端产物外置到白名单目录,例如:
     #   .\build.ps1 -RustTargetDir D:\kedai-build
     [string]$RustTargetDir,
-    # 快速日常构建(日常调试推荐):跳过耗时的 LTO 全局跨 Crate 内联优化(-C lto=off),
-    # 仍保留 opt-level=3 代码优化。链接速度提升数倍,几秒到十几秒即可完成链接。
-    # 正式交付/发版归档(pack-7z.ps1)时不加本开关,保持完整的 thin LTO。
-    [switch]$Fast
+    # 快速日常构建(兼容别名,2026-11-03 起已并入默认 release 档):
+    # 自 [PROFILE-SPLIT] 起 release 档即 lto=false,本开关不再改变任何编译参数,
+    # 仅为不破坏既有脚本/肌肉记忆而保留。真正的"更快"来自 profile 不再翻转指纹。
+    [switch]$Fast,
+    # 发布档:--profile dist(thin LTO + codegen-units=1),产物落 target\dist\。
+    # 发版/归档/交付前使用;日常不需要。
+    [switch]$Dist
 )
 
 $ErrorActionPreference = "Stop"
@@ -187,18 +190,75 @@ Assert-VersionConsistency
 
 Write-Host "========== Kedai Build ==========" -ForegroundColor Cyan
 
-# 1) 前端构建
-if (-not $NoWeb) {
-# -Fast 的 RUSTFLAGS 在此设置(2026-10-31 从文件头移来):
-# **必须晚于 [0/3] 门禁**——门禁若继承 "-C lto=off",会与"单独跑 check-all(无 RUSTFLAGS)"
-# 形成两套指纹,导致 clippy/nextest 重编。实测门禁因此多花 51.1s(首次 95.3s)。
-# 此处置后,-Fast 只影响 [2/3]/[3/3] 的 release 构建,这正是它的设计意图(LTO 只影响链接)。
-if ($Fast) {
-    $env:RUSTFLAGS = if ($env:RUSTFLAGS) { "$env:RUSTFLAGS -C lto=off" } else { "-C lto=off" }
-    Write-Host "[快循环] 已开启 -Fast (跳过 LTO 全局内联,大幅加速链接阶段)" -ForegroundColor Cyan
+# 0) 编译档位解析(2026-11-03 起由 profile 承载,不再用 RUSTFLAGS)
+#      日常 → --profile release  (lto=false)          → target\release\
+#      发布 → --profile dist     (thin LTO, cgu=1)    → target\dist\
+#      开发 → --profile dev                             → target\debug\
+#    历史说明(勿回退):此前用 RUSTFLAGS="-C lto=off" 切日常/发布档,而 RUSTFLAGS 是
+#    cargo 编译指纹的一部分——同一 crate 会在同一 target 下留 2~3 份 rlib,导致
+#    每次切档都要把 314 个 crate 全量重编(实测 206s);若该 RUSTFLAGS 再被条件块
+#    吞掉(2026-11-03 修掉的 -NoWeb bug),连日常构建都会退化成全量重编(297s)。
+#    profile 方案让两档各有独立 target 子目录,切换零成本,且不污染 cargo run/门禁。
+if ($Dev) {
+    $CargoProfile = "dev"
+} elseif ($Dist) {
+    $CargoProfile = "dist"
+} else {
+    $CargoProfile = "release"
+}
+$ProfileDir = if ($Dev) { "$CargoTargetDir\debug" } else { "$CargoTargetDir\$CargoProfile" }
+if ($Fast -and -not $Dev -and -not $Dist) {
+    Write-Host "[快循环] -Fast 已并入默认 release 档(lto=false),本开关现为兼容别名" -ForegroundColor DarkGray
+}
+if ($Dist) {
+    Write-Host "[发布档] --profile dist(thin LTO + codegen-units=1,产物在 target\dist)" -ForegroundColor Cyan
+}
+# 透传给 tools\build-portable.ps1 的档位参数(空数组 = 日常 release 档)
+$distArg = if ($Dist) { @('-Dist') } else { @() }
+
+# [WEB-HASH 2026-11-03] 前端源码内容哈希:未变则跳过 vite。
+# 解决的问题:vite 每次构建都会清空并重写 web/dist 全部 88 个文件 ⇒ mtime 全变 ⇒
+# server-rs/build.rs 的 rerun-if-changed=../web/dist 判定「前端变了」⇒ 整个
+# kedai-server(12 万行)在两端各重编一次。实测:源码零改动的双端构建仍要 197.7s,
+# 其中约 190s 是这两次纯属无辜的重编。
+# 判据用「内容哈希」而非 mtime:vite 输出是确定性的,输入未变则产物逐字节相同,
+# 跳过是安全的;hash 文件缺失(首次)或 dist 缺失时一律照常构建。
+function Get-WebSourceHash {
+    param([Parameter(Mandatory = $true)][string]$RootPath)
+
+    $files = @()
+    $srcDir = Join-Path $RootPath "web\src"
+    if (Test-Path $srcDir) {
+        $files += Get-ChildItem -Path $srcDir -Recurse -File -ErrorAction SilentlyContinue
+    }
+    foreach ($rel in @("web\index.html", "web\vite.config.ts", "web\package.json", "package-lock.json")) {
+        $p = Join-Path $RootPath $rel
+        if (Test-Path $p) { $files += Get-Item -Path $p }
+    }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($f in ($files | Sort-Object FullName)) {
+        $rel = $f.FullName.Substring($RootPath.Length).Replace("\", "/")
+        $h = (Get-FileHash -Algorithm SHA256 -Path $f.FullName).Hash
+        [void]$sb.Append($rel).Append(":").Append($h).Append("`n")
+    }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($sb.ToString())
+        return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
 }
 
+# 1) 前端构建
+if (-not $NoWeb) {
     Write-Host "[1/3] 构建前端 (web/dist) ..." -ForegroundColor Green
+    $webHashFile = "$Root\web\.build-src-hash"
+    $webHash = Get-WebSourceHash -RootPath $Root
+    $prevHash = if (Test-Path $webHashFile) { (Get-Content $webHashFile -Raw).Trim() } else { "" }
+    if ($prevHash -eq $webHash -and (Test-Path "$Root\web\dist\index.html")) {
+        Write-Host "[跳过] 前端源码未变($($webHash.Substring(0, 12))),复用现有 web/dist;后端不会因此重编" -ForegroundColor DarkGray
+    } else {
     Push-Location $Root
     try {
         if (-not (Test-Path "$Root\package-lock.json")) {
@@ -223,7 +283,9 @@ if ($Fast) {
     if (-not (Test-Path "$Root\web\dist\index.html")) {
         throw "前端构建失败:未生成 web/dist/index.html"
     }
-    Write-Host "[OK] 前端构建完成" -ForegroundColor Green
+    Set-Content -Path $webHashFile -Value $webHash -Encoding ASCII
+    Write-Host "[OK] 前端构建完成(源码哈希 $($webHash.Substring(0, 12)))" -ForegroundColor Green
+    }
 }
 
 # 2) 前端新鲜度检测(兜底):kedai-server 用 include_dir! 在编译期嵌入 web/dist,
@@ -232,7 +294,7 @@ if ($Fast) {
 #    清掉 kedai-server 的编译指纹强制重编(不会触发 500 个 crate 全量重编)。
 if (-not $NoWeb) {
     $distIndex = "$Root\web\dist\index.html"
-    $exeCheck = if ($Dev) { "$CargoTargetDir\debug\kedai-server.exe" } else { "$CargoTargetDir\release\kedai-server.exe" }
+    $exeCheck = "$ProfileDir\kedai-server.exe"
     if ((Test-Path $distIndex) -and (Test-Path $exeCheck)) {
         $distTime = (Get-Item $distIndex).LastWriteTime
         $exeTime = (Get-Item $exeCheck).LastWriteTime
@@ -260,6 +322,7 @@ if ($Parallel) {
     Write-Host "[并行] 便携版转入后台(空闲 $freeGB GB >= $ParallelMinFreeGB GB),前台先编后端 ..." -ForegroundColor Cyan
     $portableArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'tools\build-portable.ps1'), '-NoWeb')
     if (-not $Clean) { $portableArgs += '-KeepTarget' }
+    if ($Dist) { $portableArgs += '-Dist' }
     $parallelProc = Start-Process -FilePath (Get-Command powershell).Source -ArgumentList $portableArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput $parallelLog
     Write-Host "[并行] 便携版日志:$parallelLog" -ForegroundColor DarkGray
 }
@@ -274,7 +337,7 @@ try {
     if ($Dev) {
         & $env:ComSpec /d /c "cargo build --target-dir `"$CargoTargetDir`" --bin kedai-server 2>&1"
     } else {
-        & $env:ComSpec /d /c "cargo build --release --target-dir `"$CargoTargetDir`" --bin kedai-server 2>&1"
+        & $env:ComSpec /d /c "cargo build --profile $CargoProfile --target-dir `"$CargoTargetDir`" --bin kedai-server 2>&1"
     }
     $code = $LASTEXITCODE
     if ($code -ne 0) {
@@ -286,7 +349,7 @@ try {
     Pop-Location
 }
 
-$exe = if ($Dev) { "$CargoTargetDir\debug\kedai-server.exe" } else { "$CargoTargetDir\release\kedai-server.exe" }
+$exe = "$ProfileDir\kedai-server.exe"
 if (-not (Test-Path $exe)) {
     throw "Rust 编译失败:未生成 $exe"
 }
@@ -366,7 +429,7 @@ if (-not $Dev) {
             }
         }
     } elseif ($Clean) {
-        foreach ($sub in @("debug", "release", "tmp", "CACHEDIR.TAG", ".rustc_info.json")) {
+        foreach ($sub in @("debug", "release", "dist", "tmp", "CACHEDIR.TAG", ".rustc_info.json")) {
             $p = Join-Path $CargoTargetDir $sub
             if (Test-Path $p) {
                 try {
@@ -409,9 +472,9 @@ if ($BuildPortable) {
         Write-Host "[3/3] 构建便携版 dist\Kedai-portable\Kedai.exe(与测试版同一份前端) ..." -ForegroundColor Green
         # 默认 -KeepTarget:便携版脚本收尾不再整删 target,下次构建走增量(-Clean 时才清)。
         if ($Clean) {
-            & "$Root\tools\build-portable.ps1" -NoWeb
+            & "$Root\tools\build-portable.ps1" -NoWeb @distArg
         } else {
-            & "$Root\tools\build-portable.ps1" -NoWeb -KeepTarget
+            & "$Root\tools\build-portable.ps1" -NoWeb -KeepTarget @distArg
         }
     }
 }

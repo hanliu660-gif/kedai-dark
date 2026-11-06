@@ -47,8 +47,11 @@ function Find-SevenZipExe([string]$Explicit) {
 Write-Host "========== Kedai Pack 7z ==========" -ForegroundColor Cyan
 
 if ($Build) {
-    Write-Host "[1/3] 全量双端构建(.\build.ps1,含门禁) ..." -ForegroundColor Green
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "build.ps1")
+    Write-Host "[1/3] 全量双端构建(.\build.ps1 -Dist,含门禁) ..." -ForegroundColor Green
+    # [PROFILE-SPLIT 2026-11-03] 归档必须用发布档:release 档自本日起 lto=false
+    # (日常快速构建),带 thin LTO 的产物只有 --profile dist 才会产出。
+    # 漏传 -Dist 会把「未优化」的 exe 打成发布包,且体积/热路径都退化。
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "build.ps1") -Dist
     if ($LASTEXITCODE -ne 0) { throw "构建失败(exit=$LASTEXITCODE),已中止打包" }
 } else {
     Write-Host "[1/3] 未指定 -Build,复用现有 dist 产物(跳过构建)" -ForegroundColor Yellow

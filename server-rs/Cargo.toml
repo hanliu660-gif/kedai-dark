@@ -147,16 +147,22 @@ debug = false
 [profile.test]
 debug = 0
 
+# [PROFILE-SPLIT 2026-11-03] 日常档与发布档分离,取代原先用进程级
+# RUSTFLAGS="-C lto=off" 切档的做法。
+#
+# 为什么要换:RUSTFLAGS 是 cargo 编译指纹的一部分。用它切档会让同一 crate 在
+# 同一 target 下留下 2~3 份 rlib(现场实测 .fingerprint 里 660 条带 lto=off、
+# 201 条为空),于是「日常构建 ↔ 发布构建」每切换一次就要把 314 个 crate 全量重编
+# (实测 206s)。改用 profile 后,两档各有独立且稳定的 target 子目录
+# (target/release 与 target/dist),来回切换零成本,且不再污染 cargo run / 门禁。
+#
+# 日常档:不 LTO。单 crate 链接 2~4s,改一行代码的整体构建稳定在 20s 量级。
+# 代价:跨 crate 内联弱一些,热路径慢几个百分点——对一个 IO/网络密集的桌面端
+# (主要耗时在等 LLM 流)无感知。
 [profile.release]
-# 2026-10-26:fat LTO → thin。fat 会把 314 个 crate 的 bitcode 收拢成单线程全局优化,
-# 链接阶段慢;thin 仍做跨 crate 内联与优化(优化面与 fat 基本一致),但可按 CGU 并行,
-# 链接更快。实测(本机,i5/16 核):冷构建 12m33s → 12m00s~12m59s,热构建(保缓存)
-# 8m49s;热构建里真正吃时间的是两个大二进制的链接,不是编译(Compiling 只有 3 行)。
-# 代价:产物字节变(dist_hash 会更新、体积略有出入),功能行为无差异。
-lto = "thin"
+lto = false
+codegen-units = 16
 strip = true
-
-# MSVC 本地化链接进度消息与符号导入提示的告警抑制(与 src-tauri/Cargo.toml 同步):
 
 # [KB-PERF] 2026-10-31:开启 release 增量编译。
 # release 默认 incremental=false ⇒ 每次改动都要对全部 CGU 重跑 opt-level=3 代码生成。
@@ -164,5 +170,16 @@ strip = true
 # ⚠️ 前提:必须同时删掉 build.ps1 / build-portable.ps1 里的 cargo clean -p kedai-server,
 #    否则每次构建都会把本目录增量缓存连根删光(incremental 白配)。
 incremental = true
+
+# 发布档:薄 LTO,产物更小、热路径更快。
+# 入口:.\build.ps1 -Dist(或 .\tools\pack-7z.ps1 -Build,后者已自动带 -Dist)。
+# 原 release 档的取舍(2026-10-26):fat LTO 会把 314 个 crate 的 bitcode 收拢成
+# 单线程全局优化,链接慢;thin 仍做跨 crate 内联,但可按 CGU 并行。
+# codegen-units 保持 16(与发布前的口径一致):设成 1 只省约 0.5~1MB,却让 314 个
+# crate 的 codegen 全部串行——实测代价是发布构建慢数倍,不划算。
+[profile.dist]
+inherits = "release"
+lto = "thin"
+incremental = false
 [lints.rust]
 linker_messages = "allow"

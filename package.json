@@ -11,6 +11,8 @@
     "dev": "npm run dev -w web",
     "build": "npm run build -w web",
     "test": "npm test -w web",
+    "test:rs": "cargo nextest run --manifest-path server-rs/Cargo.toml",
+    "test:rs:lib": "cargo nextest run --manifest-path server-rs/Cargo.toml --lib",
     "build:rs": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1",
     "build:test": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -TestOnly",
     "build:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Tauri",

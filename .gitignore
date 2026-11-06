@@ -57,5 +57,8 @@ Kedai.exe
 .zcode/
 .qoder-credits/
 
+# 前端源码内容哈希(build.ps1 用于判断能否跳过 vite;派生数据,不入库)
+/web/.build-src-hash
+
 # 本机构建包装(硬编码本机 D 盘产物路径,不入公开仓)
 build-local.ps1
