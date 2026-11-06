@@ -362,8 +362,8 @@ const activeLabel = computed(() => {
 }
 /* 当前分区:黑底白字,与一级 active 视觉语言一致但更轻(不做全黑,避免抢一级层级) */
 .hub-sub-item.active {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border-color: var(--sv-ink);
 }
 /* 工具项:虚线段标记 + 尾部箭头,提示「点开是独立面板」而非切换内容区 */

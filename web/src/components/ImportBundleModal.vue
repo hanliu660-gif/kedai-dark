@@ -465,8 +465,8 @@ async function runExport(): Promise<void> {
   border: var(--bw-thin) solid var(--sv-line);
 }
 .impb-status.ok {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border-color: var(--sv-ink);
 }
 .impb-status.failed {

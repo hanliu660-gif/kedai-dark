@@ -72,8 +72,8 @@
   writing-mode: vertical-lr;
   text-orientation: mixed;
   padding: var(--space-5) var(--space-2);
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border: none;
   font-family: var(--font-display);
   font-size: 11px;
@@ -236,8 +236,8 @@
 }
 /* 用户消息:黑底白字(纯展示容器,按阴影规则不挂投影——黑块本身即至上主义实体) */
 .sv-msg.user .sv-msg-bubble {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
 }
 .sv-msg.user .sv-msg-bubble::after {
   content: "";
@@ -318,9 +318,9 @@
   overflow: hidden;
 }
 .sv-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.sv-avatar.char { background: var(--sv-ink); color: var(--sv-white); }
-.sv-avatar.char.alt-blue { background: var(--sv-blue); color: var(--sv-white); }
-.sv-avatar.char.alt-red { background: var(--sv-red); color: var(--sv-white); }
+.sv-avatar.char { background: var(--sv-block-bg); color: var(--sv-block-fg); }
+.sv-avatar.char.alt-blue { background: var(--sv-blue); color: var(--sv-block-fg); }
+.sv-avatar.char.alt-red { background: var(--sv-red); color: var(--sv-block-fg); }
 
 /* 消息角色名 */
 .sv-msg-name {
@@ -342,7 +342,7 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  background: var(--sv-ink);
+  background: var(--sv-block-bg);
   animation: sv-square-pulse var(--dur-pulse) infinite var(--ease-in-out);
 }
 .sv-thinking i:nth-child(2) { background: var(--sv-pink); animation-delay: var(--dur-normal); }
@@ -483,8 +483,8 @@
   height: 48px;
   flex-shrink: 0;
   border: var(--bw) solid var(--sv-ink);
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   box-shadow: var(--shadow-card);
   font-size: 18px;
   cursor: pointer;
@@ -591,8 +591,8 @@
   cursor: pointer;
 }
 .sv-mode button.active {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
 }
 .sv-mode button:not(.active):hover {
   background: var(--sv-pink-light);
@@ -625,7 +625,7 @@
 }
 .sv-auth-toggle button.active {
   background: var(--sv-pink-deep);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .sv-auth-toggle button:not(.active):hover {
   background: var(--sv-pink-light);
@@ -815,10 +815,10 @@
   box-shadow: var(--shadow-card); /* 阴影规则:可点列表行 hover 挂 card 影 */
 }
 .sv-char-item.active {
-  background: var(--sv-ink);
+  background: var(--sv-block-bg);
   border-color: var(--sv-ink);
 }
-.sv-char-item.active .sv-char-name { color: var(--sv-white); }
+.sv-char-item.active .sv-char-name { color: var(--sv-block-fg); }
 .sv-char-item.active .sv-char-desc { color: var(--sv-on-ink-soft); }
 .sv-char-item .sv-avatar.small { width: 32px; height: 32px; font-size: 14px; }
 /* 角色名(UIP-10):补截断——说明行早已省略号,名字行原为「长名整行硬顶」 */

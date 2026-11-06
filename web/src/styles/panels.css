@@ -34,8 +34,8 @@
   justify-content: space-between;
   padding: var(--space-4) var(--space-5);
   border-bottom: var(--bw) solid var(--sv-ink);
-  background: var(--sv-ink); /* 黑条头部:放大的黑方块,全站模态统一节奏 */
-  color: var(--sv-white);
+  background: var(--sv-block-bg); /* 黑条头部:放大的黑方块,全站模态统一节奏 */
+  color: var(--sv-block-fg);
   position: relative;
 }
 /* 红斜线角标:黑条头部右缘的构成主义签名(纯装饰,不遮关闭按钮);深粉回声成对出现。
@@ -64,7 +64,7 @@
   font-family: var(--font-display);
   font-size: 15px;
   letter-spacing: 0.1em;
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 /* 模态头色点:统一 18px,替代各模板的内联尺寸 */
 .sv-modal-head .sv-supreme { width: 18px; height: 18px; flex: none; }
@@ -85,7 +85,7 @@
   white-space: nowrap;
 }
 .sv-modal-head .sv-badge-off {
-  color: #fff;
+  color: var(--sv-block-fg);
   background: transparent;
 }
 /* 分区分隔线:构成主义双线(粗网格分隔 + 淡粉回声),替换模板内联 border-top */
@@ -302,7 +302,7 @@ input[type="range"].sv-range {
   flex: 1;
   appearance: none;
   height: 6px;
-  background: var(--sv-ink);
+  background: var(--sv-block-bg);
   outline: none;
 }
 input[type="range"].sv-range::-webkit-slider-thumb {
@@ -362,8 +362,8 @@ input[type="range"].sv-range::-moz-range-thumb {
 }
 /* 主按钮:海报级实黑硬投影(英雄元素;hover 抬起时阴影继续生长) */
 .sv-btn.primary {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   box-shadow: var(--shadow-hard);
 }
 .sv-btn.primary:hover:not(:disabled) {
@@ -386,7 +386,7 @@ input[type="range"].sv-range::-moz-range-thumb {
 }
 .sv-btn.danger:hover:not(:disabled) {
   background: var(--sv-red);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 /* 禁用态显式压平(UIP-3):不再用 opacity 半透明——黑底按钮被压成半透明灰条,
    在粉画布上像一条遮罩(用户截图点名)。改与 .sv-btn-send:disabled 同一套
@@ -470,8 +470,9 @@ input[type="range"].sv-range::-moz-range-thumb {
   padding: var(--space-3) var(--space-3-5);
   border: var(--bw) solid var(--sv-ink);
   background: var(--sv-white);
+  flex-wrap: wrap; /* 2026-11-03:设置行右侧按钮多时(主题三档/配色六档)会溢出弹窗,改为整行换行 */
 }
-.sv-data-row .info { font-size: 12.5px; }
+.sv-data-row .info { font-size: 12.5px; min-width: 0; }
 .sv-data-row .info b { display: block; font-size: 13px; }
 .sv-data-row .info span { color: var(--sv-ink-faint); font-size: 11px; }
 /* 开场选择器行:整行按钮化 + 预览文本限高滚动(收编模板内联) */
@@ -557,8 +558,8 @@ input[type="range"].sv-range::-moz-range-thumb {
   box-shadow: var(--shadow-card);
 }
 .sv-hub-nav-item.active {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border-color: var(--sv-ink);
 }
 /* 导航序号:构成主义数字(display 字体,同 .sv-mode-idx 节奏);
@@ -574,7 +575,7 @@ input[type="range"].sv-range::-moz-range-thumb {
 /* 批次 5 第二轮:Hub 左栏色点配色收敛——模板 dot 类含橙/黄,出海报红/印刷黑/至上蓝
    三色体系;不改 DOM,在 Hub 作用域统一为印刷黑(全组单色,克制档);
    active(黑底)态色点翻海报红,保持黑底上可见 */
-.sv-hub-nav .sv-hub-nav-item .sv-supreme { background: var(--sv-ink); }
+.sv-hub-nav .sv-hub-nav-item .sv-supreme { background: var(--sv-block-bg); }
 .sv-hub-nav .sv-hub-nav-item.active .sv-supreme { background: var(--sv-red); }
 /* 一级标签:不让它折行(长标签一律单行,改到需要时由省略号兜底)。
    min-width:0 是 flex 项能收缩到内容宽以下的前提,否则 nowrap 会把整条导航撑出横向滚动 */
@@ -622,8 +623,8 @@ input[type="range"].sv-range::-moz-range-thumb {
   justify-content: space-between;
   padding: var(--space-3-5) var(--space-4);
   border-bottom: var(--bw) solid var(--sv-ink);
-  background: var(--sv-ink); /* 黑条头部:与模态统一节奏 */
-  color: var(--sv-white);
+  background: var(--sv-block-bg); /* 黑条头部:与模态统一节奏 */
+  color: var(--sv-block-fg);
 }
 .sv-agent-panel-head h2 {
   margin: 0;
@@ -644,7 +645,7 @@ input[type="range"].sv-range::-moz-range-thumb {
   justify-content: center;
   cursor: pointer;
   font-size: 14px;
-  color: var(--sv-white); /* 黑条头部上的白字白边(原 ink 深色在黑底上不可见) */
+  color: var(--sv-block-fg); /* 黑条头部上的白字白边(原 ink 深色在黑底上不可见) */
 }
 .sv-agent-panel-close:hover {
   background: var(--sv-pink);
@@ -657,7 +658,7 @@ input[type="range"].sv-range::-moz-range-thumb {
   margin-right: var(--space-2);
   background: none;
   border: var(--bw-thin) solid var(--sv-white);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
   font-size: 11px;
   line-height: 1;
   padding: var(--space-1) var(--space-1-5);
@@ -705,8 +706,8 @@ input[type="range"].sv-range::-moz-range-thumb {
 .sv-agent-tab-btn:hover { background: var(--sv-pink-light); color: var(--sv-ink); }
 /* active 态:黑底白字 + 海报红底线下划(构成主义签名,与面板头黑条节奏一致) */
 .sv-agent-tab-btn.active {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   box-shadow: inset 0 -3px 0 0 var(--sv-red);
 }
 /* tab 内容容器:v-show 切换显隐;显示时继承面板体的纵向间距节奏。
@@ -907,7 +908,7 @@ input[type="range"].sv-range::-moz-range-thumb {
   color: var(--sv-ink);
   border: var(--bw-thin) solid var(--sv-ink);
 }
-.sv-tool-panel-card .tool-status.done { background: var(--sv-green); color: #fff; }
+.sv-tool-panel-card .tool-status.done { background: var(--sv-green); color: var(--sv-ink); }
 .sv-tool-panel-card .tool-status.running { background: var(--sv-yellow); color: #000; }
 .sv-tool-panel-card .tool-status.error { background: var(--sv-red); color: #fff; }
 .sv-tool-panel-card .tool-status.authorization_required { background: var(--sv-red); color: #fff; }

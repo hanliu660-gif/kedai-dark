@@ -293,7 +293,7 @@ onMounted(() => {
   cursor: pointer;
 }
 .exec-item:hover { background: var(--sv-white); border-color: var(--sv-pink); }
-.exec-item.active { background: var(--sv-ink); border-color: var(--sv-ink); color: var(--sv-white); }
+.exec-item.active { background: var(--sv-block-bg); border-color: var(--sv-block-bg); color: var(--sv-block-fg); }
 
 /* UIP-10:长名截断(原无截断,长执行者名把卡片顶宽);全文走 title */
 .exec-item-name { font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

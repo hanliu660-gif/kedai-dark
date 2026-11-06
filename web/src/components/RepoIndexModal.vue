@@ -211,7 +211,7 @@ onServerPrefetch(load);
 /* 类别标签:实心蓝底(与 kind-tag 同族的只读展示) */
 .repo-index-kind {
   background: var(--sv-blue);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
   white-space: nowrap;
   flex-shrink: 0;
 }

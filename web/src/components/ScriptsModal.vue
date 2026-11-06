@@ -467,9 +467,9 @@ onMounted(() => {
   background: var(--sv-pink-light);
 }
 .sv-script-row.active {
-  background: var(--sv-ink);
+  background: var(--sv-block-bg);
   border-color: var(--sv-ink);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .sv-script-row.sub {
   margin-left: 18px;

@@ -31,8 +31,10 @@
   transition: background var(--dur-fast) var(--ease-standard);
 }
 .sv-appmode button.active {
-  background: var(--sv-ink-supreme);
-  color: var(--sv-white);
+  /* 2026-11-03:原先用 --sv-ink-supreme(暗色下恒为纯白)+ --sv-white(暗色下变深灰)取反色,
+     与重块语义对重复且易错(改一处就白底白字);统一走 --sv-block-bg/fg。 */
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
 }
 .sv-appmode button:not(.active):hover {
   background: var(--sv-pink-light);
@@ -230,8 +232,8 @@
   justify-content: center;
   font-family: var(--font-display);
   font-size: 12px;
-  color: var(--sv-white);
-  background: var(--sv-ink);
+  color: var(--sv-block-fg);
+  background: var(--sv-block-bg);
 }
 .sv-task-step-idx.done { background: var(--sv-green); }
 .sv-task-step-idx.active { background: var(--sv-yellow); color: var(--sv-ink); }
@@ -828,7 +830,7 @@
 .sv-btn.stop {
   background: var(--sv-red);
   border-color: var(--sv-red);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 
 /* --- 思考中占位气泡:顶线降到 2px(区别于正式角色气泡的 4px 粉顶线) --- */

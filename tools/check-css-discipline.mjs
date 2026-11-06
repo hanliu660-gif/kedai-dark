@@ -92,13 +92,16 @@ const VERBOSE = process.argv.includes('--verbose');
  *   走令牌表达式而非裸值。
  */
 const LINE_BASELINE = {
-  'style.css': 49,
-  'styles/tokens.css': 242, /* 2026-11-02 吸收上游 UIPOL:补 --measure-prose/--measure-chat/--measure-task-result 三个令牌 + 4 行注释 */
+  'style.css': 50, /* 2026-11-03 新增 palettes.css 的 @import(+1 行) */
+  'styles/palettes.css': 213, /* 2026-11-03 新增配色:4 套护眼(明暗各 17 令牌)+ 纯黑 OLED(仅深色,额外压暗 9 个固定亮色) */
+  'styles/tokens.css': 250, /* 2026-11-03 抽「重块」语义对 --sv-block-bg/--sv-block-fg(亮/暗各 2 个令牌 + 3 行注释):
+                               原先复用 --sv-ink/--sv-white,暗色对调后重块反相成近白,两主题语义相反且刺眼 */
   'styles/base.css': 130,
   'styles/shell.css': 843,
-  'styles/panels.css': 971,
-  'styles/content.css': 1015,
-  'styles/task.css': 997,
+  'styles/panels.css': 972, /* 2026-11-03 .sv-data-row 允许换行(+1):主题/配色按钮溢出弹窗 */
+  'styles/content.css': 1016, /* 2026-11-03 深色块内白字改 --sv-block-fg(+1 行说明) */
+  'styles/task.css': 999, /* 2026-11-03 .sv-appmode button.active 改走 --sv-block-bg/fg(+2 行注释):
+                             原先 ink-supreme/white 取反在暗色下白底白字,与重块语义对重复 */
   'styles/mobile.css': 433,
 };
 

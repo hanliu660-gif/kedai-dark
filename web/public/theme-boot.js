@@ -47,4 +47,25 @@
     }
   }
   if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+
+  /* 配色首帧引导(2026-11-03):与 theme.ts 的 PALETTE_STORAGE_KEY / PALETTES 白名单一致。
+     白名单在此内联是为了不 import(本文件必须在任何包加载前同步执行);
+     theme/palettes.test.ts 会校验这份名单与 TS 侧 PALETTES 完全相同,防止加配色时漏改。 */
+  var PALETTE_KEY = 'kedai.palette.v1';
+  var PALETTE_IDS = ['mist', 'sage', 'oat', 'mauve', 'oled'];
+  try {
+    var palette = window.localStorage.getItem(PALETTE_KEY);
+    if (palette && PALETTE_IDS.indexOf(palette) >= 0) {
+      document.documentElement.setAttribute('data-palette', palette);
+      /* 纯黑是「只做深色」的配色:仅在**用户没有显式选浅色**时才补挂深色。
+         2026-11-03 修:原实现只要 palette=oled 就无条件挂 dark,导致
+         「显式选了浅色 → 刷新 → 又被按回深色」,看起来像"切不回去浅色"。
+         显式 light 的优先级高于配色兜底。 */
+      if (palette === 'oled' && mode !== 'light') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    }
+  } catch (e) {
+    /* 隐私模式 / 存储被禁:不挂配色,走基底 */
+  }
 })();

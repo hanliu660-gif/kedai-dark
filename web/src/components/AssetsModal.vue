@@ -505,8 +505,8 @@ onMounted(() => {
   color: var(--sv-ink);
 }
 .asset-folder.active {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border-color: var(--sv-ink);
 }
 .asset-folder-name {

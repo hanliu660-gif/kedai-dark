@@ -191,8 +191,8 @@ function openTaskComposer(): void {
 }
 .sv-task-start-mode.active {
   border-color: var(--sv-ink);
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
 }
 .sv-task-start-actions {
   display: flex;

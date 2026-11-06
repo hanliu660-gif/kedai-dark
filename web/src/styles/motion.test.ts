@@ -122,9 +122,11 @@ describe('UIP-9 动效词汇源码契约', () => {
       /animation-delay: calc\(var\(--dur-slower\) \+ var\(--stagger-step\) \* 2 \* var\(--i, 0\)\);/,
     );
     // 深底焦点反色(UIP-14 探针实测 2 例:sv-modal-head / sv-agent-panel-head 为 ink 底)
+    // 2026-11-03:重块改用 --sv-block-bg/--sv-block-fg(暗色不再反相成近白),
+    // 焦点环随之取重块前景色,断言从 --sv-white 改为 --sv-block-fg。
     expect(baseCss).toContain('.sv-modal-head :focus-visible');
     expect(baseCss).toContain('.sv-agent-panel-head :focus-visible');
-    expect(baseCss).toContain('outline-color: var(--sv-white);');
+    expect(baseCss).toContain('outline-color: var(--sv-block-fg);');
   });
 
   it('UIP-15:退场/重排过渡 sv-list 唯一来源;试点两处均在非虚拟列表', () => {

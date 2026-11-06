@@ -331,7 +331,7 @@ onServerPrefetch(load);
 }
 .kind-distilled {
   background: var(--sv-chip-blue);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .kind-tool {
   background: var(--sv-chip-yellow);
@@ -341,7 +341,7 @@ onServerPrefetch(load);
 }
 .kind-unknown {
   background: var(--sv-chip-gray);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 
 /* 置顶标记:深粉描边小标签,与 kind 实心色块区分层级。

@@ -25,6 +25,7 @@ import {
   initTheme,
   announceUiReady,
 } from './theme/registry';
+import { DEFAULT_PALETTE_ID, isPaletteId, paletteById } from './theme/palettes';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
@@ -62,6 +63,23 @@ function readStored(): ThemeMode {
 
 /** 当前偏好。默认 'system'。 */
 export const themeMode = ref<ThemeMode>(readStored());
+
+/* ===== 配色方案(2026-11-03):与明暗模式正交的第二维 ===== */
+
+/** 配色偏好存储键。与 theme-boot.js 的 PALETTE_KEY 必须逐字一致。 */
+export const PALETTE_STORAGE_KEY = 'kedai.palette.v1';
+
+function readStoredPalette(): string {
+  try {
+    const raw = localStorage.getItem(PALETTE_STORAGE_KEY);
+    return isPaletteId(raw) ? raw : DEFAULT_PALETTE_ID;
+  } catch {
+    return DEFAULT_PALETTE_ID;
+  }
+}
+
+/** 当前配色 id(默认 'default' = 构成主义纸面,不挂 data-palette)。 */
+export const paletteId = ref<string>(readStoredPalette());
 
 /** 当前实际是否暗色('system' 下随系统变化)。UI 用它渲染选中态之外的派生显示。 */
 export const isDark = ref(false);
@@ -114,6 +132,9 @@ export function applyTheme(): Promise<boolean> {
     root.removeAttribute('data-theme');
   }
 
+  // 2b. 配色:默认配色不挂属性(走 tokens.css 基底),其余挂 data-palette 由 palettes.css 覆盖
+  applyPaletteAttr(root);
+
   // 3. 异步 Promise 结算后再做一次单一所有权收拢，彻底消除任何晚到微任务的覆盖竞态
   return promise.then((res) => {
     if (token === currentApplyToken) {
@@ -122,9 +143,95 @@ export function applyTheme(): Promise<boolean> {
       } else {
         root.setAttribute('data-theme', DARK_ATTR);
       }
+      applyPaletteAttr(root);
     }
     return res;
   });
+}
+
+/** 把 paletteId 落到 <html data-palette>;默认配色摘除属性。
+ *  darkOnly 配色(纯黑)在浅色档下不挂载——它在浅色下没有定义,挂上去只会露出基底粉色,
+ *  反而不如老实回落默认配色。切换动作由设置页负责强制到深色。 */
+function applyPaletteAttr(root: HTMLElement): void {
+  const def = paletteById(paletteId.value);
+  const usable = def.id !== DEFAULT_PALETTE_ID && (!def.darkOnly || isDark.value);
+  if (usable) {
+    root.setAttribute('data-palette', def.id);
+  } else {
+    root.removeAttribute('data-palette');
+  }
+}
+
+/* ===== 「选纯黑时自动切深色」的记忆(2026-11-03) =====
+ * 纯黑只有深色档,所以浅色下选它必须先把明暗档顶到深色。问题是那次切换是**替用户做的**,
+ * 如果不记住,用户再点任何配色按钮都会停在深色里,看起来就是"点了没反应、回不去"。
+ * 记在 localStorage 而不是模块变量:刷新之后仍要能一键退出纯黑。
+ */
+export const AUTO_DARK_MODE_KEY = 'kedai.palette-autodark.v1';
+
+function readAutoDarkMode(): ThemeMode | null {
+  try {
+    const raw = localStorage.getItem(AUTO_DARK_MODE_KEY);
+    return raw === 'light' || raw === 'system' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+let autoDarkMode: ThemeMode | null = readAutoDarkMode();
+
+/** 用户显式选过明暗档后,「自动切深色」的记忆作废——深色是他自己要的,不该被还原。 */
+export function clearAutoDarkMode(): void {
+  autoDarkMode = null;
+  try {
+    localStorage.removeItem(AUTO_DARK_MODE_KEY);
+  } catch {
+    /* 存不下也不影响本次会话 */
+  }
+}
+
+function rememberAutoDarkMode(mode: ThemeMode): void {
+  autoDarkMode = mode;
+  try {
+    localStorage.setItem(AUTO_DARK_MODE_KEY, mode);
+  } catch {
+    /* 存不下也不影响本次会话 */
+  }
+}
+
+/**
+ * 选配色(设置页「配色」行的唯一入口)。
+ *
+ * 两条不变量:
+ * 1. 选 darkOnly 配色(纯黑):浅色下先切深色,并记住原来的明暗档;
+ * 2. 从纯黑切到任何普通配色:**把那次自动切的深色还原回去**,否则用户被困在深色里。
+ * 若深色是用户自己选的(记忆已被 clearAutoDarkMode 清空),则保持深色,只换配色。
+ */
+export function selectPalette(next: string): void {
+  const id = isPaletteId(next) ? next : DEFAULT_PALETTE_ID;
+  if (paletteById(id).darkOnly) {
+    if (!resolveDark(themeMode.value)) {
+      rememberAutoDarkMode(themeMode.value);
+      setThemeMode('dark');
+    }
+    setPalette(id);
+    return;
+  }
+  const restore = paletteById(paletteId.value).darkOnly ? autoDarkMode : null;
+  clearAutoDarkMode();
+  setPalette(id);
+  if (restore) setThemeMode(restore);
+}
+
+/** 切换配色并立即生效(与明暗模式互不影响;持久化失败不影响本次会话)。 */
+export function setPalette(next: string): void {
+  paletteId.value = isPaletteId(next) ? next : DEFAULT_PALETTE_ID;
+  try {
+    localStorage.setItem(PALETTE_STORAGE_KEY, paletteId.value);
+  } catch {
+    /* 存不下也不影响本次会话 */
+  }
+  if (typeof document !== 'undefined') applyPaletteAttr(document.documentElement);
 }
 
 /** 写入偏好并立即生效(持久化失败不影响本次会话)。 */

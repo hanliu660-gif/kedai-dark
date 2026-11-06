@@ -272,7 +272,7 @@ onUnmounted(() => {
 .sv-task-step-goal { font-size: var(--text-xs); line-height: var(--lh-body); color: var(--sv-ink-dim); }
 .sv-task-step-result { font-size: var(--text-sm); line-height: var(--lh-prose); }
 .sv-task-step-idx { font-size: var(--text-xs); }
-.sv-task-step-idx.active { background: var(--sv-red); color: var(--sv-white); }
+.sv-task-step-idx.active { background: var(--sv-red); color: var(--sv-block-fg); }
 .sv-task-subtask {
   padding: var(--space-2-5) var(--space-3);
   border-left: 2px solid var(--sv-line-strong);

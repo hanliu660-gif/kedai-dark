@@ -152,7 +152,7 @@
 /* 深色用户气泡(任务对话记录的目标牌等)内的标签:.sv-tag 自带弱墨色字,
    叠在黑底上对比 ≈1.3:1 不可读(2026-10-01 实跑「目标」牌);此处翻白 + 描边提亮 */
 .sv-msg.user .sv-msg-bubble .sv-tag {
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
   border-color: rgba(255, 255, 255, 0.45);
 }
 .sv-tag-muted { color: var(--sv-ink-faint); }
@@ -407,8 +407,8 @@
 .sv-msg-bubble.sv-msg-md pre {
   margin: 0.65em 0;
   padding: 0.7em 0.9em;
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   /* 长行换行(2026-10-01 实跑):此前 UA pre 不换行,长行横向溢出后又遇
      滚动条 thumb 与底色同黑(不可见),表现为「代码块内容被裁」 */
   white-space: pre-wrap;
@@ -629,7 +629,8 @@
 
 /* ============================================================
    黑底白字兜底(防覆盖)
-   所有黑色/深色背景块内的文字一律白字,保证可读性。
+   所有黑色/深色背景块内的文字取重块前景色(--sv-block-fg),保证可读性;
+   纯黑配色下它是 #dfe3e8 而非纯白,避免深色界面上出现刺眼白字。
    置于文件末尾,特异性 + !important 双保险,防御任何未知覆盖。
    ============================================================ */
 
@@ -637,7 +638,7 @@
 .sv-char-item.active,
 .sv-char-item.active .sv-char-name,
 .sv-char-item.active .sv-char-desc {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 .sv-char-item.active .sv-char-desc {
   color: rgba(255, 255, 255, 0.7) !important;
@@ -646,18 +647,18 @@
 /* 模式 / 授权按钮选中态(黑底或深粉底) */
 .sv-mode button.active,
 .sv-auth-toggle button.active {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 
 /* 主按钮(黑底) */
 .sv-btn.primary,
 .sv-btn.primary:hover {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 
 /* 设置导航选中态 */
 .sv-hub-nav-item.active {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 
 /* 用户消息气泡 / 发送按钮 / Agent 抽屉标识 / markdown 代码块(黑底) */
@@ -668,14 +669,14 @@
 .sv-agent-toggle:hover,
 .sv-agent-toggle.active,
 .sv-msg-bubble.sv-msg-md pre {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 
 /* 方块头像(黑/蓝/红底) */
 .sv-avatar.char,
 .sv-avatar.char.alt-blue,
 .sv-avatar.char.alt-red {
-  color: #fff !important;
+  color: var(--sv-block-fg) !important;
 }
 
 /* ===== 音频播放器(阶段五 5a) ===== */
@@ -688,8 +689,8 @@
   width: 40px;
   height: 40px;
   border: var(--bw-thin) solid var(--sv-ink);
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -732,8 +733,8 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-2) var(--space-3);
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   font-family: var(--font-display);
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -864,8 +865,8 @@
   padding: 3px var(--space-1-5);
 }
 .sv-audio-save {
-  background: var(--sv-ink);
-  color: var(--sv-white);
+  background: var(--sv-block-bg);
+  color: var(--sv-block-fg);
   border-color: var(--sv-ink);
 }
 .sv-audio-native {

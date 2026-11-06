@@ -42,7 +42,7 @@ body::after {
 
 /* 滚动条:直角黑条 */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: var(--sv-ink); }
+::-webkit-scrollbar-thumb { background: var(--sv-block-bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--sv-ink-soft); }
 ::-webkit-scrollbar-track { background: transparent; }
 
@@ -55,7 +55,7 @@ body::after {
 
 /* UIP-14 深底焦点:模态头/Agent 面板头为 ink 底,黑描边与其同色不可见 → 反色为白(探针实测) */
 .sv-modal-head :focus-visible, .sv-agent-panel-head :focus-visible {
-  outline-color: var(--sv-white);
+  outline-color: var(--sv-block-fg);
 }
 
 /* 硬边教义(批次 5 第二轮):全局直角,拒绝圆角。

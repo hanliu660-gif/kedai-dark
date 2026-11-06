@@ -1,0 +1,213 @@
+/* ============================================================================
+   palettes.css —— 柔和护眼配色(2026-11-03)
+   ----------------------------------------------------------------------------
+   与明暗模式**正交**:data-theme 决定明/暗,data-palette 决定色相冷暖。
+   因此每套配色必须同时给 light 与 dark 两组值(缺一组即由 palettes.test.ts 判红)。
+
+   设计约束(与 tokens.css 的构成主义基底共存):
+   - 只改颜色,不改几何(直角/硬阴影/描边宽度全部沿用 tokens.css);
+   - 避纯白纯黑:卡片底最低 #fbfaf7 / #2a252d,--sv-ink 用暖炭黑而非 #141414,
+     长时间阅读不刺眼;正文对比仍 ≥ 7:1(--sv-ink)、次要文字 ≥ 4.5:1(--sv-ink-faint);
+   - 功能色(红/蓝/黄/绿)不随配色变:危险/停止的语义必须稳定;
+   - 重块(--sv-block-bg/fg)同档降饱和,避免配色柔和但按钮仍是死黑。
+
+   选择器写法:light 用 :not([data-theme='dark']) 兜住"暗色下不得命中浅色值",
+   否则同特异度的浅色块会按文件顺序覆盖 tokens.css 的暗色基底。
+   ============================================================================ */
+
+/* ---------- 雾蓝:低饱和冷灰蓝,偏办公/长文 ---------- */
+:root[data-palette='mist']:not([data-theme='dark']) {
+  --sv-paper: #eef1f4;
+  --sv-surface: #e2e7ee;
+  --sv-surface-elevated: #f7f9fb;
+  --sv-white: #fbfcfe;
+  --sv-ink: #26303a;
+  --sv-ink-soft: #3d4a57;
+  --sv-ink-dim: #58667a;
+  --sv-ink-faint: #5e6b7a;
+  --sv-line: #d3dbe5;
+  --sv-line-strong: #bfcad8;
+  --sv-pink: #cdd9e6;
+  --sv-pink-light: #e5ecf3;
+  --sv-pink-medium: #a8b9cd;
+  --sv-pink-deep: #56708f;
+  --sv-pink-dark: #42586f;
+  --sv-block-bg: #2c3540;
+  --sv-block-fg: #f2f6fa;
+}
+:root[data-theme='dark'][data-palette='mist'] {
+  --sv-paper: #14171c;
+  --sv-surface: #1b1f26;
+  --sv-surface-elevated: #232831;
+  --sv-white: #272d36;
+  --sv-ink: #e6eaf0;
+  --sv-ink-soft: #c9d1da;
+  --sv-ink-dim: #9aa5b3;
+  --sv-ink-faint: #7f8b99;
+  --sv-line: #2a313a;
+  --sv-line-strong: #39424e;
+  --sv-pink: #262d36;
+  --sv-pink-light: #1e242c;
+  --sv-pink-medium: #38424f;
+  --sv-pink-deep: #9db1c8;
+  --sv-pink-dark: #b3c5d8;
+  --sv-block-bg: #2b333d;
+  --sv-block-fg: #eef3f9;
+}
+
+/* ---------- 苔绿:低饱和植物绿,偏阅读/写作 ---------- */
+:root[data-palette='sage']:not([data-theme='dark']) {
+  --sv-paper: #eef1ea;
+  --sv-surface: #e2e7db;
+  --sv-surface-elevated: #f7f9f3;
+  --sv-white: #fbfcf8;
+  --sv-ink: #2a3026;
+  --sv-ink-soft: #3f4939;
+  --sv-ink-dim: #5c6a53;
+  --sv-ink-faint: #617056;
+  --sv-line: #d6ddcd;
+  --sv-line-strong: #c2ccb6;
+  --sv-pink: #d2dcc7;
+  --sv-pink-light: #e8eee2;
+  --sv-pink-medium: #adbf9e;
+  --sv-pink-deep: #5d7a52;
+  --sv-pink-dark: #47603e;
+  --sv-block-bg: #2f3630;
+  --sv-block-fg: #f2f7ef;
+}
+:root[data-theme='dark'][data-palette='sage'] {
+  --sv-paper: #151813;
+  --sv-surface: #1c201a;
+  --sv-surface-elevated: #242a21;
+  --sv-white: #283023;
+  --sv-ink: #e8ece3;
+  --sv-ink-soft: #cbd3c4;
+  --sv-ink-dim: #a0ab98;
+  --sv-ink-faint: #869080;
+  --sv-line: #2b322a;
+  --sv-line-strong: #3b4437;
+  --sv-pink: #252b23;
+  --sv-pink-light: #1d231b;
+  --sv-pink-medium: #37402f;
+  --sv-pink-deep: #a3b795;
+  --sv-pink-dark: #b9cba9;
+  --sv-block-bg: #2b332a;
+  --sv-block-fg: #eef4ea;
+}
+
+/* ---------- 燕麦:暖中性米色,最接近"纸"的护眼档 ---------- */
+:root[data-palette='oat']:not([data-theme='dark']) {
+  --sv-paper: #f4f1ea;
+  --sv-surface: #eae5da;
+  --sv-surface-elevated: #faf8f2;
+  --sv-white: #fdfbf6;
+  --sv-ink: #2e2a24;
+  --sv-ink-soft: #453f36;
+  --sv-ink-dim: #635c50;
+  --sv-ink-faint: #6d665a;
+  --sv-line: #ded7c8;
+  --sv-line-strong: #cbc3b1;
+  --sv-pink: #ddd4c1;
+  --sv-pink-light: #efeade;
+  --sv-pink-medium: #c0b39b;
+  --sv-pink-deep: #87704f;
+  --sv-pink-dark: #6b573c;
+  --sv-block-bg: #34302a;
+  --sv-block-fg: #faf7f1;
+}
+:root[data-theme='dark'][data-palette='oat'] {
+  --sv-paper: #17140f;
+  --sv-surface: #1f1b15;
+  --sv-surface-elevated: #27231c;
+  --sv-white: #2b2720;
+  --sv-ink: #ece7de;
+  --sv-ink-soft: #d0c9bc;
+  --sv-ink-dim: #a89f90;
+  --sv-ink-faint: #8d8577;
+  --sv-line: #302b23;
+  --sv-line-strong: #413a2f;
+  --sv-pink: #29241d;
+  --sv-pink-light: #211d17;
+  --sv-pink-medium: #3c352b;
+  --sv-pink-deep: #b8a78c;
+  --sv-pink-dark: #cdbc9f;
+  --sv-block-bg: #2e2a23;
+  --sv-block-fg: #f5f0e7;
+}
+
+/* ---------- 藕紫:低饱和紫灰,偏夜间与创意写作 ---------- */
+:root[data-palette='mauve']:not([data-theme='dark']) {
+  --sv-paper: #f2eef2;
+  --sv-surface: #e8e2e8;
+  --sv-surface-elevated: #f9f6f9;
+  --sv-white: #fcfafc;
+  --sv-ink: #2e2830;
+  --sv-ink-soft: #463d49;
+  --sv-ink-dim: #645a68;
+  --sv-ink-faint: #6d6373;
+  --sv-line: #dcd4dc;
+  --sv-line-strong: #c9bec9;
+  --sv-pink: #dbcfdb;
+  --sv-pink-light: #efe7ef;
+  --sv-pink-medium: #bfa9bf;
+  --sv-pink-deep: #7c6080;
+  --sv-pink-dark: #624b66;
+  --sv-block-bg: #332d35;
+  --sv-block-fg: #f8f4f8;
+}
+:root[data-theme='dark'][data-palette='mauve'] {
+  --sv-paper: #161317;
+  --sv-surface: #1e1a1f;
+  --sv-surface-elevated: #262129;
+  --sv-white: #2a252d;
+  --sv-ink: #eae5ec;
+  --sv-ink-soft: #cfc7d1;
+  --sv-ink-dim: #a69ca8;
+  --sv-ink-faint: #8b8090;
+  --sv-line: #2d2730;
+  --sv-line-strong: #3d3541;
+  --sv-pink: #28232a;
+  --sv-pink-light: #201c23;
+  --sv-pink-medium: #3a3340;
+  --sv-pink-deep: #b9a4bf;
+  --sv-pink-dark: #ceb9d3;
+  --sv-block-bg: #2d2830;
+  --sv-block-fg: #f3eef4;
+}
+
+/* ---------- 纯黑 OLED:画布 #000,且**全界面无亮块** ----------
+   与其它配色不同,本档只定义深色(浅色模式下选它无意义):
+   点选时由设置页强制切到深色,theme.ts 的 applyPaletteAttr 也会拒绝在浅色下挂载。
+   除常规 17 个令牌外,额外压暗 6 个"暗色下仍保持原亮度"的令牌——
+   ink-supreme 原为 #ffffff(至上主义方块/装配线色块)、red/yellow/green/orange/purple
+   是功能与装饰色。纯黑上它们是唯一会炸眼的元素,这里统一降到"暗色可辨但不发光"。
+   ink 同步从 #f2f3f5 降到 #c9ced6:它同时是正文色与 1px 描边色,
+   调低后正文仍有 12.7:1,而满屏发丝线不再刺眼。 */
+:root[data-theme='dark'][data-palette='oled'] {
+  --sv-paper: #000000;
+  --sv-surface: #0a0a0c;
+  --sv-surface-elevated: #101013;
+  --sv-white: #141417;
+  --sv-ink: #c9ced6;
+  --sv-ink-soft: #aeb4bd;
+  --sv-ink-dim: #8b929b;
+  --sv-ink-faint: #767d86;
+  --sv-line: #1a1b1f;
+  --sv-line-strong: #26282d;
+  --sv-pink: #17181c;
+  --sv-pink-light: #101114;
+  --sv-pink-medium: #24262b;
+  --sv-pink-deep: #8b929b;
+  --sv-pink-dark: #a3aab3;
+  --sv-block-bg: #141519;
+  --sv-block-fg: #dfe3e8;
+  --sv-ink-supreme: #b9bfc7;
+  --sv-red: #a8342f;
+  --sv-red-deep: #c25a54;
+  --sv-yellow: #7a5a06;
+  --sv-yellow-deep: #9c7a12;
+  --sv-green: #2f6b45;
+  --sv-green-deep: #4a8a62;
+  --sv-orange: #9c5a20;
+  --sv-purple: #5f3172;
+}

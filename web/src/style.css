@@ -41,6 +41,7 @@
    本文件只保留「层① 设计变量」的载体说明与层② 的入口顺序——新增组件样式仍按 D-5 纪律走
    `<style scoped>` 或 Tailwind 工具类，不要往 styles/ 里加新域。 */
 @import "./styles/tokens.css";
+@import "./styles/palettes.css";
 @import "./styles/base.css";
 @import "./styles/shell.css";
 @import "./styles/panels.css";

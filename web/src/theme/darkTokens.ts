@@ -12,6 +12,9 @@ export const DARK_THEME_TOKENS: Record<string, string> = {
   '--sv-surface': '#1a1b1d',
   '--sv-surface-elevated': '#222325',
   '--sv-white': '#26282b',
+  /* 重块(弹窗头/主按钮/激活页签/用户气泡):暗色下保持深色块,不反相成近白。 */
+  '--sv-block-bg': '#2f3237',
+  '--sv-block-fg': '#f4f5f7',
 
   /* ===== 结构:对调(深底浅字) ===== */
   '--sv-ink': '#f2f3f5',

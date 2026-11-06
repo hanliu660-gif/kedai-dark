@@ -206,22 +206,22 @@ const entryRows = computed(() =>
 .cache-wm-step.wm-soft.active {
   background: var(--sv-green);
   border-color: var(--sv-green);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .cache-wm-step.wm-snip.active {
   background: var(--sv-yellow);
   border-color: var(--sv-yellow);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .cache-wm-step.wm-compact.active {
   background: var(--sv-orange);
   border-color: var(--sv-orange);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 .cache-wm-step.wm-force.active {
   background: var(--sv-red);
   border-color: var(--sv-red);
-  color: var(--sv-white);
+  color: var(--sv-block-fg);
 }
 
 /* 明细表:四列等宽栅格(时间/命中/未命中/命中率) */

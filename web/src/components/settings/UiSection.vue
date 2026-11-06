@@ -4,7 +4,17 @@
 import { useAppStore } from '../../store';
 import { storeToRefs } from 'pinia';
 import type { useDataManager } from '../../composables/useDataManager';
-import { setThemeMode, themeMode, type ThemeMode } from '../../theme';
+import {
+  setThemeMode,
+  themeMode,
+  setPalette,
+  selectPalette,
+  clearAutoDarkMode,
+  paletteId,
+  systemPrefersDark,
+  type ThemeMode,
+} from '../../theme';
+import { PALETTES, paletteById } from '../../theme/palettes';
 
 const props = withDefaults(defineProps<{
   /** useDataManager 的返回对象(壳共享实例,本区仅用 characterLabel / 撤销授权) */
@@ -26,6 +36,22 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: 'light', label: '浅色' },
   { value: 'dark', label: '深色' },
 ];
+
+/** 切明暗档:若当前配色是"只做深色"的(纯黑),切到浅色时先回落默认配色,
+ *  否则会出现「按钮显示纯黑、界面却是纸面粉」的错位。 */
+function onThemeMode(next: ThemeMode): void {
+  // 用户显式选明暗档:之前「选纯黑时替他切的深色」的记忆作废,之后切配色不再自动还原
+  clearAutoDarkMode();
+  // 「跟随系统 + 系统为浅色」同样会落到浅色,此时也必须回落配色,否则按钮显示纯黑、界面却是浅色
+  const willBeLight = next === 'light' || (next === 'system' && !systemPrefersDark());
+  if (willBeLight && paletteById(paletteId.value).darkOnly) setPalette('default');
+  setThemeMode(next);
+}
+
+/** 选配色:纯黑这类 darkOnly 配色由 selectPalette 负责切深色/离开时还原明暗档。 */
+function onPalette(id: string): void {
+  selectPalette(id);
+}
 </script>
 
 <template>
@@ -70,7 +96,7 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
           <b>主题</b>
           <span>跟随系统时按系统明暗自动切换；两套配色的对比度都有机器门禁（styles/darkContrast.test.ts）。只影响界面显示，不改任何数据。</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0 whitespace-nowrap">
+        <div class="flex items-center gap-2 flex-wrap justify-end min-w-0">
           <button
             v-for="opt in THEME_OPTIONS"
             :key="opt.value"
@@ -78,9 +104,32 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
             class="sv-btn ghost"
             :class="{ 'sv-btn-on': themeMode === opt.value }"
             :aria-pressed="themeMode === opt.value"
-            @click="setThemeMode(opt.value)"
+            @click="onThemeMode(opt.value)"
           >
             {{ opt.label }}
+          </button>
+        </div>
+      </div>
+      <!-- 配色(2026-11-03):与明暗模式正交的第二维,只换颜色不动几何与布局。
+           每套配色在 palettes.css 里都有 light/dark 两组值,因此可以和上面的明暗档任意组合。 -->
+      <div class="sv-data-row">
+        <div class="info">
+          <b>配色</b>
+          <span>低饱和护眼配色,只影响界面颜色,不改变布局与数据。与上面的明暗档可以任意组合。</span>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap justify-end min-w-0">
+          <button
+            v-for="p in PALETTES"
+            :key="p.id"
+            type="button"
+            class="sv-btn ghost"
+            :class="{ 'sv-btn-on': paletteId === p.id }"
+            :aria-pressed="paletteId === p.id"
+            :title="p.hint"
+            @click="onPalette(p.id)"
+          >
+            <span class="sv-supreme" :style="{ background: p.swatch[2] }" />
+            {{ p.name }}
           </button>
         </div>
       </div>
