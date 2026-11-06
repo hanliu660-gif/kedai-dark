@@ -42,8 +42,8 @@ node tools/kb.mjs show <id>            # 单条详情(spec/kedai 现状/sources 
 ## 酒馆「整页前端卡」渲染链路(本机分支独占,2026-10-29 起)
 
 酒馆生态的卡常用正则脚本把 `<start>…</start>` 换成**一整页 HTML + 内联脚本**(Vue/MVU/ST 全局 API
-装配界面)。本机分支分三层处理,**动其中任一层前先看 `docs/功能-变更史.md` 的 `2026-10-29-carda` /
-`2026-10-29-b1*` 条目**:
+装配界面)。本机分支分三层处理,**动其中任一层前先看 `docs/功能-变更史/05-2026-10-07起.md` 的 `2026-10-29-carda` /
+`2026-10-29-b1r` · `2026-10-29-b1s` 条目**(门面 `docs/功能-变更史.md` 里有分卷表):
 
 1. **静态内联**(`web/src/render.ts` 的 `renderScopedScripts` + `cssSanitize.ts`):作用域化 CSS。
    `sanitizeScopedCss` 必须放行 `@media/@supports/@container/@layer/@scope/@font-face`(曾整类丢弃);

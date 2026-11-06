@@ -18,6 +18,7 @@
  *   D4 活文档内的相对 markdown 链接目标必须存在(锚点尽量校验)
  *   D5 归档映射表覆盖归档目录下全部文件
  *   D6 (WARN) 计划/遗留条目应带 ID(P- / L / T / D / 批次 / 项)
+ *   D7 docs/ 活文档单文件行数 ≤ 3000(2026-11-07 分卷防回潮;既有超限文件按基线豁免且不得增长)
  *
  * 失败只影响本脚本自身结论;check-all.ps1 侧用统一 Invoke-Stage 聚合,
  * **不要**另建失败桶(见 MAINTENANCE.md §0「修复纪律」:曾因前端分支写进后端失败桶
@@ -47,7 +48,18 @@ const CLASSIFIED = [
 
 // docs/ 根下允许出现的条目(D2 白名单)
 const ROOT_ALLOW = new Set([...CLASSIFIED, 'docs/README.md']);
-const ROOT_ALLOW_DIRS = new Set(['docs/fixtures', 'docs/archive', 'docs/plans']);
+const ROOT_ALLOW_DIRS = new Set(['docs/fixtures', 'docs/archive', 'docs/plans', 'docs/功能-变更史', 'docs/计划']);
+
+// 分卷目录(2026-11-07:两份超长活文档拆为「门面 + 子卷」,子卷随门面一起纳入 D4 链接与 D7 行数校验)
+const SUBVOL_DIRS = ['docs/功能-变更史', 'docs/计划'];
+const subVolFiles = [];
+for (const d of SUBVOL_DIRS) {
+  const abs = path.join(ROOT, d);
+  if (!fs.existsSync(abs)) continue;
+  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (e.isFile() && e.name.endsWith('.md')) subVolFiles.push(`${d}/${e.name}`);
+  }
+}
 
 const ARCHIVE_DIR = 'docs/archive/2026-09-16-consolidation';
 
@@ -127,7 +139,7 @@ if (!exists(README)) {
 
 // ---------- D4 活文档相对链接目标存在 ----------
 {
-  const files = [...CLASSIFIED, README].filter(exists);
+  const files = [...CLASSIFIED, README, ...subVolFiles].filter(exists);
   let checked = 0;
   const broken = [];
   for (const f of files) {
@@ -198,12 +210,48 @@ if (!exists(ARCHIVE_DIR)) {
   ];
   for (const { file, re, hint } of idRules) {
     if (!exists(file)) continue;
-    const src = read(file);
+    let src = read(file);
+    // 计划已分卷(2026-11-07):条目 ID 形态改由「门面 + 子卷」整体判定
+    if (file === 'docs/计划.md') {
+      const vols = subVolFiles.filter((f) => f.startsWith('docs/计划/'));
+      src += '\n' + vols.map(read).join('\n');
+    }
     const h2 = (src.match(/^##\s+/gm) || []).length;
     if (h2 === 0) warn('D6', `${file} 无二级章节,疑似结构被破坏`);
     if (!re.test(src)) warn('D6', `${file} 未见条目 ID 形态(${hint}),编号是全仓引用锚点,请勿改成无语义标题`);
   }
   ok('D6', '条目 ID 形态检查完成(仅 WARN 级)');
+}
+
+// ---------- D7 活文档单文件行数上限(分卷防回潮,2026-11-07) ----------
+{
+  const LIMIT = 3000;
+  // 既有超限基线:豁免但不得增长(与仓库既有 ratchet 惯例一致;新增/突破即 FAIL)
+  const EXEMPT = new Map([['docs/经验.md', 3015]]);
+  const SKIP_DIRS = ['docs/archive', 'docs/plans', 'docs/fixtures'];
+  const files = [];
+  const walk = (dirRel) => {
+    for (const e of fs.readdirSync(path.join(ROOT, dirRel), { withFileTypes: true })) {
+      const rel = `${dirRel}/${e.name}`;
+      if (e.isDirectory()) {
+        if (!SKIP_DIRS.includes(rel)) walk(rel);
+      } else if (e.name.endsWith('.md')) {
+        files.push(rel);
+      }
+    }
+  };
+  walk('docs');
+  const over = [];
+  for (const f of files) {
+    const n = read(f).replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').length;
+    const cap = EXEMPT.has(f) ? EXEMPT.get(f) : LIMIT;
+    if (n > cap) over.push(`${f}: ${n} 行 > ${EXEMPT.has(f) ? `基线 ${cap}` : `上限 ${LIMIT}`}`);
+  }
+  if (over.length) {
+    fail('D7', `活文档单文件超行数上限,请按日期/主题分卷(门面 + 子卷):\n` + over.map((s) => `       - ${s}`).join('\n'));
+  } else {
+    ok('D7', `活文档单文件 ≤ ${LIMIT} 行(${files.length} 份;既有超限基线豁免 ${EXEMPT.size} 份且不得增长)`);
+  }
 }
 
 // ---------- 输出 ----------
