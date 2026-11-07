@@ -20,12 +20,13 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
-# 版本号须为合法 semver:核心三段 + 可选预发布后缀(`-beta` / `-rc.1` 等)。
-# 注意:后缀必须用 `-` 连接——cargo 只接受 `0.3.0-beta`,**不接受** `0.3.0beta`
+# 版本号须为合法 semver:核心三段 + 可选预发布后缀(`-beta` / `-rc.1` 等)
+# + 可选 build metadata(`+st.1` 等,2026-11-07 起支持,用于本机独立派生线标识)。
+# 注意:后缀必须用 `-` / `+` 连接——cargo 只接受 `0.3.0-beta`,**不接受** `0.3.0beta`
 # (报 unexpected character 'b' after patch version number),故按 semver 校验,
 # 并在拒绝时给出可操作的提示。
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
-    throw "版本号格式非法:「$Version」。支持 x.y.z 或 x.y.z-预发布(如 0.3.0-beta);预发布后缀必须用 - 连接,不能写成 0.3.0beta。"
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+    throw "版本号格式非法:「$Version」。支持 x.y.z、x.y.z-预发布(如 0.3.0-beta)或 x.y.z+build(如 0.4.2+st.1);后缀必须用 - / + 连接。"
 }
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -55,15 +56,15 @@ function Update-JsonVersion([string]$RelativePath) {
     $script:changed++
 }
 
-# lock 文件:package-lock.json v3 中「自身版本」是值等于产品版本号的 "version" 字段,
-# 当前有 3 处:顶层、packages[""](workspace 根)、packages["web"](对应 web/package.json);
-# 其余 version 都属依赖包,值不会等于产品版本号(带预发布后缀的如 0.3.0-B-beta 更不会撞值),
-# 故**按值精确匹配全部替换**,不按位置计数。
+# lock 文件:package-lock.json v3 中「自身版本」是 3 处:顶层、packages[""](workspace 根)、
+# packages["web"](对应 web/package.json)。三者共同特征是**紧跟在 "name": "..." 之后**;
+# node_modules/<pkg> 条目以路径为键、对象内没有 name 字段。
 #
-# 为何改按值:旧实现写死「前 2 处」(靠「顶层 + packages[""] 恰为前两处」这一位置假设),
-# 而包按路径排序后 web 排在 packages 末尾(实测 package-lock.json 行 5853),永远漏改——
-# 顶层与 workspace 根改了、web 包没改,lock 与 web/package.json 不一致会被 npm ci 判不同步
-# (CI 红)。早期还踩过「不推进搜索偏移导致第二处原地打转」的坑,按值全替换后该问题一并消失。
+# 2026-11-07 修正:此前「按值精确替换全部 "version": "<旧版本>"」的假设是
+# 「依赖包版本不会恰好等于产品版本」。本机升 0.4.2 时实测撞值——
+# json-schema-traverse / levn / muggle-string 三个依赖本身就是 0.4.2,
+# 按值替换会把它们一并改成 "0.4.2+st.1",直接破坏 lock 与 npm ci。
+# 改为按「name + version 相邻」结构精确匹配,只碰 3 处自身版本。
 function Update-LockFileVersion([string]$RelativePath) {
     $path = Join-Path $Root $RelativePath
     $content = [System.IO.File]::ReadAllText($path)
@@ -79,10 +80,10 @@ function Update-LockFileVersion([string]$RelativePath) {
         $script:skipped++
         return
     }
-    $regex = New-Object regex ('("version"\s*:\s*")' + [regex]::Escape($oldVersion) + '(")')
+    $regex = New-Object regex ('("name"\s*:\s*"[^"]*"\s*,\s*"version"\s*:\s*")' + [regex]::Escape($oldVersion) + '(")')
     $replaced = $regex.Matches($content).Count
-    if ($replaced -lt 3) {
-        # 少于 3 处说明 lock 结构变了(workspace 包被删/改名),不猜、不写,交人工核对
+    if ($replaced -ne 3) {
+        # 不等于 3 处说明 lock 结构变了(workspace 包被删/改名),不猜、不写,交人工核对
         Write-Host "[警告] $RelativePath 只匹配到 $replaced 处自身版本($oldVersion),预期 3 处(顶层 + 两个 workspace 包),已跳过写入" -ForegroundColor Yellow
         $script:skipped++
         return
@@ -122,7 +123,7 @@ function Update-MaintenanceDoc([string]$RelativePath) {
     $content = [System.IO.File]::ReadAllText($path)
     $today = Get-Date -Format "yyyy-MM-dd"
     $new = $content
-    $verRegex = New-Object regex '(版本:v)\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?'
+    $verRegex = New-Object regex '(版本:v)\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?'
     $m = $verRegex.Match($new)
     if ($m.Success) {
         $new = $verRegex.Replace($new, "`${1}$Version", 1)

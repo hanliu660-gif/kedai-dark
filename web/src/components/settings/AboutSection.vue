@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<{
  * 常量同时是离线/后端不可达时的兜底显示值,发版时由 tools/bump-version.ps1 一并改写,
  * 并由 build.ps1 的 Assert-VersionConsistency 作为第 8 处声明校验(改漏即构建报错)。
  */
-const FALLBACK_VERSION = '0.4.2';
+const FALLBACK_VERSION = '0.4.2+st.1';
 const version = ref(FALLBACK_VERSION);
 onMounted(async () => {
   try {
