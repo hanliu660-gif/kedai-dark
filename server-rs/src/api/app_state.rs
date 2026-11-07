@@ -23,6 +23,7 @@ use crate::services::skill_service::SkillService;
 use crate::services::task_service::TaskService;
 use crate::services::token_service::TokenService;
 use crate::services::undo_service::UndoService;
+use crate::services::user_persona_service::UserPersonaService;
 use crate::services::user_script_service::UserScriptService;
 use crate::services::world_book_service::WorldBookService;
 use crate::tools::agent_tools::ToolDeps;
@@ -63,6 +64,8 @@ pub struct CoreServices {
     pub settings: Arc<Mutex<RuntimeSettings>>,
     /// 提示词注入配置(简单模式 + 楼层系统),持久化到 data/prompt_floors.json
     pub prompt_inject: Arc<Mutex<PromptInjectService>>,
+    /// 用户设定(角色扮演专属):DATA_DIR/user_persona.json;任务模式不消费
+    pub user_persona: Arc<Mutex<UserPersonaService>>,
     /// 全局正则库(IMPHUB ⑥,2026-10-09):跨角色的**显示层**正则,
     /// 持久化到 data/regex_scripts.json;前端与卡级正则合并后应用(全局在前、卡级在后)
     pub regex: Arc<Mutex<RegexScriptService>>,
@@ -366,6 +369,9 @@ impl AppState {
         // 任务执行者库(执行者与角色扮演角色卡解耦);空库即「只有通用执行者」
         let executors = Arc::new(Mutex::new(ExecutorService::new(config.data_dir.clone())));
 
+        // 用户设定(角色扮演专属;任务模式不消费)
+        let user_persona = Arc::new(Mutex::new(UserPersonaService::new(config.data_dir.clone())));
+
         // 聊天引擎:先于 TaskService 构造(engine 不依赖 tasks,无循环;
         // 批次 4.2 起 TaskService 注入 Arc<AgentEngine> 供六模式执行器复用工具循环)
         let engine = Arc::new(AgentEngine::new(
@@ -443,6 +449,7 @@ impl AppState {
                 model: Arc::new(Mutex::new(engine_model)),
                 settings,
                 prompt_inject,
+                user_persona,
                 regex,
                 audio,
                 quick_replies,
