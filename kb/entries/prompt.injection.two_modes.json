@@ -56,7 +56,7 @@
       "server-rs/src/parsing/preset.rs:5",
       "server-rs/src/parsing/preset.rs:140-177",
       "server-rs/src/models/types.rs:477",
-      "web/src/api/types.ts:789"
+      "web/src/api/types/settings.ts:390-392"
     ],
     "note": "Kedai 把 ST 的 injection_position 重解释成四种楼层位置的映射：0 → 系统提示词、1 → 消息前、2 → （depth>0 则按深度，否则消息后）、其它 → 消息后；且把 system_prompt 布尔优先于 injection_position 判定。⇒ 与 ST 的两档语义**完全不同**：ST 的 0 是「按顺序数组」，Kedai 的 0 是「并入系统提示词」；ST 的 depth/order 只在 1 档生效，Kedai 只在 2 档生效。导入了带 injection_position 的 ST 预设后，条目落点会整体偏移。"
   },

@@ -49,7 +49,7 @@
       "server-rs/src/parsing/preset.rs:130-138",
       "server-rs/src/parsing/preset.rs:1-25",
       "server-rs/src/agents/engine/messages/context.rs:336",
-      "web/src/api/types.ts:789-830"
+      "web/src/api/types/settings.ts:390-430"
     ],
     "note": "Kedai 把 ST 预设解析成一串「楼层」，用 `prompt_order` 里的 identifier 只取启用顺序（禁用的跳过、重复 id 加后缀），并**不识别这 12 个内建锚点的特殊地位**：既没有「不可删/强制可编辑」名单，也没有 7 个写死调用序列，还没有缺失补回逻辑。⇒ 导入的 ST 预设若有锚点被删或被禁用，Kedai 不会自动补齐，靠自己的占位符渲染（`{{world_info}}` 等）兜底。"
   },

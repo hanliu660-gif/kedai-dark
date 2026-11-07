@@ -34,7 +34,7 @@
     "evidence": [
       "server-rs/src/parsing/regex_script.rs:12",
       "server-rs/src/parsing/regex_script.rs:104-120",
-      "web/src/api/types.ts:51"
+      "web/src/api/types/character.ts:48-60"
     ],
     "note": "Kedai 的 RegexScript 只有 8 个字段（id / script_name / find_regex / replace_string / markdown_only / enabled / min_depth / max_depth），`grep placement|promptOnly` 在 server-rs 与 web 全仓为 0 命中。⇒ 无法表达「这条正则只作用于 AI 输出」：Kedai 的正则一律在消息渲染层按 markdown_only 分流，用户输入与世界书正文都不经过任何脚本。"
   },

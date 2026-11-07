@@ -28,7 +28,6 @@
     "server-rs/src/tools/permissions.rs": 1071,
     "server-rs/src/tools/registry.rs": 1034,
     "server-rs/src/tools/screenshot.rs": 1153,
-    "web/src/api/types.ts": 1434,
     "web/src/stores/task.ts": 1014
   },
   "updated": "2026-11-02"
